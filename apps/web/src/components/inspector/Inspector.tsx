@@ -1,4 +1,5 @@
 import {
+  allVariables,
   deleteComment,
   deleteElement,
   findVariable,
@@ -16,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useModelStore } from "@/state/modelStore";
+import { EquationInput } from "./EquationInput";
 
 export function Inspector() {
   const model = useModelStore((s) => s.model);
@@ -234,12 +236,23 @@ function VariableInspector() {
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="var-eq">{variable.kind === "stock" ? "Initial value" : "Equation"}</Label>
-        <Textarea id="var-eq" value={equation} onChange={(e) => onEquationChange(e.target.value)} rows={3} />
+        <EquationInput
+          id="var-eq"
+          value={equation}
+          onChange={onEquationChange}
+          variables={allVariables(model)
+            .filter((v) => v.id !== variable.id)
+            .map((v) => ({ name: v.name, units: v.units }))}
+          rows={3}
+        />
         {variable.kind === "stock" && (
           <p className="text-xs text-muted-foreground">
             Inflows: {variable.inflows.length} · Outflows: {variable.outflows.length}
           </p>
         )}
+        <p className="text-xs text-muted-foreground">
+          Start typing a name for suggestions — variables show their units, functions show a description.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1.5">

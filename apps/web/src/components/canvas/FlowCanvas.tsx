@@ -1,4 +1,4 @@
-import { addConnector, detectLoops, moveComment, moveElement, type Loop } from "@vensim-ai/core";
+import { addConnector, deleteComment, deleteElement, detectLoops, moveComment, moveElement, type Loop } from "@vensim-ai/core";
 import {
   Background,
   Controls,
@@ -99,6 +99,27 @@ export function FlowCanvas() {
       // ignore invalid connections (e.g. dangling handles)
     }
   };
+
+  // Delete/Backspace removes the currently-selected element (our own selectedId, not React
+  // Flow's built-in node.selected — that gets discarded every time buildGraph rebuilds the
+  // nodes array from the model, so RF's own deleteKeyCode wiring wouldn't stay in sync with
+  // what's actually selected). Guarded so Backspace inside a text field still edits text.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+      if (!selectedId) return;
+      e.preventDefault();
+      mutate((m) => {
+        if (m.comments.some((c) => c.id === selectedId)) deleteComment(m, selectedId);
+        else deleteElement(m, selectedId);
+      });
+      select(null);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedId, mutate, select]);
 
   return (
     <div className="h-full w-full">

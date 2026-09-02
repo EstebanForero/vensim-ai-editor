@@ -6,7 +6,7 @@ import { useModelStore } from "@/state/modelStore";
 /** Same perpendicular-offset curve used when a relation has no manual bend point set yet —
  * kept in sync with packages/core/src/mdl/writer.ts's curveWaypoint so the exported .mdl's
  * default curve matches what's on screen. */
-function defaultBend(sx: number, sy: number, tx: number, ty: number): Position {
+function defaultControlPoint(sx: number, sy: number, tx: number, ty: number): Position {
   const mx = (sx + tx) / 2;
   const my = (sy + ty) / 2;
   const dx = tx - sx;
@@ -18,20 +18,38 @@ function defaultBend(sx: number, sy: number, tx: number, ty: number): Position {
   return { x: mx + px * bend, y: my + py * bend };
 }
 
+/** The point actually ON a quadratic bezier at its midpoint (t=0.5). A quadratic curve does
+ * NOT pass through its control point — only bows toward it — so a handle drawn at the control
+ * point itself drifts further off the visible curve the more it's dragged. This is the point
+ * to both render the handle at and hit-test against. */
+function curveMidpoint(p0: Position, control: Position, p2: Position): Position {
+  return { x: 0.25 * p0.x + 0.5 * control.x + 0.25 * p2.x, y: 0.25 * p0.y + 0.5 * control.y + 0.25 * p2.y };
+}
+
+/** Inverse of curveMidpoint: the control point that puts the curve's midpoint exactly at
+ * `midpoint`, so dragging the handle keeps it glued to the cursor instead of the control
+ * point (2x further from the midpoint than the cursor movement) racing ahead of it. */
+function controlPointForMidpoint(midpoint: Position, p0: Position, p2: Position): Position {
+  return { x: 2 * midpoint.x - 0.5 * (p0.x + p2.x), y: 2 * midpoint.y - 0.5 * (p0.y + p2.y) };
+}
+
 export function RelationEdge({ id, sourceX, sourceY, targetX, targetY, data, style, markerEnd }: EdgeProps) {
   const mutate = useModelStore((s) => s.mutate);
   const { screenToFlowPosition } = useReactFlow();
   const connector = (data as { connector?: Connector } | undefined)?.connector;
-  const bend = connector?.bend ?? defaultBend(sourceX, sourceY, targetX, targetY);
-  const path = `M ${sourceX},${sourceY} Q ${bend.x},${bend.y} ${targetX},${targetY}`;
+  const source = { x: sourceX, y: sourceY };
+  const target = { x: targetX, y: targetY };
+  const control = connector?.bend ?? defaultControlPoint(sourceX, sourceY, targetX, targetY);
+  const handlePos = curveMidpoint(source, control, target);
+  const path = `M ${sourceX},${sourceY} Q ${control.x},${control.y} ${targetX},${targetY}`;
 
   const onHandlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.stopPropagation();
       (e.target as Element).setPointerCapture(e.pointerId);
       const onMove = (ev: PointerEvent) => {
-        const pos = screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
-        mutate((m) => setConnectorBend(m, id, pos));
+        const midpoint = screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
+        mutate((m) => setConnectorBend(m, id, controlPointForMidpoint(midpoint, source, target)));
       };
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
@@ -40,7 +58,7 @@ export function RelationEdge({ id, sourceX, sourceY, targetX, targetY, data, sty
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [id, mutate, screenToFlowPosition],
+    [id, mutate, screenToFlowPosition, source, target],
   );
 
   const onHandleDoubleClick = useCallback(
@@ -57,7 +75,7 @@ export function RelationEdge({ id, sourceX, sourceY, targetX, targetY, data, sty
       <EdgeLabelRenderer>
         <div
           className="nodrag nopan absolute flex size-4 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border border-[var(--connector-color)] bg-background text-[10px] font-bold text-[var(--connector-color)] shadow active:cursor-grabbing"
-          style={{ left: bend.x, top: bend.y, pointerEvents: "all" }}
+          style={{ left: handlePos.x, top: handlePos.y, pointerEvents: "all" }}
           onPointerDown={onHandlePointerDown}
           onDoubleClick={onHandleDoubleClick}
           title="Drag to curve this relation; double-click to reset"
