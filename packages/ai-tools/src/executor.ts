@@ -6,14 +6,17 @@ import {
   addStock,
   allVariables,
   deleteElement,
+  detectLoops,
   findVariable,
   findVariableByName,
   ModelError,
   moveElement,
   renameVariable,
+  setConnectorPolarity,
   setEquation,
   simulate,
   type Model,
+  type Polarity,
 } from "@vensim-ai/core";
 
 export interface ToolExecutionResult {
@@ -34,8 +37,12 @@ function summarizeModel(model: Model) {
     stocks: model.stocks.map((s) => ({ id: s.id, name: s.name, initialEquation: s.initialEquation, units: s.units, inflows: s.inflows, outflows: s.outflows })),
     flows: model.flows.map((f) => ({ id: f.id, name: f.name, equation: f.equation, units: f.units, from: f.from, to: f.to })),
     auxiliaries: model.auxiliaries.map((a) => ({ id: a.id, name: a.name, equation: a.equation, isConstant: a.isConstant, units: a.units })),
-    connectors: model.connectors.map((c) => ({ id: c.id, from: c.from, to: c.to })),
+    relations: model.connectors.map((c) => ({ id: c.id, from: c.from, to: c.to, polarity: c.polarity })),
   };
+}
+
+function namesForLoop(model: Model, nodeIds: string[]): string[] {
+  return nodeIds.map((id) => findVariable(model, id)?.name ?? id);
 }
 
 function downsample(arr: number[], maxPoints: number): number[] {
@@ -45,8 +52,9 @@ function downsample(arr: number[], maxPoints: number): number[] {
 }
 
 /**
- * Executes one Anthropic tool_use call against a live model, mutating it in place. This is
- * the single code path AI edits go through — identical to what the UI's inspector panel calls.
+ * Executes one tool call (from any OpenAI-compatible tool-calling API) against a live model,
+ * mutating it in place. This is the single code path AI edits go through — identical to what
+ * the UI's inspector panel calls.
  */
 export function executeTool(model: Model, toolName: string, input: Record<string, unknown>): ToolExecutionResult {
   try {
@@ -93,9 +101,13 @@ export function executeTool(model: Model, toolName: string, input: Record<string
         });
         return { ok: true, result: { id: a.id, name: a.name } };
       }
-      case "add_connector": {
-        const c = addConnector(model, { from: str(input.from), to: str(input.to) });
-        return { ok: true, result: { id: c.id } };
+      case "add_relation": {
+        const c = addConnector(model, { from: str(input.from), to: str(input.to), polarity: optPolarity(input.polarity) });
+        return { ok: true, result: { id: c.id, polarity: c.polarity } };
+      }
+      case "set_relation_polarity": {
+        const c = setConnectorPolarity(model, str(input.id), polarity(input.polarity));
+        return { ok: true, result: { id: c.id, polarity: c.polarity } };
       }
       case "set_equation": {
         const which = input.which === "initial" ? "initial" : "equation";
@@ -129,6 +141,14 @@ export function executeTool(model: Model, toolName: string, input: Record<string
         for (const [name, values] of Object.entries(sim.series)) series[name] = downsample(values, 50);
         return { ok: true, result: { time: downsample(sim.time, 50), finalValues, series } };
       }
+      case "list_loops": {
+        const loops = detectLoops(model).map((loop) => ({
+          polarity: loop.polarity,
+          direction: loop.direction,
+          variables: namesForLoop(model, loop.nodeIds),
+        }));
+        return { ok: true, result: { loops } };
+      }
       default:
         return { ok: false, error: `Unknown tool "${toolName}".` };
     }
@@ -152,4 +172,11 @@ function num(v: unknown): number {
 function posFrom(input: Record<string, unknown>): { x: number; y: number } | undefined {
   if (typeof input.x === "number" && typeof input.y === "number") return { x: input.x, y: input.y };
   return undefined;
+}
+function polarity(v: unknown): Polarity {
+  if (v !== "+" && v !== "-") throw new ModelError(`Expected polarity "+" or "-", got ${JSON.stringify(v)}.`);
+  return v;
+}
+function optPolarity(v: unknown): Polarity | undefined {
+  return v === "+" || v === "-" ? v : undefined;
 }

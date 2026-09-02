@@ -1,5 +1,5 @@
 import { addAuxiliary, addConstant, addFlow, addStock } from "@vensim-ai/core";
-import { Circle, Droplet, FolderOpen, Save, Square, Waves } from "lucide-react";
+import { Circle, Droplet, FolderOpen, GitBranch, RotateCw, Save, Square, Waves } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,10 @@ export function Toolbar() {
   const mutate = useModelStore((s) => s.mutate);
   const setModel = useModelStore((s) => s.setModel);
   const select = useModelStore((s) => s.select);
+  const relationMode = useModelStore((s) => s.relationMode);
+  const toggleRelationMode = useModelStore((s) => s.toggleRelationMode);
+  const showLoops = useModelStore((s) => s.showLoops);
+  const toggleShowLoops = useModelStore((s) => s.toggleShowLoops);
   const [fileError, setFileError] = useState<string | null>(null);
 
   const addNamed = (fn: (m: typeof model) => void) => mutate(fn);
@@ -67,6 +71,22 @@ export function Toolbar() {
       </Button>
       <Button size="sm" variant="outline" onClick={onAddConst} title="Add Constant">
         <Circle className="size-4" /> Constant
+      </Button>
+      <Button
+        size="sm"
+        variant={relationMode ? "default" : "outline"}
+        onClick={toggleRelationMode}
+        title="Click two variables in sequence to draw a signed causal relation between them (also usable for pure causal-loop diagrams — no stocks/flows needed)"
+      >
+        <GitBranch className="size-4" /> Relation
+      </Button>
+      <Button
+        size="sm"
+        variant={showLoops ? "default" : "outline"}
+        onClick={toggleShowLoops}
+        title="Auto-detect feedback loops and label them R (Reinforcing) / B (Balancing)"
+      >
+        <RotateCw className="size-4" /> Loops
       </Button>
 
       <div className="mx-1 h-5 w-px bg-border" />

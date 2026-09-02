@@ -1,7 +1,7 @@
-import { allVariables, type Model } from "@vensim-ai/core";
+import { allVariables, type Loop, type Model } from "@vensim-ai/core";
 import type { Edge, Node } from "@xyflow/react";
 
-export function buildGraph(model: Model, selectedId: string | null): { nodes: Node[]; edges: Edge[] } {
+export function buildGraph(model: Model, selectedId: string | null, loops: Loop[]): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
@@ -50,13 +50,35 @@ export function buildGraph(model: Model, selectedId: string | null): { nodes: No
     });
   }
   for (const c of model.connectors) {
+    const isSelected = c.id === selectedId;
     edges.push({
       id: c.id,
       source: c.from,
       target: c.to,
       type: "bezier",
-      style: { stroke: "var(--connector-color)", strokeWidth: 1, strokeDasharray: "4 2" },
+      label: c.polarity,
+      labelStyle: { fill: "var(--connector-color)", fontWeight: 700, fontSize: 13 },
+      labelBgStyle: { fill: "var(--background)" },
+      style: {
+        stroke: "var(--connector-color)",
+        strokeWidth: isSelected ? 2.5 : 1,
+        strokeDasharray: "4 2",
+      },
       markerEnd: { type: "arrow" as const, color: "var(--connector-color)" },
+      data: { connector: c },
+    });
+  }
+
+  const nameById = new Map(allVariables(model).map((v) => [v.id, v.name]));
+  for (const loop of loops) {
+    nodes.push({
+      id: loop.id,
+      type: "loop",
+      position: loop.centroid,
+      draggable: false,
+      selectable: false,
+      zIndex: 1000,
+      data: { loop, names: loop.nodeIds.map((id) => nameById.get(id) ?? id) },
     });
   }
 

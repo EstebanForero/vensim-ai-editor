@@ -18,8 +18,13 @@ describe("executeTool", () => {
     const constRes = executeTool(model, "add_constant", { name: "Target", value: 200 });
     expect(constRes.ok).toBe(true);
 
-    const connRes = executeTool(model, "add_connector", { from: "Target", to: "Shipping" });
+    const connRes = executeTool(model, "add_relation", { from: "Target", to: "Shipping", polarity: "+" });
     expect(connRes.ok).toBe(true);
+    expect((connRes.result as any).polarity).toBe("+");
+
+    const polarityRes = executeTool(model, "set_relation_polarity", { id: (connRes.result as any).id, polarity: "-" });
+    expect(polarityRes.ok).toBe(true);
+    expect((polarityRes.result as any).polarity).toBe("-");
 
     const listRes = executeTool(model, "list_model", {});
     expect(listRes.ok).toBe(true);
@@ -28,6 +33,10 @@ describe("executeTool", () => {
     const simRes = executeTool(model, "run_simulation", {});
     expect(simRes.ok).toBe(true);
     expect((simRes.result as any).finalValues.Inventory).toBeGreaterThan(0);
+
+    const loopsRes = executeTool(model, "list_loops", {});
+    expect(loopsRes.ok).toBe(true);
+    expect(Array.isArray((loopsRes.result as any).loops)).toBe(true);
   });
 
   test("reports errors instead of throwing", () => {

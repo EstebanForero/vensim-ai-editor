@@ -1,13 +1,83 @@
-import { deleteElement, findVariable, renameVariable, setEquation } from "@vensim-ai/core";
+import { deleteElement, findVariable, renameVariable, setConnectorPolarity, setEquation, type Polarity } from "@vensim-ai/core";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { useModelStore } from "@/state/modelStore";
 
 export function Inspector() {
+  const model = useModelStore((s) => s.model);
+  const selectedId = useModelStore((s) => s.selectedId);
+
+  const connector = selectedId ? model.connectors.find((c) => c.id === selectedId) : undefined;
+  if (connector) return <RelationInspector connectorId={connector.id} />;
+
+  return <VariableInspector />;
+}
+
+function RelationInspector({ connectorId }: { connectorId: string }) {
+  const model = useModelStore((s) => s.model);
+  const select = useModelStore((s) => s.select);
+  const mutate = useModelStore((s) => s.mutate);
+
+  const connector = model.connectors.find((c) => c.id === connectorId);
+  if (!connector) return null;
+  const fromName = findVariable(model, connector.from)?.name ?? connector.from;
+  const toName = findVariable(model, connector.to)?.name ?? connector.to;
+
+  const setPolarity = (p: Polarity) => mutate((m) => setConnectorPolarity(m, connectorId, p));
+  const onDelete = () => {
+    mutate((m) => deleteElement(m, connectorId));
+    select(null);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Relation</span>
+        <Button variant="ghost" size="icon" onClick={onDelete} title="Delete">
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
+
+      <p className="text-sm">
+        <span className="font-medium">{fromName}</span> <span className="text-muted-foreground">→</span>{" "}
+        <span className="font-medium">{toName}</span>
+      </p>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Polarity</Label>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className={cn(connector.polarity === "+" && "border-primary bg-primary/10")}
+            onClick={() => setPolarity("+")}
+          >
+            + (increases)
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className={cn(connector.polarity === "-" && "border-primary bg-primary/10")}
+            onClick={() => setPolarity("-")}
+          >
+            − (decreases)
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Whether an increase in {fromName} tends to increase or decrease {toName}. Used to auto-detect Reinforcing
+          (R) vs. Balancing (B) feedback loops.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function VariableInspector() {
   const model = useModelStore((s) => s.model);
   const selectedId = useModelStore((s) => s.selectedId);
   const select = useModelStore((s) => s.select);

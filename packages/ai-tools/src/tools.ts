@@ -1,11 +1,12 @@
-// Tool definitions in Anthropic Messages API tool-use format. Each tool maps 1:1 onto a
-// @vensim-ai/core builder function so AI edits and human (UI) edits go through the same
-// mutation path — see executor.ts.
+// Tool definitions in plain JSON-Schema form. Each maps 1:1 onto a @vensim-ai/core builder
+// (or read) function so AI edits and human (UI) edits go through the same mutation path — see
+// executor.ts. Provider-agnostic on purpose: the web app adapts these into whichever
+// tool-calling shape its OpenAI-compatible client expects (see apps/web/src/lib/openai.ts).
 
-export interface AnthropicTool {
+export interface AiToolDefinition {
   name: string;
   description: string;
-  input_schema: {
+  parameters: {
     type: "object";
     properties: Record<string, unknown>;
     required?: string[];
@@ -17,12 +18,19 @@ const position = {
   y: { type: "number", description: "Diagram y coordinate (optional; auto-placed if omitted)." },
 };
 
-export const VENSIM_AI_TOOLS: AnthropicTool[] = [
+const polarityProperty = {
+  type: "string",
+  enum: ["+", "-"],
+  description:
+    "\"+\" (default) if an increase in `from` tends to increase `to`; \"-\" if it tends to decrease it. Required for correct Reinforcing/Balancing loop detection.",
+};
+
+export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
   {
     name: "add_stock",
     description:
       "Add a Stock (Level) to the model — a variable that accumulates over time via its inflows and outflows.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         name: { type: "string", description: "Unique variable name." },
@@ -38,7 +46,7 @@ export const VENSIM_AI_TOOLS: AnthropicTool[] = [
     name: "add_flow",
     description:
       "Add a Flow (Rate) that moves material into and/or out of stocks. Provide `from` and/or `to` as an existing stock's name or id; omit one side for a cloud source/sink.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         name: { type: "string" },
@@ -55,7 +63,7 @@ export const VENSIM_AI_TOOLS: AnthropicTool[] = [
   {
     name: "add_auxiliary",
     description: "Add an Auxiliary — a computed variable that is a function of other variables.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         name: { type: "string" },
@@ -70,7 +78,7 @@ export const VENSIM_AI_TOOLS: AnthropicTool[] = [
   {
     name: "add_constant",
     description: "Add a Constant — a named parameter with a fixed numeric value (a special case of Auxiliary).",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         name: { type: "string" },
@@ -83,22 +91,35 @@ export const VENSIM_AI_TOOLS: AnthropicTool[] = [
     },
   },
   {
-    name: "add_connector",
+    name: "add_relation",
     description:
-      "Add a causal information-link arrow from one variable to another (used when a variable's equation references another, to keep the diagram legible).",
-    input_schema: {
+      "Add a signed causal relation (a.k.a. connector) from one variable to another — the arrow used both for 'this equation references that variable' links in a stock-flow diagram, and as the only kind of link in a pure causal-loop diagram (variables with no stocks/flows at all). Set `polarity` accurately: it drives automatic Reinforcing/Balancing loop labeling.",
+    parameters: {
       type: "object",
       properties: {
         from: { type: "string", description: "Source variable name or id." },
         to: { type: "string", description: "Target variable name or id." },
+        polarity: polarityProperty,
       },
       required: ["from", "to"],
     },
   },
   {
+    name: "set_relation_polarity",
+    description: "Change the polarity (+/-) of an existing relation/connector.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The relation's id, from add_relation's result or list_model." },
+        polarity: polarityProperty,
+      },
+      required: ["id", "polarity"],
+    },
+  },
+  {
     name: "set_equation",
     description: "Set or replace a variable's equation (or a stock's initial-value equation).",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         id_or_name: { type: "string" },
@@ -111,7 +132,7 @@ export const VENSIM_AI_TOOLS: AnthropicTool[] = [
   {
     name: "rename_variable",
     description: "Rename a variable. All equations referencing its old name are updated automatically.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         id_or_name: { type: "string" },
@@ -123,7 +144,7 @@ export const VENSIM_AI_TOOLS: AnthropicTool[] = [
   {
     name: "move_element",
     description: "Move a variable to a new position on the diagram canvas.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         id_or_name: { type: "string" },
@@ -135,8 +156,8 @@ export const VENSIM_AI_TOOLS: AnthropicTool[] = [
   },
   {
     name: "delete_element",
-    description: "Delete a stock, flow, auxiliary, or connector. Cleans up dangling references.",
-    input_schema: {
+    description: "Delete a stock, flow, auxiliary, or relation. Cleans up dangling references.",
+    parameters: {
       type: "object",
       properties: { id_or_name: { type: "string" } },
       required: ["id_or_name"],
@@ -144,13 +165,19 @@ export const VENSIM_AI_TOOLS: AnthropicTool[] = [
   },
   {
     name: "list_model",
-    description: "Read back the full current model: all stocks, flows, auxiliaries, connectors, and their equations.",
-    input_schema: { type: "object", properties: {} },
+    description: "Read back the full current model: all stocks, flows, auxiliaries, relations, and their equations.",
+    parameters: { type: "object", properties: {} },
   },
   {
     name: "run_simulation",
     description:
       "Run the simulation with the model's current sim spec (start/stop/dt/integration method) and return final values and a downsampled time series for each variable, so results can be inspected before iterating on the model.",
-    input_schema: { type: "object", properties: {} },
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "list_loops",
+    description:
+      "Detect feedback loops formed by the model's relations and flows. Returns each loop's variable names, whether it's Reinforcing (R, an even number of \"-\" relations around the loop) or Balancing (B, an odd number), and its visual rotation (clockwise/counterclockwise) as drawn on the current canvas layout.",
+    parameters: { type: "object", properties: {} },
   },
 ];

@@ -1,12 +1,17 @@
 // Serializes a Model back to Vensim .mdl text.
 //
 // Produces a valid equations section (round-trips through parseMdl) plus a best-effort
-// sketch section using Vensim's `10,` (variable box) and `1,` (arrow) record shapes so the
-// file opens with a laid-out diagram. This is not a byte-exact replica of Vensim's own writer
-// (see project plan) — the goal is a file Vensim can open and simulate, and that this editor
-// round-trips losslessly.
+// sketch section using Vensim's `10,` (variable box), `1,` (arrow), and `12,` (freestanding
+// comment/annotation, not tied to any equation) sketch record shapes so the file opens with a
+// laid-out diagram. This is not a byte-exact replica of Vensim's own writer (see project
+// plan) — the goal is a file Vensim can open and simulate, and that this editor round-trips
+// losslessly. The `12,` comment-record shape in particular is a best-effort reconstruction
+// (Vensim's own "Comment" sketch tool produces this kind of freestanding text box) rather
+// than a verified byte-exact match — if a real Vensim install renders it oddly, the fix is
+// local to `commentRecord` below.
 
-import { allVariables, type Model, type Variable } from "../model/types.js";
+import { detectLoops, type Loop } from "../loops/index.js";
+import { allVariables, findVariable, type Connector, type Model, type Position, type Variable } from "../model/types.js";
 
 function quoteNameIfNeeded(name: string): string {
   return name;
@@ -50,6 +55,29 @@ export function writeMdl(model: Model): string {
   return out;
 }
 
+/** Deterministic +1/-1 from a string, used to alternate which side a relation's curve bends
+ * toward so crossing arrows fan out instead of all bowing the same way. */
+function hashSign(s: string): 1 | -1 {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h % 2 === 0 ? 1 : -1;
+}
+
+/** A midpoint offset perpendicular to the straight line from `from` to `to`, turning the
+ * Vensim arrow's polyline into a visible curve (matching this editor's own bezier-curved
+ * relation edges on the canvas) instead of a straight line running through other shapes. */
+function curveWaypoint(from: Position, to: Position, seed: string): Position {
+  const mx = (from.x + to.x) / 2;
+  const my = (from.y + to.y) / 2;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = -dy / len;
+  const py = dx / len;
+  const bend = Math.min(60, len * 0.25) * hashSign(seed);
+  return { x: mx + px * bend, y: my + py * bend };
+}
+
 function writeSketch(model: Model): string {
   const vars = allVariables(model);
   const idIndex = new Map<string, number>();
@@ -82,11 +110,40 @@ function writeSketch(model: Model): string {
   }
   for (const c of model.connectors) {
     arrowId += 1;
-    out += `1,${arrowId},${idIndex.get(c.from)},${idIndex.get(c.to)},0,0,0,0,0,64,0,-1--1--1,,1|(0,0)|\n`;
+    out += connectorArrowRecord(model, c, arrowId, idIndex);
+  }
+
+  let commentId = arrowId;
+  for (const loop of detectLoops(model)) {
+    commentId += 1;
+    out += commentRecord(commentId, loopLabel(loop), loop.centroid);
   }
 
   out += "///---\\\\\\\n";
   return out;
+}
+
+function connectorArrowRecord(model: Model, c: Connector, arrowId: number, idIndex: Map<string, number>): string {
+  const fromPos = findVariable(model, c.from)?.pos;
+  const toPos = findVariable(model, c.to)?.pos;
+  const bend = fromPos && toPos ? curveWaypoint(fromPos, toPos, c.id) : { x: 0, y: 0 };
+  // Trailing field before the polarity is Vensim's own link-polarity code in real files
+  // (unverified exact mapping here — see file header); the polarity sign is instead written
+  // out explicitly as a `+`/`-` comment box below so it's visible regardless.
+  return `1,${arrowId},${idIndex.get(c.from)},${idIndex.get(c.to)},0,0,0,0,0,64,0,-1--1--1,,1|(${Math.round(bend.x)},${Math.round(bend.y)})|\n`;
+}
+
+/** R/B + a rotation glyph matching this loop's on-screen direction, e.g. "R ↻". */
+function loopLabel(loop: Loop): string {
+  const glyph = loop.direction === "clockwise" ? "↻" : "↺";
+  return `${loop.polarity} ${glyph}`;
+}
+
+/** A freestanding text annotation (Vensim's own "Comment" sketch tool produces this — see
+ * file header for the confidence caveat), not tied to any variable's equation, so it's safe
+ * to place text here that doesn't correspond to a declared model variable. */
+function commentRecord(id: number, text: string, pos: Position): string {
+  return `12,${id},48,${Math.round(pos.x)},${Math.round(pos.y)},${Math.max(24, text.length * 8)},16,0,3,0,0,-1,0,0,0,3,0,0,0,0,0,0\n${text}\n`;
 }
 
 function shapeTypeFor(v: Variable): number {

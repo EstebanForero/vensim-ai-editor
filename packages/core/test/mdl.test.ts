@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { addAuxiliary, addFlow, addStock } from "../src/model/builder/index.js";
+import { addAuxiliary, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
 import { createEmptyModel } from "../src/model/types.js";
 import { parseMdl } from "../src/mdl/parser.js";
 import { writeMdl } from "../src/mdl/writer.js";
@@ -101,5 +101,30 @@ describe("mdl codec", () => {
     expect(again.stocks.length).toBe(reparsed.stocks.length);
     expect(again.flows.length).toBe(reparsed.flows.length);
     expect(again.auxiliaries.length).toBe(reparsed.auxiliaries.length);
+  });
+
+  test("writes R/B loop comment annotations and curved relation arrows for native Vensim", () => {
+    const model = createEmptyModel("LoopExport");
+    const stock = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 } });
+    const births = addFlow(model, { name: "Births", equation: "Population * Birth Rate", to: stock.id, pos: { x: 150, y: 100 } });
+    addAuxiliary(model, { name: "Birth Rate", equation: "0.02", isConstant: true, pos: { x: 0, y: 200 } });
+    addConnector(model, { from: "Population", to: births.id });
+    addConnector(model, { from: "Birth Rate", to: births.id });
+
+    const mdlText = writeMdl(model);
+
+    // Loop label (R + rotation glyph) shows up as a freestanding `12,` comment record.
+    expect(mdlText).toMatch(/^12,\d+,48,-?\d+,-?\d+,\d+,16,/m);
+    expect(mdlText.includes("R ↺") || mdlText.includes("R ↻")).toBe(true);
+
+    // Connector arrows carry a non-origin bend waypoint instead of the flat "(0,0)" flows use.
+    const connectorLines = mdlText.split("\n").filter((l) => l.startsWith("1,") && l.includes(",64,0,"));
+    expect(connectorLines.length).toBeGreaterThan(0);
+    for (const line of connectorLines) expect(line).not.toContain("|(0,0)|");
+
+    // The file must still parse cleanly — comments/curve points don't confuse the codec.
+    const reparsed = parseMdl(mdlText);
+    expect(reparsed.stocks).toHaveLength(1);
+    expect(reparsed.connectors.length).toBeGreaterThan(0);
   });
 });

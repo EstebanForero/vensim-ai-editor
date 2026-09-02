@@ -51,12 +51,21 @@ export interface Auxiliary extends BaseVariable {
   isConstant: boolean;
 }
 
-/** A causal information link (Vensim's thin arrow), distinct from a flow pipe. */
+export type Polarity = "+" | "-";
+
+/**
+ * A causal relation (Vensim's thin information-link arrow), distinct from a flow pipe. Also
+ * the building block of a pure causal-loop diagram, where variables are connected only by
+ * signed relations with no stocks/flows at all. `polarity` records whether an increase in
+ * `from` tends to increase ("+") or decrease ("-") `to` — used by loop detection to classify
+ * a cycle as Reinforcing or Balancing.
+ */
 export interface Connector {
   id: string;
   kind: "connector";
   from: string;
   to: string;
+  polarity: Polarity;
 }
 
 export type Variable = Stock | Flow | Auxiliary;

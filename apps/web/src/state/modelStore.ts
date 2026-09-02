@@ -7,6 +7,7 @@ import {
   type ValidationIssue,
 } from "@vensim-ai/core";
 import { create } from "zustand";
+import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "@/lib/openai";
 
 export interface ChatMessage {
   id: string;
@@ -14,14 +15,31 @@ export interface ChatMessage {
   text: string;
 }
 
+function readLocalStorage(key: string, fallback: string): string {
+  if (typeof localStorage === "undefined") return fallback;
+  return localStorage.getItem(key) ?? fallback;
+}
+function writeLocalStorage(key: string, value: string): void {
+  if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
+}
+
 interface ModelStoreState {
   model: Model;
   selectedId: string | null;
   simResult: SimResult | null;
   issues: ValidationIssue[];
-  apiKey: string;
   chatMessages: ChatMessage[];
   isAgentRunning: boolean;
+
+  /** OpenAI-compatible connection settings (all stored only in this browser's localStorage). */
+  apiKey: string;
+  baseUrl: string;
+  aiModel: string;
+
+  showLoops: boolean;
+  /** When true, clicking two nodes in sequence on the canvas adds a relation between them. */
+  relationMode: boolean;
+  pendingRelationFrom: string | null;
 
   setModel: (model: Model) => void;
   /** Applies an in-place mutation (a @vensim-ai/core builder call) and commits a fresh snapshot. */
@@ -29,9 +47,14 @@ interface ModelStoreState {
   select: (id: string | null) => void;
   runSimulation: () => void;
   setApiKey: (key: string) => void;
+  setBaseUrl: (url: string) => void;
+  setAiModel: (name: string) => void;
   addChatMessage: (msg: ChatMessage) => void;
   setAgentRunning: (running: boolean) => void;
   clearChat: () => void;
+  toggleShowLoops: () => void;
+  toggleRelationMode: () => void;
+  setPendingRelationFrom: (id: string | null) => void;
 }
 
 function commit(model: Model) {
@@ -43,9 +66,16 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   selectedId: null,
   simResult: null,
   issues: [],
-  apiKey: typeof localStorage !== "undefined" ? (localStorage.getItem("vensim-ai:apiKey") ?? "") : "",
   chatMessages: [],
   isAgentRunning: false,
+
+  apiKey: readLocalStorage("vensim-ai:apiKey", ""),
+  baseUrl: readLocalStorage("vensim-ai:baseUrl", DEFAULT_BASE_URL),
+  aiModel: readLocalStorage("vensim-ai:model", DEFAULT_MODEL),
+
+  showLoops: true,
+  relationMode: false,
+  pendingRelationFrom: null,
 
   setModel: (model) => set({ ...commit(model), selectedId: null, simResult: null }),
 
@@ -68,11 +98,23 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   },
 
   setApiKey: (key) => {
-    if (typeof localStorage !== "undefined") localStorage.setItem("vensim-ai:apiKey", key);
+    writeLocalStorage("vensim-ai:apiKey", key);
     set({ apiKey: key });
+  },
+  setBaseUrl: (url) => {
+    writeLocalStorage("vensim-ai:baseUrl", url);
+    set({ baseUrl: url });
+  },
+  setAiModel: (name) => {
+    writeLocalStorage("vensim-ai:model", name);
+    set({ aiModel: name });
   },
 
   addChatMessage: (msg) => set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
   setAgentRunning: (running) => set({ isAgentRunning: running }),
   clearChat: () => set({ chatMessages: [] }),
+
+  toggleShowLoops: () => set((s) => ({ showLoops: !s.showLoops })),
+  toggleRelationMode: () => set((s) => ({ relationMode: !s.relationMode, pendingRelationFrom: null })),
+  setPendingRelationFrom: (id) => set({ pendingRelationFrom: id }),
 }));
