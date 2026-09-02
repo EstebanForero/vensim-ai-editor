@@ -1,0 +1,17 @@
+{
+  "name": "vensim-ai-editor",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "bun --cwd apps/web run dev",
+    "build": "bun --cwd apps/web run build",
+    "test": "bun test",
+    "typecheck": "bun run --cwd packages/core typecheck && bun run --cwd packages/ai-tools typecheck && bun run --cwd apps/web typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
