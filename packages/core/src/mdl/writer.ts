@@ -118,6 +118,10 @@ function writeSketch(model: Model): string {
     commentId += 1;
     out += commentRecord(commentId, loopLabel(loop), loop.centroid);
   }
+  for (const comment of model.comments) {
+    commentId += 1;
+    out += commentRecord(commentId, comment.text, comment.pos, comment.size);
+  }
 
   out += "///---\\\\\\\n";
   return out;
@@ -126,7 +130,7 @@ function writeSketch(model: Model): string {
 function connectorArrowRecord(model: Model, c: Connector, arrowId: number, idIndex: Map<string, number>): string {
   const fromPos = findVariable(model, c.from)?.pos;
   const toPos = findVariable(model, c.to)?.pos;
-  const bend = fromPos && toPos ? curveWaypoint(fromPos, toPos, c.id) : { x: 0, y: 0 };
+  const bend = c.bend ?? (fromPos && toPos ? curveWaypoint(fromPos, toPos, c.id) : { x: 0, y: 0 });
   // Trailing field before the polarity is Vensim's own link-polarity code in real files
   // (unverified exact mapping here — see file header); the polarity sign is instead written
   // out explicitly as a `+`/`-` comment box below so it's visible regardless.
@@ -142,8 +146,10 @@ function loopLabel(loop: Loop): string {
 /** A freestanding text annotation (Vensim's own "Comment" sketch tool produces this — see
  * file header for the confidence caveat), not tied to any variable's equation, so it's safe
  * to place text here that doesn't correspond to a declared model variable. */
-function commentRecord(id: number, text: string, pos: Position): string {
-  return `12,${id},48,${Math.round(pos.x)},${Math.round(pos.y)},${Math.max(24, text.length * 8)},16,0,3,0,0,-1,0,0,0,3,0,0,0,0,0,0\n${text}\n`;
+function commentRecord(id: number, text: string, pos: Position, size?: { width: number; height: number }): string {
+  const w = size?.width ?? Math.max(24, text.length * 8);
+  const h = size?.height ?? 16;
+  return `12,${id},48,${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(w)},${Math.round(h)},0,3,0,0,-1,0,0,0,3,0,0,0,0,0,0\n${text}\n`;
 }
 
 function shapeTypeFor(v: Variable): number {

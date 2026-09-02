@@ -40,6 +40,10 @@ interface ModelStoreState {
   /** When true, clicking two nodes in sequence on the canvas adds a relation between them. */
   relationMode: boolean;
   pendingRelationFrom: string | null;
+  /** id of the node currently showing an inline rename/edit field, set by double-clicking it
+   * on the canvas (via React Flow's own onNodeDoubleClick, not a raw DOM dblclick — that
+   * reliably coexists with node dragging, where a plain DOM listener would not). */
+  editingId: string | null;
 
   setModel: (model: Model) => void;
   /** Applies an in-place mutation (a @vensim-ai/core builder call) and commits a fresh snapshot. */
@@ -55,6 +59,7 @@ interface ModelStoreState {
   toggleShowLoops: () => void;
   toggleRelationMode: () => void;
   setPendingRelationFrom: (id: string | null) => void;
+  setEditingId: (id: string | null) => void;
 }
 
 function commit(model: Model) {
@@ -76,6 +81,7 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   showLoops: true,
   relationMode: false,
   pendingRelationFrom: null,
+  editingId: null,
 
   setModel: (model) => set({ ...commit(model), selectedId: null, simResult: null }),
 
@@ -117,4 +123,5 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   toggleShowLoops: () => set((s) => ({ showLoops: !s.showLoops })),
   toggleRelationMode: () => set((s) => ({ relationMode: !s.relationMode, pendingRelationFrom: null })),
   setPendingRelationFrom: (id) => set({ pendingRelationFrom: id }),
+  setEditingId: (id) => set({ editingId: id }),
 }));

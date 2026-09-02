@@ -66,10 +66,23 @@ export interface Connector {
   from: string;
   to: string;
   polarity: Polarity;
+  /** Manual curve control point (absolute diagram coordinates), or null to auto-curve based
+   * on the current from/to positions. Set by dragging the relation's curve handle on the canvas. */
+  bend: Position | null;
+}
+
+/** A freestanding text annotation, not tied to any variable's equation — Vensim's own
+ * "Comment" sketch tool. */
+export interface Comment {
+  id: string;
+  kind: "comment";
+  text: string;
+  pos: Position;
+  size: Size;
 }
 
 export type Variable = Stock | Flow | Auxiliary;
-export type ModelElement = Variable | Connector;
+export type ModelElement = Variable | Connector | Comment;
 
 export type IntegrationMethod = "euler" | "rk4";
 
@@ -87,6 +100,7 @@ export interface Model {
   flows: Flow[];
   auxiliaries: Auxiliary[];
   connectors: Connector[];
+  comments: Comment[];
   simSpec: SimSpec;
   /** Raw equation text for constructs the .mdl codec doesn't model yet (macros, subscripted vars, etc.), preserved verbatim on write. */
   unsupportedRaw: string[];
@@ -99,6 +113,7 @@ export function createEmptyModel(name = "New Model"): Model {
     flows: [],
     auxiliaries: [],
     connectors: [],
+    comments: [],
     simSpec: {
       startTime: 0,
       stopTime: 100,

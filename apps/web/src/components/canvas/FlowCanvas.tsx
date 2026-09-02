@@ -1,4 +1,4 @@
-import { addConnector, detectLoops, moveElement, type Loop } from "@vensim-ai/core";
+import { addConnector, detectLoops, moveComment, moveElement, type Loop } from "@vensim-ai/core";
 import {
   Background,
   Controls,
@@ -17,9 +17,11 @@ import {
 import { useEffect, useMemo } from "react";
 import { useModelStore } from "@/state/modelStore";
 import { buildGraph } from "./graph";
-import { AuxNode, FlowNode, LoopNode, StockNode } from "./nodes";
+import { AuxNode, CommentNode, FlowNode, LoopNode, StockNode } from "./nodes";
+import { RelationEdge } from "./RelationEdge";
 
-const nodeTypes = { stock: StockNode, flow: FlowNode, aux: AuxNode, loop: LoopNode };
+const nodeTypes = { stock: StockNode, flow: FlowNode, aux: AuxNode, loop: LoopNode, comment: CommentNode };
+const edgeTypes = { relation: RelationEdge };
 
 export function FlowCanvas() {
   const model = useModelStore((s) => s.model);
@@ -30,6 +32,8 @@ export function FlowCanvas() {
   const relationMode = useModelStore((s) => s.relationMode);
   const pendingRelationFrom = useModelStore((s) => s.pendingRelationFrom);
   const setPendingRelationFrom = useModelStore((s) => s.setPendingRelationFrom);
+  const editingId = useModelStore((s) => s.editingId);
+  const setEditingId = useModelStore((s) => s.setEditingId);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -37,15 +41,21 @@ export function FlowCanvas() {
   const loops: Loop[] = useMemo(() => (showLoops ? detectLoops(model) : []), [model, showLoops]);
 
   useEffect(() => {
-    const { nodes: n, edges: e } = buildGraph(model, selectedId, loops);
+    const { nodes: n, edges: e } = buildGraph(model, selectedId, loops, editingId);
     setNodes(n);
     setEdges(e);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, selectedId, loops]);
+  }, [model, selectedId, loops, editingId]);
+
+  const onNodeDoubleClick: NodeMouseHandler = (_evt, node) => {
+    if (node.type === "stock" || node.type === "flow" || node.type === "aux" || node.type === "comment") {
+      setEditingId(node.id);
+    }
+  };
 
   const onNodeClick: NodeMouseHandler = (_evt, node) => {
     if (node.type === "loop") return;
-    if (relationMode) {
+    if (relationMode && node.type !== "comment") {
       if (!pendingRelationFrom) {
         setPendingRelationFrom(node.id);
       } else if (pendingRelationFrom === node.id) {
@@ -74,6 +84,10 @@ export function FlowCanvas() {
 
   const onNodeDragStop: OnNodeDrag<Node> = (_evt, node) => {
     if (node.type === "loop") return;
+    if (node.type === "comment") {
+      mutate((m) => moveComment(m, node.id, { x: node.position.x, y: node.position.y }));
+      return;
+    }
     mutate((m) => moveElement(m, node.id, { x: node.position.x, y: node.position.y }));
   };
 
@@ -94,11 +108,14 @@ export function FlowCanvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onEdgeClick={onEdgeClick}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
         onPaneClick={onPaneClick}
+        selectNodesOnDrag={false}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         minZoom={0.2}
       >

@@ -1,6 +1,6 @@
 import { ModelError } from "../errors.js";
 import { nextId } from "../ids.js";
-import type { Connector, Model, Polarity } from "../types.js";
+import type { Connector, Model, Polarity, Position } from "../types.js";
 import { resolveVariableRef } from "./helpers.js";
 
 export interface AddConnectorInput {
@@ -28,6 +28,7 @@ export function addConnector(model: Model, input: AddConnectorInput): Connector 
     from: from.id,
     to: to.id,
     polarity: input.polarity ?? "+",
+    bend: null,
   };
   model.connectors.push(connector);
   return connector;
@@ -37,5 +38,13 @@ export function setConnectorPolarity(model: Model, connectorId: string, polarity
   const c = model.connectors.find((x) => x.id === connectorId);
   if (!c) throw new ModelError(`No relation found with id "${connectorId}".`);
   c.polarity = polarity;
+  return c;
+}
+
+/** Sets (or, with `null`, clears back to auto-curve) the manual curve-handle position for a relation. */
+export function setConnectorBend(model: Model, connectorId: string, bend: Position | null): Connector {
+  const c = model.connectors.find((x) => x.id === connectorId);
+  if (!c) throw new ModelError(`No relation found with id "${connectorId}".`);
+  c.bend = bend;
   return c;
 }

@@ -32,6 +32,8 @@
   --connector-color: oklch(0.7 0.15 40);
   --loop-r-color: oklch(0.55 0.22 25);
   --loop-b-color: oklch(0.5 0.15 240);
+  --comment-bg: oklch(0.96 0.05 95);
+  --comment-border: oklch(0.7 0.1 95);
 }
 
 .dark {
@@ -62,6 +64,8 @@
   --connector-color: oklch(0.75 0.15 40);
   --loop-r-color: oklch(0.68 0.2 25);
   --loop-b-color: oklch(0.72 0.14 240);
+  --comment-bg: oklch(0.32 0.05 95);
+  --comment-border: oklch(0.55 0.1 95);
 }
 
 @theme inline {

@@ -1,7 +1,12 @@
 import { allVariables, type Loop, type Model } from "@vensim-ai/core";
 import type { Edge, Node } from "@xyflow/react";
 
-export function buildGraph(model: Model, selectedId: string | null, loops: Loop[]): { nodes: Node[]; edges: Edge[] } {
+export function buildGraph(
+  model: Model,
+  selectedId: string | null,
+  loops: Loop[],
+  editingId: string | null = null,
+): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
@@ -10,7 +15,7 @@ export function buildGraph(model: Model, selectedId: string | null, loops: Loop[
       id: s.id,
       type: "stock",
       position: s.pos,
-      data: { variable: s, selected: s.id === selectedId },
+      data: { variable: s, selected: s.id === selectedId, editing: s.id === editingId },
     });
   }
   for (const f of model.flows) {
@@ -18,7 +23,7 @@ export function buildGraph(model: Model, selectedId: string | null, loops: Loop[
       id: f.id,
       type: "flow",
       position: f.pos,
-      data: { variable: f, selected: f.id === selectedId },
+      data: { variable: f, selected: f.id === selectedId, editing: f.id === editingId },
     });
     if (f.from) {
       edges.push({
@@ -46,7 +51,7 @@ export function buildGraph(model: Model, selectedId: string | null, loops: Loop[
       id: a.id,
       type: "aux",
       position: a.pos,
-      data: { variable: a, selected: a.id === selectedId },
+      data: { variable: a, selected: a.id === selectedId, editing: a.id === editingId },
     });
   }
   for (const c of model.connectors) {
@@ -55,10 +60,7 @@ export function buildGraph(model: Model, selectedId: string | null, loops: Loop[
       id: c.id,
       source: c.from,
       target: c.to,
-      type: "bezier",
-      label: c.polarity,
-      labelStyle: { fill: "var(--connector-color)", fontWeight: 700, fontSize: 13 },
-      labelBgStyle: { fill: "var(--background)" },
+      type: "relation",
       style: {
         stroke: "var(--connector-color)",
         strokeWidth: isSelected ? 2.5 : 1,
@@ -66,6 +68,16 @@ export function buildGraph(model: Model, selectedId: string | null, loops: Loop[
       },
       markerEnd: { type: "arrow" as const, color: "var(--connector-color)" },
       data: { connector: c },
+    });
+  }
+
+  for (const c of model.comments) {
+    nodes.push({
+      id: c.id,
+      type: "comment",
+      position: c.pos,
+      style: { width: c.size.width, height: c.size.height },
+      data: { comment: c, selected: c.id === selectedId, editing: c.id === editingId },
     });
   }
 

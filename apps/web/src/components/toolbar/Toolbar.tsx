@@ -1,5 +1,5 @@
-import { addAuxiliary, addConstant, addFlow, addStock } from "@vensim-ai/core";
-import { Circle, Droplet, FolderOpen, GitBranch, RotateCw, Save, Square, Waves } from "lucide-react";
+import { addAuxiliary, addComment, addConstant, addFlow, addStock } from "@vensim-ai/core";
+import { Circle, Droplet, FolderOpen, GitBranch, MessageSquarePlus, RotateCw, Save, Square, Waves } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +50,11 @@ export function Toolbar() {
       const v = addConstant(m, { name: uniqueName(m, "Constant"), value: 1, pos: nextPos() });
       select(v.id);
     });
+  const onAddComment = () =>
+    addNamed((m) => {
+      const c = addComment(m, { text: "Comment", pos: nextPos() });
+      select(c.id);
+    });
 
   return (
     <div className="flex items-center gap-2 border-b bg-card px-3 py-2">
@@ -71,6 +76,9 @@ export function Toolbar() {
       </Button>
       <Button size="sm" variant="outline" onClick={onAddConst} title="Add Constant">
         <Circle className="size-4" /> Constant
+      </Button>
+      <Button size="sm" variant="outline" onClick={onAddComment} title="Add a freestanding text comment/annotation">
+        <MessageSquarePlus className="size-4" /> Comment
       </Button>
       <Button
         size="sm"
