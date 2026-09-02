@@ -1,21 +1,7 @@
 import type { Expr } from "./ast.js";
+import { getFunction } from "./functions.js";
 
 export type EvalEnv = Record<string, number>;
-
-const FUNCTIONS: Record<string, (args: number[]) => number> = {
-  MIN: (a) => Math.min(...a),
-  MAX: (a) => Math.max(...a),
-  ABS: (a) => Math.abs(a[0]!),
-  EXP: (a) => Math.exp(a[0]!),
-  LN: (a) => Math.log(a[0]!),
-  LOG: (a) => Math.log10(a[0]!),
-  SQRT: (a) => Math.sqrt(a[0]!),
-  INTEGER: (a) => Math.trunc(a[0]!),
-  ZIDZ: (a) => (a[1] === 0 ? 0 : a[0]! / a[1]!),
-  XIDZ: (a) => (a[1] === 0 ? a[2]! : a[0]! / a[1]!),
-  IF_THEN_ELSE: (a) => (a[0] !== 0 ? a[1]! : a[2]!),
-  STEP: (a) => (a.length > 1 ? a[1]! : 0), // height, [time] — resolved specially with Time in env
-};
 
 export function evaluate(e: Expr, env: EvalEnv): number {
   switch (e.type) {
@@ -67,21 +53,12 @@ export function evaluate(e: Expr, env: EvalEnv): number {
       }
     }
     case "call": {
-      if (e.name === "STEP") {
-        const height = evaluate(e.args[0]!, env);
-        const stepTime = evaluate(e.args[1]!, env);
-        const time = env["Time"] ?? 0;
-        return time >= stepTime ? height : 0;
-      }
-      if (e.name === "PULSE") {
-        const start = evaluate(e.args[0]!, env);
-        const duration = evaluate(e.args[1]!, env);
-        const time = env["Time"] ?? 0;
-        return time >= start && time < start + duration ? 1 : 0;
-      }
-      const fn = FUNCTIONS[e.name.toUpperCase()];
+      const fn = getFunction(e.name);
       if (!fn) throw new Error(`Unsupported function "${e.name}" in equation.`);
-      return fn(e.args.map((a) => evaluate(a, env)));
+      return fn(
+        e.args.map((a) => evaluate(a, env)),
+        env,
+      );
     }
   }
 }

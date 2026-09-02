@@ -1,5 +1,6 @@
 export * from "./model/types.js";
 export * from "./model/builder/index.js";
+export * from "./model/derived.js";
 export * from "./model/validate.js";
 export * from "./model/errors.js";
 export * from "./mdl/expr/index.js";

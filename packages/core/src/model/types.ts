@@ -44,11 +44,16 @@ export interface Flow extends BaseVariable {
   to: string | null;
 }
 
-/** An Auxiliary or Constant — any variable that isn't a stock or flow. Constants are auxiliaries with a literal/param equation. */
+/**
+ * A computed variable that isn't a stock or flow. Vensim has no separate "Constant" element
+ * kind on the diagram — a constant is just an Auxiliary whose equation happens to have no
+ * dependencies (a literal, or an expression of only literals). See
+ * `isConstantAuxiliary` in `./derived.ts` to check that, rather than storing it as a flag
+ * that could drift out of sync with the equation.
+ */
 export interface Auxiliary extends BaseVariable {
   kind: "auxiliary";
   equation: string;
-  isConstant: boolean;
 }
 
 export type Polarity = "+" | "-";

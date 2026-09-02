@@ -7,7 +7,6 @@ const DEFAULT_SIZE: Size = { width: 90, height: 45 };
 export interface AddAuxiliaryInput {
   name: string;
   equation?: string;
-  isConstant?: boolean;
   units?: string;
   comment?: string;
   pos?: Position;
@@ -21,7 +20,6 @@ export function addAuxiliary(model: Model, input: AddAuxiliaryInput): Auxiliary 
     id: nextId("aux"),
     name: input.name,
     equation: input.equation ?? "0",
-    isConstant: input.isConstant ?? /^-?\d+(\.\d+)?$/.test(input.equation ?? "0"),
     units: input.units ?? "",
     comment: input.comment ?? "",
     pos: input.pos ?? { x: 0, y: 0 },
@@ -40,8 +38,9 @@ export interface AddConstantInput {
   size?: Size;
 }
 
-/** Convenience wrapper: a "constant" is just an auxiliary flagged as such with a numeric equation. */
+/** Ergonomic convenience for creating an auxiliary with a plain numeric equation — no
+ * separate "Constant" element kind is stored; see isConstantAuxiliary in ../derived.ts. */
 export function addConstant(model: Model, input: AddConstantInput): Auxiliary {
   const { value, ...rest } = input;
-  return addAuxiliary(model, { ...rest, equation: String(value), isConstant: true });
+  return addAuxiliary(model, { ...rest, equation: String(value) });
 }

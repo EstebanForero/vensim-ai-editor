@@ -9,8 +9,8 @@ describe("builder", () => {
     const pop = addStock(model, { name: "Population", initialEquation: "100" });
     const births = addFlow(model, { name: "Births", equation: "Population*Birth Rate", to: pop.id });
     addFlow(model, { name: "Deaths", equation: "Population*Death Rate", from: pop.id });
-    addAuxiliary(model, { name: "Birth Rate", equation: "0.02", isConstant: true });
-    addAuxiliary(model, { name: "Death Rate", equation: "0.01", isConstant: true });
+    addAuxiliary(model, { name: "Birth Rate", equation: "0.02" });
+    addAuxiliary(model, { name: "Death Rate", equation: "0.01" });
     addConnector(model, { from: "Birth Rate", to: births.id });
 
     expect(model.stocks[0]!.inflows).toEqual([births.id]);

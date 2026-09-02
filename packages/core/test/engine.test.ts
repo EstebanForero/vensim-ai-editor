@@ -8,7 +8,7 @@ describe("simulate", () => {
     const model = createEmptyModel();
     const pop = addStock(model, { name: "Population", initialEquation: "100" });
     addFlow(model, { name: "Births", equation: "Population * Growth Rate", to: pop.id });
-    addAuxiliary(model, { name: "Growth Rate", equation: "0.1", isConstant: true });
+    addAuxiliary(model, { name: "Growth Rate", equation: "0.1" });
     model.simSpec = { startTime: 0, stopTime: 10, dt: 0.01, integrationMethod: "rk4", timeUnits: "Year" };
 
     const result = simulate(model);

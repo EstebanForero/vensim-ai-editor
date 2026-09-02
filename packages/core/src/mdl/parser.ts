@@ -8,7 +8,7 @@
 
 import { addAuxiliary, addConnector, addFlow, addStock } from "../model/builder/index.js";
 import { createEmptyModel, findVariableByName, type Model } from "../model/types.js";
-import { collectVarNames, exprToString, tryParseExpr, type Expr } from "./expr/index.js";
+import { exprToString, tryParseExpr, type Expr } from "./expr/index.js";
 import { splitTopLevelCommas } from "./util.js";
 
 const SKETCH_MARKER = /\\\\\\---\/\/\/\s*Sketch information/i;
@@ -151,14 +151,11 @@ export function parseMdl(text: string): Model {
 
   for (const r of plainRecords) {
     if (consumedAsFlow.has(r.name)) continue;
-    const parsed = tryParseExpr(r.equation, knownNames);
-    const isConstant = parsed?.type === "num" || (parsed?.type === "var" && collectVarNames(parsed).size === 0);
     addAuxiliary(model, {
       name: r.name,
       equation: r.equation,
       units: r.units,
       comment: r.comment,
-      isConstant: !!isConstant,
     });
   }
 

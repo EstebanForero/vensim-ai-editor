@@ -1,5 +1,5 @@
-import { addAuxiliary, addComment, addConstant, addFlow, addStock } from "@vensim-ai/core";
-import { Circle, Droplet, FolderOpen, GitBranch, MessageSquarePlus, RotateCw, Save, Square, Waves } from "lucide-react";
+import { addAuxiliary, addComment, addFlow, addStock } from "@vensim-ai/core";
+import { Droplet, FolderOpen, GitBranch, MessageSquarePlus, RotateCw, Save, Square, Waves } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,12 +42,9 @@ export function Toolbar() {
     });
   const onAddAux = () =>
     addNamed((m) => {
-      const v = addAuxiliary(m, { name: uniqueName(m, "Auxiliary"), equation: "0", pos: nextPos() });
-      select(v.id);
-    });
-  const onAddConst = () =>
-    addNamed((m) => {
-      const v = addConstant(m, { name: uniqueName(m, "Constant"), value: 1, pos: nextPos() });
+      // A fresh auxiliary defaults to a plain number, which already reads as a constant per
+      // isConstantAuxiliary — there's no separate "Constant" element to pick, matching Vensim.
+      const v = addAuxiliary(m, { name: uniqueName(m, "Variable"), equation: "1", pos: nextPos() });
       select(v.id);
     });
   const onAddComment = () =>
@@ -71,11 +68,13 @@ export function Toolbar() {
       <Button size="sm" variant="outline" onClick={onAddFlow} title="Add Flow">
         <Droplet className="size-4" /> Flow
       </Button>
-      <Button size="sm" variant="outline" onClick={onAddAux} title="Add Auxiliary">
-        <Waves className="size-4" /> Auxiliary
-      </Button>
-      <Button size="sm" variant="outline" onClick={onAddConst} title="Add Constant">
-        <Circle className="size-4" /> Constant
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onAddAux}
+        title="Add a variable — a plain number reads as a constant, an equation referencing others makes it computed, just like Vensim"
+      >
+        <Waves className="size-4" /> Variable
       </Button>
       <Button size="sm" variant="outline" onClick={onAddComment} title="Add a freestanding text comment/annotation">
         <MessageSquarePlus className="size-4" /> Comment

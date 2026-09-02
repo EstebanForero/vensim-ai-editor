@@ -13,9 +13,10 @@ or an AI can both edit through the same structured model API — in the spirit o
   `add_auxiliary`, `add_constant`, `add_relation`, `set_relation_polarity`, `set_equation`,
   `rename_variable`, `move_element`, `delete_element`, `list_model`, `run_simulation`,
   `list_loops`) and an executor that applies them to a `core` model.
-- `apps/web` — the editor itself: React + React Flow diagram canvas, an equation inspector,
-  auto-detected feedback-loop badges, a simulation chart panel, and an AI chat panel that
-  drives the model via `ai-tools` over any OpenAI-compatible chat-completions API.
+- `apps/web` — the editor itself: React + React Flow diagram canvas with inline rename,
+  manually-curvable relations, comment annotations, auto-detected feedback-loop badges, a
+  simulation chart panel, and an AI chat panel that drives the model via `ai-tools` over any
+  OpenAI-compatible chat-completions API.
 
 ## Getting started
 
@@ -78,3 +79,21 @@ The exact sketch-record fields for both are a best-effort reconstruction (see th
 the top of `packages/core/src/mdl/writer.ts`) rather than a verified byte-exact match against
 Vensim's own writer — if something looks off when you open an exported file in real Vensim,
 that's the file to fix.
+
+## No separate "Constant" element
+
+Like Vensim, there's no distinct Constant kind on the diagram or in the toolbar — a "Variable"
+(an Auxiliary) reads as a constant whenever its equation has no dependencies (a bare number, or
+an expression of only literals/functions), computed on demand by `isConstantAuxiliary` in
+`packages/core/src/model/derived.ts` rather than stored as a flag that equation edits could
+leave stale. `add_constant` still exists as an ergonomic tool/builder shortcut for setting a
+plain numeric equation in one call — it doesn't create a different kind of element.
+
+## Extending the equation language
+
+Vensim functions the equation language doesn't cover yet (or a project-specific function) are
+added via `registerFunction` in `packages/core/src/mdl/expr/functions.ts` — the evaluator has
+no per-function special cases to touch; every call, including time-aware ones like `STEP` and
+`PULSE`, is a lookup into this registry. It's a code-level extension point for embedders, not
+something wired to AI or other runtime input: a function's implementation is an arbitrary JS
+closure, so only register ones you wrote yourself.

@@ -88,7 +88,7 @@ describe("mdl codec", () => {
     const stock = addStock(model, { name: "Inventory", initialEquation: "50", units: "Widgets" });
     addFlow(model, { name: "Production", equation: "10", to: stock.id, units: "Widgets/Month" });
     addFlow(model, { name: "Shipping", equation: "Inventory*0.1", from: stock.id, units: "Widgets/Month" });
-    addAuxiliary(model, { name: "Target", equation: "200", isConstant: true });
+    addAuxiliary(model, { name: "Target", equation: "200" });
 
     const mdlText = writeMdl(model);
     const reparsed = parseMdl(mdlText);
@@ -107,7 +107,7 @@ describe("mdl codec", () => {
     const model = createEmptyModel("LoopExport");
     const stock = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 } });
     const births = addFlow(model, { name: "Births", equation: "Population * Birth Rate", to: stock.id, pos: { x: 150, y: 100 } });
-    addAuxiliary(model, { name: "Birth Rate", equation: "0.02", isConstant: true, pos: { x: 0, y: 200 } });
+    addAuxiliary(model, { name: "Birth Rate", equation: "0.02", pos: { x: 0, y: 200 } });
     addConnector(model, { from: "Population", to: births.id });
     addConnector(model, { from: "Birth Rate", to: births.id });
 

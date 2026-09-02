@@ -9,6 +9,7 @@ import {
   detectLoops,
   findVariable,
   findVariableByName,
+  isConstantAuxiliary,
   ModelError,
   moveElement,
   renameVariable,
@@ -36,7 +37,13 @@ function summarizeModel(model: Model) {
     simSpec: model.simSpec,
     stocks: model.stocks.map((s) => ({ id: s.id, name: s.name, initialEquation: s.initialEquation, units: s.units, inflows: s.inflows, outflows: s.outflows })),
     flows: model.flows.map((f) => ({ id: f.id, name: f.name, equation: f.equation, units: f.units, from: f.from, to: f.to })),
-    auxiliaries: model.auxiliaries.map((a) => ({ id: a.id, name: a.name, equation: a.equation, isConstant: a.isConstant, units: a.units })),
+    auxiliaries: model.auxiliaries.map((a) => ({
+      id: a.id,
+      name: a.name,
+      equation: a.equation,
+      isConstant: isConstantAuxiliary(a, model),
+      units: a.units,
+    })),
     relations: model.connectors.map((c) => ({ id: c.id, from: c.from, to: c.to, polarity: c.polarity })),
   };
 }
