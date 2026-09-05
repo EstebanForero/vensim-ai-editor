@@ -71,8 +71,10 @@ describe("mdl codec", () => {
     expect(model.simSpec.stopTime).toBe(100);
     expect(model.simSpec.dt).toBe(0.25);
 
+    // Sketch coordinates are the shape's *center* in real Vensim files (300,200 with a 40x20
+    // box here) — this editor's own Position convention is top-left, so this must convert.
     const pop = model.stocks[0]!;
-    expect(pop.pos).toEqual({ x: 300, y: 200 });
+    expect(pop.pos).toEqual({ x: 280, y: 190 });
     expect(model.connectors.length).toBeGreaterThan(0);
   });
 
@@ -122,8 +124,9 @@ describe("mdl codec", () => {
     expect(mdlText).toMatch(/^12,\d+,0,-?\d+,-?\d+,27,27,4,7,/m);
     expect(mdlText).toMatch(/^R$/m);
 
-    // Connector arrows carry a non-origin bend waypoint instead of the flat "(0,0)" flows use.
-    const connectorLines = mdlText.split("\n").filter((l) => l.startsWith("1,") && l.includes(",64,0,"));
+    // Connector arrows carry field codes matching a real causal/info-link arrow (see
+    // example-compatibility/flow-diagram.mdl) and a non-origin bend waypoint.
+    const connectorLines = mdlText.split("\n").filter((l) => l.startsWith("1,") && l.includes(",1,0,43,0,0,192,0,"));
     expect(connectorLines.length).toBeGreaterThan(0);
     for (const line of connectorLines) expect(line).not.toContain("|(0,0)|");
 

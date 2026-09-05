@@ -228,8 +228,16 @@ function applySketch(model: Model, sketch: string): void {
     idToName.set(id, name);
     const variable = findVariableByName(model, name);
     if (variable && !Number.isNaN(x) && !Number.isNaN(y)) {
-      variable.pos = { x, y };
-      if (!Number.isNaN(w) && !Number.isNaN(h) && w > 0 && h > 0) variable.size = { width: w, height: h };
+      const hasSize = !Number.isNaN(w) && !Number.isNaN(h) && w > 0 && h > 0;
+      const size = hasSize ? { width: w, height: h } : variable.size;
+      // Vensim's sketch shapes are positioned by their *center*, not top-left, unlike this
+      // editor's own Position convention (top-left, matching React Flow) — converting here is
+      // what keeps an opened real-Vensim diagram's relative layout intact instead of every
+      // shape drifting by half its own box size (a different amount per shape, since stocks/
+      // flows/auxiliaries default to different sizes, which is why a skipped conversion here
+      // visibly warps the whole diagram rather than just shifting it uniformly).
+      variable.pos = { x: x - size.width / 2, y: y - size.height / 2 };
+      if (hasSize) variable.size = size;
     }
   }
 
@@ -248,7 +256,11 @@ function applySketch(model: Model, sketch: string): void {
     let nearest: { id: string; name: string; dist: number } | null = null;
     for (const flow of model.flows) {
       if (claimedFlowIds.has(flow.id)) continue;
-      const dist = Math.hypot(flow.pos.x - x, flow.pos.y - y);
+      // flow.pos is top-left (already converted above); compare in the same center-based space
+      // the valve's own x,y are given in.
+      const flowCenterX = flow.pos.x + flow.size.width / 2;
+      const flowCenterY = flow.pos.y + flow.size.height / 2;
+      const dist = Math.hypot(flowCenterX - x, flowCenterY - y);
       if (!nearest || dist < nearest.dist) nearest = { id: flow.id, name: flow.name, dist };
     }
     if (nearest && nearest.dist < 200) {
@@ -297,10 +309,13 @@ function applySketch(model: Model, sketch: string): void {
       model.pinnedGraphs.push(graphMatch[1]!);
       continue;
     }
+    const hasSize = !Number.isNaN(w) && !Number.isNaN(h) && w > 0 && h > 0;
+    const size = hasSize ? { width: w, height: h } : { width: 160, height: 60 };
     addComment(model, {
       text,
-      pos: { x: Number.isNaN(x) ? 0 : x, y: Number.isNaN(y) ? 0 : y },
-      size: !Number.isNaN(w) && !Number.isNaN(h) && w > 0 && h > 0 ? { width: w, height: h } : undefined,
+      // Same center -> top-left conversion as `10,`/`11,` shapes above.
+      pos: { x: (Number.isNaN(x) ? 0 : x) - size.width / 2, y: (Number.isNaN(y) ? 0 : y) - size.height / 2 },
+      size: hasSize ? size : undefined,
     });
   }
 }
