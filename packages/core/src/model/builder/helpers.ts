@@ -1,5 +1,23 @@
 import { ModelError } from "../errors.js";
-import { allVariables, findVariable, findVariableByName, type Model, type Variable } from "../types.js";
+import { allVariables, findVariable, findVariableByName, type Model, type Position, type Variable } from "../types.js";
+
+/**
+ * A non-overlapping spot for a new element when no explicit position is given — which is the
+ * common case for AI-created elements (an AI has no reason to compute sensible diagram
+ * coordinates unless asked to lay the diagram out). Without this, every element defaulted to a
+ * flat `{x:0,y:0}`, so a model built through several tool calls piled every single element
+ * exactly on top of the others at the origin until something (auto_layout, or a manual drag)
+ * spread them out — which reads as "the position is wrong, then later changes" the moment that
+ * happens. A simple advancing grid, keyed off how many elements already exist, is enough to
+ * keep newly-added elements visibly distinct immediately, the same way the toolbar's own
+ * manually-placed buttons already behaved before this was centralized here.
+ */
+export function autoPlacePosition(model: Model): Position {
+  const count = allVariables(model).length + model.comments.length;
+  const col = count % 6;
+  const row = Math.floor(count / 6);
+  return { x: 120 + col * 160, y: 120 + row * 110 };
+}
 
 export function assertUniqueName(model: Model, name: string, ignoreId?: string): void {
   const existing = findVariableByName(model, name);

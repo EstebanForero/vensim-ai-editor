@@ -53,4 +53,25 @@ describe("builder", () => {
     expect(model.stocks[0]!.inflows).toEqual([]);
     expect(model.flows).toEqual([]);
   });
+
+  // An AI (or anything else calling these builders without an explicit `pos`, which is the
+  // common case — a caller has no reason to compute diagram coordinates unless asked) must not
+  // get every element piled on top of the others at a flat {x:0,y:0}. That's invisible until
+  // something later spreads them out (a manual drag, or an auto_layout call), which reads as
+  // "the position is wrong, then it changes" — see "why does the diagram jump around" fix.
+  test("elements added without an explicit position don't all collide at the origin", () => {
+    const model = createEmptyModel();
+    const a = addStock(model, { name: "A" });
+    const b = addStock(model, { name: "B" });
+    const aux = addAuxiliary(model, { name: "Aux", equation: "1" });
+    const flow = addFlow(model, { name: "F", from: a.id, to: b.id });
+
+    const positions = [a.pos, b.pos, aux.pos, flow.pos];
+    expect(a.pos).not.toEqual({ x: 0, y: 0 });
+    expect(b.pos).not.toEqual({ x: 0, y: 0 });
+    expect(aux.pos).not.toEqual({ x: 0, y: 0 });
+    // Every element should land somewhere distinct — no two exactly on top of each other.
+    const unique = new Set(positions.map((p) => `${p.x},${p.y}`));
+    expect(unique.size).toBe(positions.length);
+  });
 });

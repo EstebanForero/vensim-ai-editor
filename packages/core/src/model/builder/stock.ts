@@ -1,7 +1,7 @@
 import { ModelError } from "../errors.js";
 import { nextId } from "../ids.js";
 import type { Model, Position, Size, Stock } from "../types.js";
-import { assertUniqueName } from "./helpers.js";
+import { assertUniqueName, autoPlacePosition } from "./helpers.js";
 
 const DEFAULT_SIZE: Size = { width: 90, height: 45 };
 
@@ -23,7 +23,7 @@ export function addStock(model: Model, input: AddStockInput): Stock {
     initialEquation: input.initialEquation ?? "0",
     units: input.units ?? "",
     comment: input.comment ?? "",
-    pos: input.pos ?? { x: 0, y: 0 },
+    pos: input.pos ?? autoPlacePosition(model),
     size: input.size ?? DEFAULT_SIZE,
     inflows: [],
     outflows: [],

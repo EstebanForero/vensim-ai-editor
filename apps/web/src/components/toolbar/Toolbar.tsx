@@ -9,12 +9,6 @@ import { uniqueName } from "@/lib/naming";
 import { SAMPLE_MODELS } from "@/lib/sampleModels";
 import { useModelStore } from "@/state/modelStore";
 
-let placeCounter = 0;
-function nextPos() {
-  placeCounter += 1;
-  return { x: 120 + (placeCounter % 6) * 140, y: 120 + Math.floor(placeCounter / 6) * 100 };
-}
-
 export function Toolbar() {
   const model = useModelStore((s) => s.model);
   const mutate = useModelStore((s) => s.mutate);
@@ -38,19 +32,19 @@ export function Toolbar() {
 
   const onAddStock = () =>
     addNamed((m) => {
-      const v = addStock(m, { name: uniqueName(m, "Stock"), pos: nextPos() });
+      const v = addStock(m, { name: uniqueName(m, "Stock") });
       select(v.id);
     });
   const onAddAux = () =>
     addNamed((m) => {
       // A fresh auxiliary defaults to a plain number, which already reads as a constant per
       // isConstantAuxiliary — there's no separate "Constant" element to pick, matching Vensim.
-      const v = addAuxiliary(m, { name: uniqueName(m, "Variable"), equation: "1", pos: nextPos() });
+      const v = addAuxiliary(m, { name: uniqueName(m, "Variable"), equation: "1" });
       select(v.id);
     });
   const onAddComment = () =>
     addNamed((m) => {
-      const c = addComment(m, { text: "Comment", pos: nextPos() });
+      const c = addComment(m, { text: "Comment" });
       select(c.id);
     });
 

@@ -1,6 +1,6 @@
 import { nextId } from "../ids.js";
 import type { Auxiliary, Model, Position, Size } from "../types.js";
-import { assertUniqueName } from "./helpers.js";
+import { assertUniqueName, autoPlacePosition } from "./helpers.js";
 
 const DEFAULT_SIZE: Size = { width: 90, height: 45 };
 
@@ -22,7 +22,7 @@ export function addAuxiliary(model: Model, input: AddAuxiliaryInput): Auxiliary 
     equation: input.equation ?? "0",
     units: input.units ?? "",
     comment: input.comment ?? "",
-    pos: input.pos ?? { x: 0, y: 0 },
+    pos: input.pos ?? autoPlacePosition(model),
     size: input.size ?? DEFAULT_SIZE,
   };
   model.auxiliaries.push(aux);

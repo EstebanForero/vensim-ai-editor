@@ -1,6 +1,7 @@
 import { ModelError } from "../errors.js";
 import { nextId } from "../ids.js";
 import type { Comment, Model, Position, Size } from "../types.js";
+import { autoPlacePosition } from "./helpers.js";
 
 const DEFAULT_SIZE: Size = { width: 160, height: 60 };
 
@@ -17,7 +18,7 @@ export function addComment(model: Model, input: AddCommentInput = {}): Comment {
     kind: "comment",
     id: nextId("comment"),
     text: input.text ?? "Comment",
-    pos: input.pos ?? { x: 0, y: 0 },
+    pos: input.pos ?? autoPlacePosition(model),
     size: input.size ?? DEFAULT_SIZE,
   };
   model.comments.push(comment);
