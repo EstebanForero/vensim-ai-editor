@@ -1,3 +1,4 @@
+import { useReactFlow } from "@xyflow/react";
 import { Bot, KeyRound, Send, Settings2, Wrench } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const sessionRef = useRef<AgentSession>(createAgentSession());
+  const { fitView } = useReactFlow();
 
   const send = async () => {
     const text = input.trim();
@@ -48,6 +50,7 @@ export function ChatPanel() {
             role: "tool",
             text: `${result.ok ? "✓" : "✗"} ${name}(${JSON.stringify(toolInput)})${result.ok ? "" : ` — ${result.error}`}`,
           });
+          if (name === "auto_layout" && result.ok) requestAnimationFrame(() => fitView({ duration: 300, padding: 0.2 }));
         },
         onAssistantText: (text) => {
           addChatMessage({ id: crypto.randomUUID(), role: "assistant", text });

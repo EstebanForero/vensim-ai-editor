@@ -6,6 +6,7 @@ import {
   addFlow,
   addStock,
   allVariables,
+  autoLayout,
   deleteElement,
   detectLoops,
   findVariable,
@@ -162,6 +163,11 @@ export function executeTool(model: Model, toolName: string, input: Record<string
           ...(typeof input.time_units === "string" ? { timeUnits: input.time_units } : {}),
         });
         return { ok: true, result: spec };
+      }
+      case "auto_layout": {
+        const direction = input.direction === "TB" ? "TB" : "LR";
+        autoLayout(model, { direction });
+        return { ok: true, result: { laidOut: true, direction } };
       }
       case "list_model": {
         return { ok: true, result: summarizeModel(model) };

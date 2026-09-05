@@ -209,6 +209,17 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
     },
   },
   {
+    name: "auto_layout",
+    description:
+      "Automatically re-position every stock/flow/auxiliary into a tidy layered layout based on their flow and causal-relation connections, so newly-created or tangled elements don't pile up or drift out of view. Comments are left where they are. Call this after building or substantially restructuring a model, or whenever asked to tidy up / re-arrange the diagram.",
+    parameters: {
+      type: "object",
+      properties: {
+        direction: { type: "string", enum: ["LR", "TB"], description: "LR (left-to-right, default) or TB (top-to-bottom)." },
+      },
+    },
+  },
+  {
     name: "list_model",
     description: "Read back the full current model: all stocks, flows, auxiliaries, relations, comments, and sim settings.",
     parameters: { type: "object", properties: {} },

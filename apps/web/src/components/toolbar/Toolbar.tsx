@@ -1,5 +1,6 @@
-import { addAuxiliary, addComment, addStock } from "@vensim-ai/core";
-import { Droplet, FolderOpen, GitBranch, MessageSquarePlus, RotateCw, Save, Square, Waves } from "lucide-react";
+import { addAuxiliary, addComment, addStock, autoLayout } from "@vensim-ai/core";
+import { useReactFlow } from "@xyflow/react";
+import { Droplet, FolderOpen, GitBranch, LayoutGrid, MessageSquarePlus, RotateCw, Save, Square, Waves } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,8 +27,14 @@ export function Toolbar() {
   const showLoops = useModelStore((s) => s.showLoops);
   const toggleShowLoops = useModelStore((s) => s.toggleShowLoops);
   const [fileError, setFileError] = useState<string | null>(null);
+  const { fitView } = useReactFlow();
 
   const addNamed = (fn: (m: typeof model) => void) => mutate(fn);
+
+  const onAutoLayout = () => {
+    mutate((m) => autoLayout(m));
+    requestAnimationFrame(() => fitView({ duration: 300, padding: 0.2 }));
+  };
 
   const onAddStock = () =>
     addNamed((m) => {
@@ -93,6 +100,14 @@ export function Toolbar() {
         title="Auto-detect feedback loops and label them R (Reinforcing) / B (Balancing)"
       >
         <RotateCw className="size-4" /> Loops
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onAutoLayout}
+        title="Automatically re-arrange every stock/flow/auxiliary into a tidy layered layout based on their flow and causal connections, then fit the view"
+      >
+        <LayoutGrid className="size-4" /> Auto Layout
       </Button>
 
       <div className="mx-1 h-5 w-px bg-border" />

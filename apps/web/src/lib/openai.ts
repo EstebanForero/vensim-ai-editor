@@ -20,7 +20,9 @@ Call list_model if you need to see current state, list_loops after wiring up rel
 you've created, and run_simulation after building or changing equations to sanity-check behavior. Keep equations in
 Vensim syntax (e.g. "Population * Birth Rate", "IF THEN ELSE(x > 10, 1, 0)"). Use add_comment for freestanding notes
 on the diagram (not equations), and set_sim_spec to change start/stop time, dt, or integration method when asked.
-After you finish making changes, reply with a short plain-text summary of what you did.`;
+Call auto_layout after building a new model from scratch, or after adding several elements in one go, so nothing
+piles up or drifts out of view — it's cheap and always safe to call again. After you finish making changes, reply
+with a short plain-text summary of what you did.`;
 
 const OPENAI_TOOLS: ChatCompletionTool[] = VENSIM_AI_TOOLS.map((t) => ({
   type: "function",

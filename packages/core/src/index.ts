@@ -9,3 +9,4 @@ export * from "./mdl/writer.js";
 export * from "./sim/engine.js";
 export * from "./sim/topo.js";
 export * from "./loops/index.js";
+export * from "./layout/autoLayout.js";
