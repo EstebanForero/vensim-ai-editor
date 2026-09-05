@@ -242,16 +242,17 @@ function applySketch(model: Model, sketch: string): void {
     idToName.set(id, name);
     const variable = findVariableByName(model, name);
     if (variable && !Number.isNaN(x) && !Number.isNaN(y)) {
-      const hasSize = !Number.isNaN(w) && !Number.isNaN(h) && w > 0 && h > 0;
-      const size = hasSize ? { width: w, height: h } : variable.size;
-      // Vensim's sketch shapes are positioned by their *center*, not top-left, unlike this
-      // editor's own Position convention (top-left, matching React Flow) — converting here is
-      // what keeps an opened real-Vensim diagram's relative layout intact instead of every
-      // shape drifting by half its own box size (a different amount per shape, since stocks/
-      // flows/auxiliaries default to different sizes, which is why a skipped conversion here
-      // visibly warps the whole diagram rather than just shifting it uniformly).
-      variable.pos = { x: x - size.width / 2, y: y - size.height / 2 };
-      if (hasSize) variable.size = size;
+      // Per Vensim's own published sketch-format reference: x,y is the shape's *center*
+      // (not top-left, unlike this editor's own Position convention), and w,h are the
+      // *half*-width/half-height — the full box is 2w x 2h. Both matter: treating w,h as full
+      // dimensions (as this editor did before) computes the wrong top-left offset (half of what
+      // it should be) AND stores a box half the size Vensim actually drew, compounding into a
+      // visibly wrong, warped layout rather than a clean, uniform shift.
+      const hasHalfSize = !Number.isNaN(w) && !Number.isNaN(h) && w > 0 && h > 0;
+      const halfWidth = hasHalfSize ? w : variable.size.width / 2;
+      const halfHeight = hasHalfSize ? h : variable.size.height / 2;
+      variable.pos = { x: x - halfWidth, y: y - halfHeight };
+      if (hasHalfSize) variable.size = { width: w * 2, height: h * 2 };
     }
   }
 
@@ -340,13 +341,14 @@ function applySketch(model: Model, sketch: string): void {
       model.pinnedGraphs.push(graphMatch[1]!);
       continue;
     }
-    const hasSize = !Number.isNaN(w) && !Number.isNaN(h) && w > 0 && h > 0;
-    const size = hasSize ? { width: w, height: h } : { width: 160, height: 60 };
+    // w,h here are half-width/half-height too — see the `10,` handling above.
+    const hasHalfSize = !Number.isNaN(w) && !Number.isNaN(h) && w > 0 && h > 0;
+    const halfWidth = hasHalfSize ? w : 80;
+    const halfHeight = hasHalfSize ? h : 30;
     addComment(model, {
       text,
-      // Same center -> top-left conversion as `10,`/`11,` shapes above.
-      pos: { x: (Number.isNaN(x) ? 0 : x) - size.width / 2, y: (Number.isNaN(y) ? 0 : y) - size.height / 2 },
-      size: hasSize ? size : undefined,
+      pos: { x: (Number.isNaN(x) ? 0 : x) - halfWidth, y: (Number.isNaN(y) ? 0 : y) - halfHeight },
+      size: hasHalfSize ? { width: w * 2, height: h * 2 } : undefined,
     });
   }
 }

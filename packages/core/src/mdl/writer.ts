@@ -87,6 +87,17 @@ function center(pos: Position, size: { width: number; height: number }): Positio
   return { x: pos.x + size.width / 2, y: pos.y + size.height / 2 };
 }
 
+/** Per Vensim's own published sketch-format reference, a shape's `w,h` fields are its
+ * *half*-width/half-height, not the full box — the full box is 2w x 2h. Emitting our model's
+ * full size directly (as this editor did before) drew every box at half its intended size in
+ * real Vensim, on top of the separate center-vs-top-left position bug. Shapes whose `w,h`
+ * literals are copied verbatim from example-compatibility/flow-diagram.mdl (the valve, cloud,
+ * loop badge, and graph pad below) are already correct real-Vensim half-values and don't go
+ * through this — only sizes computed from this editor's own (full-size) model data need it. */
+function halfSize(size: { width: number; height: number }): { width: number; height: number } {
+  return { width: size.width / 2, height: size.height / 2 };
+}
+
 function writeSketch(model: Model): string {
   const vars = allVariables(model);
   const idIndex = new Map<string, number>();
@@ -105,7 +116,8 @@ function writeSketch(model: Model): string {
     if (v.kind === "flow") continue; // flows get a name label + separate valve icon below
     const shapeType = shapeTypeFor(v);
     const c = center(v.pos, v.size);
-    out += `10,${idIndex.get(v.id)},${v.name},${Math.round(c.x)},${Math.round(c.y)},${Math.round(v.size.width)},${Math.round(v.size.height)},${shapeType},3,0,0,0,0,0,0\n`;
+    const half = halfSize(v.size);
+    out += `10,${idIndex.get(v.id)},${v.name},${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},${shapeType},3,0,0,0,0,0,0\n`;
   }
 
   let nextId = counter;
@@ -119,7 +131,8 @@ function writeSketch(model: Model): string {
     // name on the next import (nearest-valve-to-flow matching, see applySketch).
     const valveCenter = { x: labelCenter.x, y: labelCenter.y - (flow.size.height / 2 + 20) };
     out += `11,${valveId},0,${Math.round(valveCenter.x)},${Math.round(valveCenter.y)},6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0\n`;
-    out += `10,${idIndex.get(flow.id)},${flow.name},${Math.round(labelCenter.x)},${Math.round(labelCenter.y)},${Math.round(flow.size.width)},${Math.round(flow.size.height)},40,3,0,0,0,0,0,0\n`;
+    const flowHalf = halfSize(flow.size);
+    out += `10,${idIndex.get(flow.id)},${flow.name},${Math.round(labelCenter.x)},${Math.round(labelCenter.y)},${Math.round(flowHalf.width)},${Math.round(flowHalf.height)},40,3,0,0,0,0,0,0\n`;
 
     // The "source" side (where material is drawn from — a cloud for an inflow, the upstream
     // stock for an outflow) and the "sink" side (where it goes — the downstream stock for an
@@ -238,7 +251,8 @@ function commentRecord(id: number, text: string, pos: Position, size?: { width: 
   const w = size?.width ?? Math.max(24, text.length * 8);
   const h = size?.height ?? 16;
   const c = center(pos, { width: w, height: h });
-  return `12,${id},0,${Math.round(c.x)},${Math.round(c.y)},${Math.round(w)},${Math.round(h)},0,3,0,0,-1,0,0,0,3,0,0,0,0,0,0\n${text}\n`;
+  const half = halfSize({ width: w, height: h });
+  return `12,${id},0,${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},0,3,0,0,-1,0,0,0,3,0,0,0,0,0,0\n${text}\n`;
 }
 
 /** A Vensim "graph pad" — the trend-chart widget Vensim's sketch editor draws when a variable

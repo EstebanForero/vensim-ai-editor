@@ -71,10 +71,11 @@ describe("mdl codec", () => {
     expect(model.simSpec.stopTime).toBe(100);
     expect(model.simSpec.dt).toBe(0.25);
 
-    // Sketch coordinates are the shape's *center* in real Vensim files (300,200 with a 40x20
-    // box here) — this editor's own Position convention is top-left, so this must convert.
+    // Sketch coordinates are the shape's *center*, and w,h (40,20 here) are *half*-width/
+    // half-height per Vensim's own sketch-format reference — so the full box is 80x40, and
+    // this editor's own Position convention (top-left) must convert both.
     const pop = model.stocks[0]!;
-    expect(pop.pos).toEqual({ x: 280, y: 190 });
+    expect(pop.pos).toEqual({ x: 260, y: 180 });
     expect(model.connectors.length).toBeGreaterThan(0);
   });
 
