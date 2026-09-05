@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { addAuxiliary, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
+import { detectLoops } from "../src/loops/index.js";
 import { createEmptyModel } from "../src/model/types.js";
 import { parseMdl } from "../src/mdl/parser.js";
 import { writeMdl } from "../src/mdl/writer.js";
@@ -113,9 +116,11 @@ describe("mdl codec", () => {
 
     const mdlText = writeMdl(model);
 
-    // Loop label (R + rotation glyph) shows up as a freestanding `12,` comment record.
-    expect(mdlText).toMatch(/^12,\d+,48,-?\d+,-?\d+,\d+,16,/m);
-    expect(mdlText.includes("R ↺") || mdlText.includes("R ↻")).toBe(true);
+    // Loop badge shows up as a freestanding `12,` text record (shape code 0 — a plain text
+    // box, not a built-in icon like Vensim's own cloud glyph) with a bare "R"/"B", matching
+    // native Vensim's own loop-indicator convention (see example-compatibility/flow-diagram.mdl).
+    expect(mdlText).toMatch(/^12,\d+,0,-?\d+,-?\d+,27,27,4,7,/m);
+    expect(mdlText).toMatch(/^R$/m);
 
     // Connector arrows carry a non-origin bend waypoint instead of the flat "(0,0)" flows use.
     const connectorLines = mdlText.split("\n").filter((l) => l.startsWith("1,") && l.includes(",64,0,"));
@@ -126,5 +131,45 @@ describe("mdl codec", () => {
     const reparsed = parseMdl(mdlText);
     expect(reparsed.stocks).toHaveLength(1);
     expect(reparsed.connectors.length).toBeGreaterThan(0);
+  });
+
+  test("reads a real Vensim export (example-compatibility/flow-diagram.mdl) faithfully", () => {
+    // A hand-exported-from-Vensim rabbit-population model — the reference for this editor's
+    // compatibility with files it did not itself write. In particular, its causal arrows are
+    // drawn *into a flow's valve icon* (a separate sketch shape from the flow's name label),
+    // which is the normal way Vensim draws "this variable affects this flow" and must resolve
+    // to the flow's name for loop detection to see the model's real feedback structure.
+    const fixturePath = join(import.meta.dir, "..", "..", "..", "example-compatibility", "flow-diagram.mdl");
+    const model = parseMdl(readFileSync(fixturePath, "utf-8"));
+
+    expect(model.stocks.map((s) => s.name)).toEqual(["Poblacion"]);
+    expect(model.flows.map((f) => f.name).sort()).toEqual(["muertes", "nacimientos"]);
+    expect(model.auxiliaries.map((a) => a.name).sort()).toEqual(["tasa mortalidad", "tasa nacimientos"]);
+
+    // Every causal arrow into a flow's valve must resolve to that flow, not get dropped.
+    const connectorPairs = model.connectors
+      .map((c) => {
+        const from = [...model.stocks, ...model.flows, ...model.auxiliaries].find((v) => v.id === c.from)?.name;
+        const to = [...model.stocks, ...model.flows, ...model.auxiliaries].find((v) => v.id === c.to)?.name;
+        return `${from}->${to}`;
+      })
+      .sort();
+    expect(connectorPairs).toEqual(["Poblacion->muertes", "Poblacion->nacimientos", "tasa mortalidad->muertes", "tasa nacimientos->nacimientos"]);
+
+    // Flow-pipe geometry arrows (valve <-> stock/cloud) must NOT become spurious connectors.
+    expect(model.connectors).toHaveLength(4);
+
+    const loops = detectLoops(model);
+    expect(loops.map((l) => l.polarity).sort()).toEqual(["B", "R"]);
+
+    const sim = simulate(model);
+    expect(sim.series["Poblacion"]?.at(-1)).toBeGreaterThan(0);
+
+    // Round-trips: re-exporting and re-parsing keeps the same causal structure and simulates
+    // the same way (the loop badges/graph pad this editor adds on export must not confuse it).
+    const reExported = parseMdl(writeMdl(model));
+    expect(reExported.connectors).toHaveLength(4);
+    expect(detectLoops(reExported).map((l) => l.polarity).sort()).toEqual(["B", "R"]);
+    expect(simulate(reExported).series["Poblacion"]?.at(-1)).toBeCloseTo(sim.series["Poblacion"]!.at(-1)!, 6);
   });
 });

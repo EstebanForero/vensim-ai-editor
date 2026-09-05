@@ -116,15 +116,27 @@ function writeSketch(model: Model): string {
   let commentId = arrowId;
   for (const loop of detectLoops(model)) {
     commentId += 1;
-    out += commentRecord(commentId, loopLabel(loop), loop.centroid);
+    out += loopBadgeRecord(commentId, loop);
   }
   for (const comment of model.comments) {
     commentId += 1;
     out += commentRecord(commentId, comment.text, comment.pos, comment.size);
   }
+  graphPadNames(model).forEach((name, slot) => {
+    commentId += 1;
+    out += graphPadRecord(commentId, name, model, slot);
+  });
 
   out += "///---\\\\\\\n";
   return out;
+}
+
+/** Variables to draw a Vensim "graph pad" trend box for on export. Explicit `pinnedGraphs`
+ * (round-tripped from a file that already had them) win; otherwise default to every stock —
+ * the levels are what a human Vensim user overwhelmingly charts, and it's what real Vensim
+ * exports of small models (see example-compatibility/) tend to carry. */
+function graphPadNames(model: Model): string[] {
+  return model.pinnedGraphs.length > 0 ? model.pinnedGraphs : model.stocks.map((s) => s.name);
 }
 
 function connectorArrowRecord(model: Model, c: Connector, arrowId: number, idIndex: Map<string, number>): string {
@@ -137,19 +149,39 @@ function connectorArrowRecord(model: Model, c: Connector, arrowId: number, idInd
   return `1,${arrowId},${idIndex.get(c.from)},${idIndex.get(c.to)},0,0,0,0,0,64,0,-1--1--1,,1|(${Math.round(bend.x)},${Math.round(bend.y)})|\n`;
 }
 
-/** R/B + a rotation glyph matching this loop's on-screen direction, e.g. "R ↻". */
-function loopLabel(loop: Loop): string {
-  const glyph = loop.direction === "clockwise" ? "↻" : "↺";
-  return `${loop.polarity} ${glyph}`;
+/** A Reinforcing/Balancing loop-polarity badge, in the same shape real Vensim itself writes
+ * for a manually-placed loop indicator (a small circled "R"/"B" — see
+ * example-compatibility/flow-diagram.mdl's `12,18,0,...`/`12,19,0,...` records): a plain
+ * bare-letter text box, sized like Vensim's own (27x27), with its bold/framed style flags
+ * (`4,7`) rather than a generic comment's. The on-canvas indicator (see LoopNode) additionally
+ * shows a rotation glyph for direction, but that's a UI nicety, not exported — Vensim's own
+ * loop badges just say "R" or "B". Shape code `0` (a plain text box, not a built-in icon like
+ * the `48` cloud) is what makes Vensim render this as text at all instead of a random glyph. */
+function loopBadgeRecord(id: number, loop: Loop): string {
+  return `12,${id},0,${Math.round(loop.centroid.x)},${Math.round(loop.centroid.y)},27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0\n${loop.polarity}\n`;
 }
 
 /** A freestanding text annotation (Vensim's own "Comment" sketch tool produces this — see
  * file header for the confidence caveat), not tied to any variable's equation, so it's safe
- * to place text here that doesn't correspond to a declared model variable. */
+ * to place text here that doesn't correspond to a declared model variable. Shape code `0`
+ * marks a plain text box — Vensim reserves nonzero codes (e.g. `48`) for built-in icons like
+ * the flow-cloud glyph, which have no text line to read at all, so using one here would make
+ * real Vensim render a cloud icon instead of this comment's text. */
 function commentRecord(id: number, text: string, pos: Position, size?: { width: number; height: number }): string {
   const w = size?.width ?? Math.max(24, text.length * 8);
   const h = size?.height ?? 16;
-  return `12,${id},48,${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(w)},${Math.round(h)},0,3,0,0,-1,0,0,0,3,0,0,0,0,0,0\n${text}\n`;
+  return `12,${id},0,${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(w)},${Math.round(h)},0,3,0,0,-1,0,0,0,3,0,0,0,0,0,0\n${text}\n`;
+}
+
+/** A Vensim "graph pad" — the trend-chart widget Vensim's sketch editor draws when a variable
+ * is dropped onto the diagram as a chart, e.g. `Poblacion,Graph` in
+ * example-compatibility/flow-diagram.mdl. Placed in a column to the right of the main diagram
+ * so it doesn't overlap the causal graph; `slot` staggers multiple pads vertically. */
+function graphPadRecord(id: number, variableName: string, model: Model, slot: number): string {
+  const maxRight = Math.max(300, ...allVariables(model).map((v) => v.pos.x + v.size.width));
+  const x = maxRight + 200;
+  const y = 150 + slot * 260;
+  return `12,${id},0,${Math.round(x)},${Math.round(y)},300,200,0,15,0,0,2,0,0,0,0,0,0,0,0,0\n${variableName},Graph\n`;
 }
 
 function shapeTypeFor(v: Variable): number {

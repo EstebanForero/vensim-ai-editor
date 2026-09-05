@@ -7,6 +7,7 @@ import {
   setCommentText,
   setConnectorPolarity,
   setEquation,
+  variableRelationships,
   type Polarity,
 } from "@vensim-ai/core";
 import { Trash2 } from "lucide-react";
@@ -263,6 +264,68 @@ function VariableInspector() {
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="var-comment">Comment</Label>
         <Textarea id="var-comment" value={comment} onChange={(e) => onCommentChange(e.target.value)} rows={2} />
+      </div>
+
+      <DependencyPanel variableId={variable.id} />
+    </div>
+  );
+}
+
+/** "Smart inspector": shows what this variable depends on and what depends on it — from its
+ * equation and any causal-relation arrows — computed live, not stored, so it's never stale.
+ * Constants (per isConstantAuxiliary) get a plain badge instead of an empty "Depends on" list,
+ * since "has no equation dependencies" is exactly what makes something a constant here. */
+function DependencyPanel({ variableId }: { variableId: string }) {
+  const model = useModelStore((s) => s.model);
+  const select = useModelStore((s) => s.select);
+  const { dependsOn, usedBy, isConstant } = variableRelationships(model, variableId);
+
+  return (
+    <div className="flex flex-col gap-3 border-t pt-3">
+      {isConstant && (
+        <span className="w-fit rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+          Constant — no equation dependencies
+        </span>
+      )}
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Depends on</Label>
+        {dependsOn.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Nothing — this variable's equation references no others.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {dependsOn.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => select(v.id)}
+                className="rounded-full border px-2 py-0.5 text-[11px] hover:bg-muted"
+                title={`Jump to ${v.name}`}
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Used by</Label>
+        {usedBy.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Nothing references this variable yet.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {usedBy.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => select(v.id)}
+                className="rounded-full border px-2 py-0.5 text-[11px] hover:bg-muted"
+                title={`Jump to ${v.name}`}
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

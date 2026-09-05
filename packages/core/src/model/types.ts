@@ -106,6 +106,12 @@ export interface Model {
   auxiliaries: Auxiliary[];
   connectors: Connector[];
   comments: Comment[];
+  /** Names of variables with a Vensim "graph pad" sketch widget pinned to them (that `<name>,
+   * Graph` sketch box Vensim's own diagram editor draws when you drop a chart onto the sketch).
+   * Purely a view concern — has no effect on simulation — but preserved and (for stocks, by
+   * default) generated so exported files carry the same kind of at-a-glance trend view a human
+   * Vensim user would normally add by hand. */
+  pinnedGraphs: string[];
   simSpec: SimSpec;
   /** Raw equation text for constructs the .mdl codec doesn't model yet (macros, subscripted vars, etc.), preserved verbatim on write. */
   unsupportedRaw: string[];
@@ -119,6 +125,7 @@ export function createEmptyModel(name = "New Model"): Model {
     auxiliaries: [],
     connectors: [],
     comments: [],
+    pinnedGraphs: [],
     simSpec: {
       startTime: 0,
       stopTime: 100,
