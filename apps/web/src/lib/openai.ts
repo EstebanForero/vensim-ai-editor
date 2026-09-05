@@ -52,7 +52,13 @@ export async function runAgentTurn(
   connection: AgentConnection,
   session: AgentSession,
   userText: string,
-  model: Model,
+  // A getter, not a fixed object: each tool call must mutate whatever is *currently* the
+  // store's live model, not a snapshot taken once at the top of the turn. If the caller
+  // replaces the model reference between tool calls (e.g. to clone-and-commit for a live
+  // canvas update after each one, as the chat panel does), a fixed reference would mutate an
+  // orphaned object after the first commit and every subsequent tool call would silently be
+  // lost — the model would look right after tool #1 and never change again.
+  getModel: () => Model,
   callbacks: AgentCallbacks = {},
   maxToolRounds = 8,
 ): Promise<void> {
@@ -89,7 +95,7 @@ export async function runAgentTurn(
       } catch {
         // malformed JSON from the model — executeTool will reject missing/invalid fields below
       }
-      const result = executeTool(model, call.function.name, args);
+      const result = executeTool(getModel(), call.function.name, args);
       callbacks.onToolCall?.(call.function.name, args, result);
       toolMessages.push({
         role: "tool",

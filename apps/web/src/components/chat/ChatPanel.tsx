@@ -18,7 +18,6 @@ export function ChatPanel() {
   const addChatMessage = useModelStore((s) => s.addChatMessage);
   const isAgentRunning = useModelStore((s) => s.isAgentRunning);
   const setAgentRunning = useModelStore((s) => s.setAgentRunning);
-  const model = useModelStore((s) => s.model);
   const mutate = useModelStore((s) => s.mutate);
 
   const [input, setInput] = useState("");
@@ -38,11 +37,12 @@ export function ChatPanel() {
     addChatMessage({ id: crypto.randomUUID(), role: "user", text });
     setAgentRunning(true);
 
-    // The agent mutates a live draft of the model directly (same object identity as the
-    // store), then we commit one fresh snapshot per tool call so the canvas updates live.
-    const draft = model;
+    // Each tool call must mutate whatever is *currently* the store's live model object, not a
+    // snapshot captured once up front — mutate() below replaces that object with a fresh clone
+    // after every single tool call (so the canvas updates live), which would orphan a fixed
+    // reference after the very first tool ran and silently drop every mutation after it.
     try {
-      await runAgentTurn({ apiKey, baseUrl, model: aiModel }, sessionRef.current, text, draft, {
+      await runAgentTurn({ apiKey, baseUrl, model: aiModel }, sessionRef.current, text, () => useModelStore.getState().model, {
         onToolCall: (name, toolInput, result) => {
           mutate(() => {}); // re-commit a snapshot of the mutated draft
           addChatMessage({
