@@ -98,6 +98,15 @@ function halfSize(size: { width: number; height: number }): { width: number; hei
   return { width: size.width / 2, height: size.height / 2 };
 }
 
+/** The trailing fields every `10,`/`12,` (variable/comment) record carries after `sh,bits` —
+ * confirmed identical across every such record in both example-compatibility files
+ * (flow-diagram.mdl and aitraining.mdl), real Vensim exports from two different sessions. This
+ * editor's own writer previously emitted only 6 trailing fields where Vensim always writes 12
+ * — a genuinely truncated record, not just cosmetically different from Vensim's own, which is
+ * exactly the kind of malformed line that can make a positional format misrender or misparse
+ * everything after it. */
+const VARIABLE_RECORD_TAIL = "0,0,-1,0,0,0,0,0,0,0,0,0";
+
 function writeSketch(model: Model): string {
   const vars = allVariables(model);
   const idIndex = new Map<string, number>();
@@ -117,7 +126,7 @@ function writeSketch(model: Model): string {
     const shapeType = shapeTypeFor(v);
     const c = center(v.pos, v.size);
     const half = halfSize(v.size);
-    out += `10,${idIndex.get(v.id)},${v.name},${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},${shapeType},3,0,0,0,0,0,0\n`;
+    out += `10,${idIndex.get(v.id)},${v.name},${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},${shapeType},3,${VARIABLE_RECORD_TAIL}\n`;
   }
 
   let nextId = counter;
@@ -132,7 +141,7 @@ function writeSketch(model: Model): string {
     const valveCenter = { x: labelCenter.x, y: labelCenter.y - (flow.size.height / 2 + 20) };
     out += `11,${valveId},0,${Math.round(valveCenter.x)},${Math.round(valveCenter.y)},6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0\n`;
     const flowHalf = halfSize(flow.size);
-    out += `10,${idIndex.get(flow.id)},${flow.name},${Math.round(labelCenter.x)},${Math.round(labelCenter.y)},${Math.round(flowHalf.width)},${Math.round(flowHalf.height)},40,3,0,0,0,0,0,0\n`;
+    out += `10,${idIndex.get(flow.id)},${flow.name},${Math.round(labelCenter.x)},${Math.round(labelCenter.y)},${Math.round(flowHalf.width)},${Math.round(flowHalf.height)},40,3,${VARIABLE_RECORD_TAIL}\n`;
 
     // The "source" side (where material is drawn from — a cloud for an inflow, the upstream
     // stock for an outflow) and the "sink" side (where it goes — the downstream stock for an
@@ -221,12 +230,14 @@ function connectorArrowRecord(model: Model, c: Connector, arrowId: number, idInd
   const fromCenter = fromVar && center(fromVar.pos, fromVar.size);
   const toCenter = toVar && center(toVar.pos, toVar.size);
   const bend = c.bend ?? (fromCenter && toCenter ? curveWaypoint(fromCenter, toCenter, c.id) : { x: 0, y: 0 });
-  // Field codes (1, 43, ..., 192) match a real causal/info-link arrow (see
-  // example-compatibility/flow-diagram.mdl's `1,12,1,5,1,0,43,0,0,192,...` records) rather than
-  // this editor's earlier guessed values — the polarity sign itself isn't encoded in these
-  // (real Vensim exports of small models don't show one either); it only drives this editor's
-  // own on-canvas +/- badge and R/B loop-polarity detection.
-  return `1,${arrowId},${idIndex.get(c.from)},${idIndex.get(c.to)},1,0,43,0,0,192,0,-1--1--1,,1|(${Math.round(bend.x)},${Math.round(bend.y)})|\n`;
+  // Field codes (shape=1, thick=0, ..., dtype=192) match a real causal/info-link arrow (see
+  // example-compatibility/flow-diagram.mdl's `1,12,1,5,1,0,43,0,0,192,...` records). The "43"
+  // there is specifically the `pol` field — per Vensim's own sketch-format reference, this is
+  // the *ASCII code* of the polarity character drawn on the arrow (43 = '+', 45 = '-'), not a
+  // generic style flag, so it must actually track this connector's polarity rather than always
+  // showing '+' regardless of what the connector's polarity really is.
+  const pol = c.polarity === "-" ? 45 : 43;
+  return `1,${arrowId},${idIndex.get(c.from)},${idIndex.get(c.to)},1,0,${pol},0,0,192,0,-1--1--1,,1|(${Math.round(bend.x)},${Math.round(bend.y)})|\n`;
 }
 
 /** A Reinforcing/Balancing loop-polarity badge, in the same shape real Vensim itself writes
@@ -252,7 +263,7 @@ function commentRecord(id: number, text: string, pos: Position, size?: { width: 
   const h = size?.height ?? 16;
   const c = center(pos, { width: w, height: h });
   const half = halfSize({ width: w, height: h });
-  return `12,${id},0,${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},0,3,0,0,-1,0,0,0,3,0,0,0,0,0,0\n${text}\n`;
+  return `12,${id},0,${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},0,3,${VARIABLE_RECORD_TAIL}\n${text}\n`;
 }
 
 /** A Vensim "graph pad" — the trend-chart widget Vensim's sketch editor draws when a variable

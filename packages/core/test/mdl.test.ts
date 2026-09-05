@@ -199,4 +199,27 @@ describe("mdl codec", () => {
     expect(detectLoops(reExported).map((l) => l.polarity).sort()).toEqual(["B", "R"]);
     expect(simulate(reExported).series["Poblacion"]?.at(-1)).toBeCloseTo(sim.series["Poblacion"]!.at(-1)!, 6);
   });
+
+  test("exports 10,/11,/12, sketch records with the same field count real Vensim uses", () => {
+    // Confirmed by counting comma-separated fields on every `10,`/`11,`/`12,` line in *two*
+    // independently real-Vensim-exported files (example-compatibility/flow-diagram.mdl and
+    // aitraining.mdl, from separate sessions): every one has exactly 21 fields for `10,`/`11,`
+    // and 21 for a plain `12,` box (id,name/code,x,y,w,h,sh,bits, then 12 more trailing
+    // fields). This editor's writer previously emitted only 15 fields for its own dynamically
+    // generated `10,` records (stocks/auxiliaries/flow labels) — a genuinely truncated,
+    // non-conformant line, not just a cosmetically different one, which is a very plausible
+    // reason a real Vensim install would render an opened file as visually broken.
+    const model = createEmptyModel("FieldCount");
+    const a = addStock(model, { name: "A" });
+    const b = addStock(model, { name: "B" });
+    addFlow(model, { name: "F", from: a.id, to: b.id });
+    addAuxiliary(model, { name: "Aux", equation: "1" });
+
+    const sketch = writeMdl(model).split("Sketch information")[1]!;
+    const recordLines = sketch.split("\n").filter((l) => /^(10|11|12),/.test(l));
+    expect(recordLines.length).toBeGreaterThan(0);
+    for (const line of recordLines) {
+      expect(line.split(",")).toHaveLength(21);
+    }
+  });
 });
