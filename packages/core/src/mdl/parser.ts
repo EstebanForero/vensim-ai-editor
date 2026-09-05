@@ -115,6 +115,16 @@ export function parseMdl(text: string): Model {
   let anonFlowCounter = 0;
   const knownNames = [...stockRecords.map((s) => s.name), ...plainRecords.map((r) => r.name)];
 
+  // A flow that connects two real stocks appears in *both* stocks' net-flow expressions — as
+  // "-Flow" (an outflow term) in its source stock, and "+Flow" (an inflow term) in its sink
+  // stock. Collecting both sides here before calling addFlow even once is what makes that a
+  // single flow with both ends set, instead of processing each stock's term independently and
+  // creating the flow (with only one end) the first time, then — since its name is already
+  // "claimed" — misreading the second stock's term as an unrelated inline expression and
+  // materializing a bogus second anonymous flow for it.
+  const flowSides = new Map<string, { from: string | null; to: string | null }>();
+  const anonTerms: { stockName: string; sign: 1 | -1; expr: Expr }[] = [];
+
   for (const s of stockRecords) {
     const parsed = tryParseExpr(s.flowExpr, knownNames);
     const terms: FlatTerm[] = [];
@@ -124,29 +134,33 @@ export function parseMdl(text: string): Model {
     }
 
     for (const term of terms) {
-      if (term.expr.type === "var" && plainByName.has(term.expr.name) && !consumedAsFlow.has(term.expr.name)) {
-        const flowRec = plainByName.get(term.expr.name)!;
-        consumedAsFlow.add(term.expr.name);
-        addFlow(model, {
-          name: flowRec.name,
-          equation: flowRec.equation,
-          units: flowRec.units,
-          comment: flowRec.comment,
-          from: term.sign === -1 ? s.name : null,
-          to: term.sign === 1 ? s.name : null,
-        });
+      if (term.expr.type === "var" && plainByName.has(term.expr.name)) {
+        const sides = flowSides.get(term.expr.name) ?? { from: null, to: null };
+        if (term.sign === -1) sides.from = s.name;
+        else sides.to = s.name;
+        flowSides.set(term.expr.name, sides);
       } else {
-        // Inline expression term (not a bare reference to a known variable) — materialize as
-        // an anonymous flow so the stock's derivative still evaluates correctly.
-        anonFlowCounter += 1;
-        addFlow(model, {
-          name: `${s.name} Flow ${anonFlowCounter}`,
-          equation: exprToString(term.expr),
-          from: term.sign === -1 ? s.name : null,
-          to: term.sign === 1 ? s.name : null,
-        });
+        // Inline expression term (not a bare reference to a known variable) — always unique to
+        // this one stock (an inline expression can't also be some other stock's term), so it's
+        // safe to materialize as an anonymous flow right away.
+        anonTerms.push({ stockName: s.name, sign: term.sign, expr: term.expr });
       }
     }
+  }
+
+  for (const [flowName, sides] of flowSides) {
+    const flowRec = plainByName.get(flowName)!;
+    consumedAsFlow.add(flowName);
+    addFlow(model, { name: flowRec.name, equation: flowRec.equation, units: flowRec.units, comment: flowRec.comment, from: sides.from, to: sides.to });
+  }
+  for (const { stockName, sign, expr } of anonTerms) {
+    anonFlowCounter += 1;
+    addFlow(model, {
+      name: `${stockName} Flow ${anonFlowCounter}`,
+      equation: exprToString(expr),
+      from: sign === -1 ? stockName : null,
+      to: sign === 1 ? stockName : null,
+    });
   }
 
   for (const r of plainRecords) {
@@ -243,8 +257,16 @@ function applySketch(model: Model, sketch: string): void {
 
   // `11,` records are a flow's valve icon — a separate shape id from its `10,` name label, so
   // causal arrows Vensim draws *into the valve* (the normal way to show "this variable affects
-  // this flow") can't be resolved to the flow's name without this pass. Vensim places the name
-  // label right next to its valve, so match each valve to its nearest not-yet-claimed flow.
+  // this flow") can't be resolved to the flow's name without this pass.
+  //
+  // Primary match: Vensim's own sketch editor allocates a flow's valve id and its name-label
+  // id consecutively (id, then id+1) at the moment the flow is drawn — confirmed against
+  // example-compatibility/flow-diagram.mdl (valve 5 -> label 6, valve 10 -> label 11), and true
+  // of this editor's own writer too (see writeSketch). This is exact, unlike proximity, so it's
+  // tried first. Fallback: nearest not-yet-claimed flow by position, for sketches that don't
+  // follow that convention (hand-edited files, or a different authoring tool) — this can
+  // misfire in a dense diagram where several flows sit within the search radius of each other,
+  // which the id-adjacency check above almost always avoids needing.
   const claimedFlowIds = new Set<string>();
   for (const line of lines) {
     if (!line.startsWith("11,")) continue;
@@ -253,6 +275,15 @@ function applySketch(model: Model, sketch: string): void {
     const x = Number(fields[3]);
     const y = Number(fields[4]);
     if (!id || Number.isNaN(x) || Number.isNaN(y)) continue;
+
+    const adjacentName = idToName.get(String(Number(id) + 1));
+    const adjacentFlow = adjacentName ? model.flows.find((f) => f.name === adjacentName && !claimedFlowIds.has(f.id)) : undefined;
+    if (adjacentFlow) {
+      idToName.set(id, adjacentFlow.name);
+      claimedFlowIds.add(adjacentFlow.id);
+      continue;
+    }
+
     let nearest: { id: string; name: string; dist: number } | null = null;
     for (const flow of model.flows) {
       if (claimedFlowIds.has(flow.id)) continue;

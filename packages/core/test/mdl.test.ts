@@ -108,6 +108,29 @@ describe("mdl codec", () => {
     expect(again.auxiliaries.length).toBe(reparsed.auxiliaries.length);
   });
 
+  test("round-trips a flow connecting two real stocks without duplicating it", () => {
+    // A flow between two actual stocks (not a cloud on either end) appears in *both* stocks'
+    // INTEG net-flow expressions on write — "-Flow" in the source stock, "+Flow" in the sink
+    // stock. The parser previously created the flow the first time it saw either term (with
+    // only that one end set), then treated the second stock's term as an unrelated inline
+    // expression once the name was already "claimed", materializing a bogus second anonymous
+    // flow — so the flow was never actually connected to both stocks after a round-trip.
+    const model = createEmptyModel("TwoStockFlow");
+    const a = addStock(model, { name: "A", initialEquation: "100" });
+    const b = addStock(model, { name: "B", initialEquation: "0" });
+    addFlow(model, { name: "Transfer", equation: "5", from: a.id, to: b.id });
+
+    const reparsed = parseMdl(writeMdl(model));
+
+    expect(reparsed.flows).toHaveLength(1);
+    const flow = reparsed.flows[0]!;
+    expect(flow.name).toBe("Transfer");
+    const fromStock = reparsed.stocks.find((s) => s.id === flow.from);
+    const toStock = reparsed.stocks.find((s) => s.id === flow.to);
+    expect(fromStock?.name).toBe("A");
+    expect(toStock?.name).toBe("B");
+  });
+
   test("writes R/B loop comment annotations and curved relation arrows for native Vensim", () => {
     const model = createEmptyModel("LoopExport");
     const stock = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 } });
