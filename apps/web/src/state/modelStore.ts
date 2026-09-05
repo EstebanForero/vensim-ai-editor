@@ -40,6 +40,12 @@ interface ModelStoreState {
   /** When true, clicking two nodes in sequence on the canvas adds a relation between them. */
   relationMode: boolean;
   pendingRelationFrom: string | null;
+  /** When true, clicking two endpoints in sequence draws a flow between them — a stock or
+   * empty canvas (a cloud source/sink) for either end, in the order clicked (source, then
+   * destination), so direction and which stock are always explicit rather than guessed. */
+  flowMode: boolean;
+  /** `stockId: null` means the picked endpoint was empty canvas (a cloud), not a stock. */
+  pendingFlowFrom: { stockId: string | null; pos: { x: number; y: number } } | null;
   /** id of the node currently showing an inline rename/edit field, set by double-clicking it
    * on the canvas (via React Flow's own onNodeDoubleClick, not a raw DOM dblclick — that
    * reliably coexists with node dragging, where a plain DOM listener would not). */
@@ -59,6 +65,8 @@ interface ModelStoreState {
   toggleShowLoops: () => void;
   toggleRelationMode: () => void;
   setPendingRelationFrom: (id: string | null) => void;
+  toggleFlowMode: () => void;
+  setPendingFlowFrom: (v: { stockId: string | null; pos: { x: number; y: number } } | null) => void;
   setEditingId: (id: string | null) => void;
 }
 
@@ -81,6 +89,8 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   showLoops: true,
   relationMode: false,
   pendingRelationFrom: null,
+  flowMode: false,
+  pendingFlowFrom: null,
   editingId: null,
 
   setModel: (model) => set({ ...commit(model), selectedId: null, simResult: null }),
@@ -121,7 +131,10 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   clearChat: () => set({ chatMessages: [] }),
 
   toggleShowLoops: () => set((s) => ({ showLoops: !s.showLoops })),
-  toggleRelationMode: () => set((s) => ({ relationMode: !s.relationMode, pendingRelationFrom: null })),
+  toggleRelationMode: () =>
+    set((s) => ({ relationMode: !s.relationMode, pendingRelationFrom: null, flowMode: false, pendingFlowFrom: null })),
   setPendingRelationFrom: (id) => set({ pendingRelationFrom: id }),
+  toggleFlowMode: () => set((s) => ({ flowMode: !s.flowMode, pendingFlowFrom: null, relationMode: false, pendingRelationFrom: null })),
+  setPendingFlowFrom: (v) => set({ pendingFlowFrom: v }),
   setEditingId: (id) => set({ editingId: id }),
 }));

@@ -1,5 +1,6 @@
 import {
   addAuxiliary,
+  addComment,
   addConnector,
   addConstant,
   addFlow,
@@ -11,11 +12,15 @@ import {
   findVariableByName,
   isConstantAuxiliary,
   ModelError,
+  moveComment,
   moveElement,
   renameVariable,
+  setCommentText,
   setConnectorPolarity,
   setEquation,
+  setSimSpec,
   simulate,
+  type IntegrationMethod,
   type Model,
   type Polarity,
 } from "@vensim-ai/core";
@@ -45,6 +50,7 @@ function summarizeModel(model: Model) {
       units: a.units,
     })),
     relations: model.connectors.map((c) => ({ id: c.id, from: c.from, to: c.to, polarity: c.polarity })),
+    comments: model.comments.map((c) => ({ id: c.id, text: c.text })),
   };
 }
 
@@ -134,6 +140,28 @@ export function executeTool(model: Model, toolName: string, input: Record<string
         const id = v?.id ?? str(input.id_or_name);
         deleteElement(model, id);
         return { ok: true, result: { deleted: id } };
+      }
+      case "add_comment": {
+        const c = addComment(model, { text: str(input.text), pos: posFrom(input) });
+        return { ok: true, result: { id: c.id, text: c.text } };
+      }
+      case "set_comment_text": {
+        const c = setCommentText(model, str(input.id), str(input.text));
+        return { ok: true, result: { id: c.id, text: c.text } };
+      }
+      case "move_comment": {
+        moveComment(model, str(input.id), { x: num(input.x), y: num(input.y) });
+        return { ok: true, result: { moved: true } };
+      }
+      case "set_sim_spec": {
+        const spec = setSimSpec(model, {
+          ...(typeof input.start_time === "number" ? { startTime: input.start_time } : {}),
+          ...(typeof input.stop_time === "number" ? { stopTime: input.stop_time } : {}),
+          ...(typeof input.dt === "number" ? { dt: input.dt } : {}),
+          ...(typeof input.integration_method === "string" ? { integrationMethod: input.integration_method as IntegrationMethod } : {}),
+          ...(typeof input.time_units === "string" ? { timeUnits: input.time_units } : {}),
+        });
+        return { ok: true, result: spec };
       }
       case "list_model": {
         return { ok: true, result: summarizeModel(model) };

@@ -1,6 +1,12 @@
 import { ModelError } from "../errors.js";
-import { findVariable, type Model, type Position, type Variable } from "../types.js";
+import { findVariable, type Model, type Position, type SimSpec, type Variable } from "../types.js";
 import { assertUniqueName, renameReferencesInEquations, resolveVariableRef } from "./helpers.js";
+
+/** Merges any subset of sim-spec fields (start/stop/dt/integration method/time units). */
+export function setSimSpec(model: Model, patch: Partial<SimSpec>): SimSpec {
+  Object.assign(model.simSpec, patch);
+  return model.simSpec;
+}
 
 export function setEquation(
   model: Model,
@@ -34,6 +40,12 @@ export function moveElement(model: Model, id: string, pos: Position): void {
 }
 
 export function deleteElement(model: Model, id: string): void {
+  const commentIdx = model.comments.findIndex((c) => c.id === id);
+  if (commentIdx !== -1) {
+    model.comments.splice(commentIdx, 1);
+    return;
+  }
+
   const v = findVariable(model, id) ?? model.connectors.find((c) => c.id === id);
   if (!v) throw new ModelError(`No element found with id "${id}".`);
 

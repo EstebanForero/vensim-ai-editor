@@ -1,5 +1,13 @@
-import { allVariables, type Loop, type Model } from "@vensim-ai/core";
+import { allVariables, findVariable, type Loop, type Model, type Position as ModelPosition, type Size } from "@vensim-ai/core";
 import type { Edge, Node } from "@xyflow/react";
+import { closestSides, sourceHandleId, targetHandleId } from "./edgeRouting";
+
+type Box = { pos: ModelPosition; size: Size };
+
+function routedHandles(a: Box, b: Box): { sourceHandle: string; targetHandle: string } {
+  const { from, to } = closestSides(a, b);
+  return { sourceHandle: sourceHandleId(from), targetHandle: targetHandleId(to) };
+}
 
 export function buildGraph(
   model: Model,
@@ -26,20 +34,26 @@ export function buildGraph(
       data: { variable: f, selected: f.id === selectedId, editing: f.id === editingId },
     });
     if (f.from) {
+      const fromStock = findVariable(model, f.from);
+      const handles = fromStock ? routedHandles(fromStock, f) : { sourceHandle: sourceHandleId("right"), targetHandle: targetHandleId("left") };
       edges.push({
         id: `pipe-${f.id}-from`,
         source: f.from,
         target: f.id,
+        ...handles,
         type: "straight",
         style: { stroke: "var(--flow-color)", strokeWidth: 3 },
         markerEnd: { type: "arrowclosed" as const, color: "var(--flow-color)" },
       });
     }
     if (f.to) {
+      const toStock = findVariable(model, f.to);
+      const handles = toStock ? routedHandles(f, toStock) : { sourceHandle: sourceHandleId("right"), targetHandle: targetHandleId("left") };
       edges.push({
         id: `pipe-${f.id}-to`,
         source: f.id,
         target: f.to,
+        ...handles,
         type: "straight",
         style: { stroke: "var(--flow-color)", strokeWidth: 3 },
         markerEnd: { type: "arrowclosed" as const, color: "var(--flow-color)" },
@@ -56,10 +70,14 @@ export function buildGraph(
   }
   for (const c of model.connectors) {
     const isSelected = c.id === selectedId;
+    const from = findVariable(model, c.from);
+    const to = findVariable(model, c.to);
+    const handles = from && to ? routedHandles(from, to) : { sourceHandle: sourceHandleId("right"), targetHandle: targetHandleId("left") };
     edges.push({
       id: c.id,
       source: c.from,
       target: c.to,
+      ...handles,
       type: "relation",
       style: {
         stroke: "var(--connector-color)",

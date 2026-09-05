@@ -1,9 +1,10 @@
-import { addAuxiliary, addComment, addFlow, addStock } from "@vensim-ai/core";
+import { addAuxiliary, addComment, addStock } from "@vensim-ai/core";
 import { Droplet, FolderOpen, GitBranch, MessageSquarePlus, RotateCw, Save, Square, Waves } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { downloadMdl, openMdlFilePicker } from "@/lib/fileIO";
+import { uniqueName } from "@/lib/naming";
 import { SAMPLE_MODELS } from "@/lib/sampleModels";
 import { useModelStore } from "@/state/modelStore";
 
@@ -20,6 +21,8 @@ export function Toolbar() {
   const select = useModelStore((s) => s.select);
   const relationMode = useModelStore((s) => s.relationMode);
   const toggleRelationMode = useModelStore((s) => s.toggleRelationMode);
+  const flowMode = useModelStore((s) => s.flowMode);
+  const toggleFlowMode = useModelStore((s) => s.toggleFlowMode);
   const showLoops = useModelStore((s) => s.showLoops);
   const toggleShowLoops = useModelStore((s) => s.toggleShowLoops);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -29,15 +32,6 @@ export function Toolbar() {
   const onAddStock = () =>
     addNamed((m) => {
       const v = addStock(m, { name: uniqueName(m, "Stock"), pos: nextPos() });
-      select(v.id);
-    });
-  const onAddFlow = () =>
-    addNamed((m) => {
-      if (m.stocks.length === 0) {
-        alert("Add a stock first — a flow needs at least one stock to connect to.");
-        return;
-      }
-      const v = addFlow(m, { name: uniqueName(m, "Flow"), to: m.stocks[0]!.id, pos: nextPos() });
       select(v.id);
     });
   const onAddAux = () =>
@@ -65,7 +59,12 @@ export function Toolbar() {
       <Button size="sm" variant="outline" onClick={onAddStock} title="Add Stock">
         <Square className="size-4" /> Stock
       </Button>
-      <Button size="sm" variant="outline" onClick={onAddFlow} title="Add Flow">
+      <Button
+        size="sm"
+        variant={flowMode ? "default" : "outline"}
+        onClick={toggleFlowMode}
+        title="Click a source, then a destination, to draw a flow — a stock or empty canvas (a cloud) for either end, so direction and which stock are always explicit"
+      >
         <Droplet className="size-4" /> Flow
       </Button>
       <Button
@@ -131,12 +130,4 @@ export function Toolbar() {
       </div>
     </div>
   );
-}
-
-function uniqueName(model: { stocks: { name: string }[]; flows: { name: string }[]; auxiliaries: { name: string }[] }, base: string): string {
-  const all = new Set([...model.stocks, ...model.flows, ...model.auxiliaries].map((v) => v.name));
-  if (!all.has(base)) return base;
-  let i = 2;
-  while (all.has(`${base} ${i}`)) i++;
-  return `${base} ${i}`;
 }

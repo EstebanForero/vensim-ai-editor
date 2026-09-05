@@ -156,7 +156,7 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
   },
   {
     name: "delete_element",
-    description: "Delete a stock, flow, auxiliary, or relation. Cleans up dangling references.",
+    description: "Delete a stock, flow, auxiliary, relation, or comment. Cleans up dangling references.",
     parameters: {
       type: "object",
       properties: { id_or_name: { type: "string" } },
@@ -164,8 +164,53 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
     },
   },
   {
+    name: "add_comment",
+    description:
+      "Add a freestanding text annotation to the diagram — Vensim's own \"Comment\" sketch tool. Not a variable: carries no equation and never participates in simulation or loop detection. Use it to label sections of the diagram or explain a design decision to a human reader.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: { type: "string" },
+        ...position,
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "set_comment_text",
+    description: "Change an existing comment's text.",
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" }, text: { type: "string" } },
+      required: ["id", "text"],
+    },
+  },
+  {
+    name: "move_comment",
+    description: "Move a comment to a new position on the diagram canvas.",
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" }, x: { type: "number" }, y: { type: "number" } },
+      required: ["id", "x", "y"],
+    },
+  },
+  {
+    name: "set_sim_spec",
+    description: "Change the simulation settings: start/stop time, time step (dt), integration method, or time units.",
+    parameters: {
+      type: "object",
+      properties: {
+        start_time: { type: "number" },
+        stop_time: { type: "number" },
+        dt: { type: "number" },
+        integration_method: { type: "string", enum: ["euler", "rk4"] },
+        time_units: { type: "string" },
+      },
+    },
+  },
+  {
     name: "list_model",
-    description: "Read back the full current model: all stocks, flows, auxiliaries, relations, and their equations.",
+    description: "Read back the full current model: all stocks, flows, auxiliaries, relations, comments, and sim settings.",
     parameters: { type: "object", properties: {} },
   },
   {

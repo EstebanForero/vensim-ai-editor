@@ -18,8 +18,9 @@ can be built with add_auxiliary + add_relation alone, no stocks or flows require
 variable to any other variable whose equation references it, so the diagram stays legible and loops can be found.
 Call list_model if you need to see current state, list_loops after wiring up relations to check what feedback loops
 you've created, and run_simulation after building or changing equations to sanity-check behavior. Keep equations in
-Vensim syntax (e.g. "Population * Birth Rate", "IF THEN ELSE(x > 10, 1, 0)"). After you finish making changes, reply
-with a short plain-text summary of what you did.`;
+Vensim syntax (e.g. "Population * Birth Rate", "IF THEN ELSE(x > 10, 1, 0)"). Use add_comment for freestanding notes
+on the diagram (not equations), and set_sim_spec to change start/stop time, dt, or integration method when asked.
+After you finish making changes, reply with a short plain-text summary of what you did.`;
 
 const OPENAI_TOOLS: ChatCompletionTool[] = VENSIM_AI_TOOLS.map((t) => ({
   type: "function",

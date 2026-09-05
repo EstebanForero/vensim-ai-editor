@@ -3,6 +3,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { FlowCanvas } from "@/components/canvas/FlowCanvas";
 import { SimChart } from "@/components/charts/SimChart";
 import { Inspector } from "@/components/inspector/Inspector";
+import { TextView } from "@/components/textview/TextView";
 import { Toolbar } from "@/components/toolbar/Toolbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useModelStore } from "@/state/modelStore";
@@ -26,6 +27,7 @@ function App() {
               <TabsTrigger value="inspector">Inspector</TabsTrigger>
               <TabsTrigger value="chat">AI Chat</TabsTrigger>
               <TabsTrigger value="sim">Simulation</TabsTrigger>
+              <TabsTrigger value="text">Text</TabsTrigger>
             </TabsList>
             <TabsContent value="inspector" className="min-h-0 flex-1 overflow-y-auto">
               <Inspector />
@@ -35,6 +37,9 @@ function App() {
             </TabsContent>
             <TabsContent value="sim" className="min-h-0 flex-1">
               <SimChart />
+            </TabsContent>
+            <TabsContent value="text" className="min-h-0 flex-1">
+              <TextView />
             </TabsContent>
           </Tabs>
         </aside>

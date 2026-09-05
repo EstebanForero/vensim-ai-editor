@@ -2,6 +2,7 @@ import { Bot, KeyRound, Send, Settings2, Wrench } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { createAgentSession, runAgentTurn, type AgentSession } from "@/lib/openai";
 import { useModelStore } from "@/state/modelStore";
 
@@ -126,15 +127,22 @@ export function ChatPanel() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 border-t p-2">
-        <Input
+      <div className="flex items-end gap-2 border-t p-2">
+        <Textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Describe what to build or change…"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          placeholder="Describe what to build or change… (Shift+Enter for a new line)"
           disabled={isAgentRunning}
+          rows={2}
+          className="max-h-40 min-h-[2.25rem] resize-y text-sm"
         />
-        <Button size="icon" onClick={send} disabled={isAgentRunning}>
+        <Button size="icon" onClick={send} disabled={isAgentRunning} className="shrink-0">
           <Send className="size-4" />
         </Button>
       </div>

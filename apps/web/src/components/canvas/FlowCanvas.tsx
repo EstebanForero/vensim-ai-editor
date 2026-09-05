@@ -1,4 +1,4 @@
-import { addConnector, deleteComment, deleteElement, detectLoops, moveComment, moveElement, type Loop } from "@vensim-ai/core";
+import { addConnector, addFlow, deleteElement, detectLoops, moveComment, moveElement, type Loop } from "@vensim-ai/core";
 import {
   Background,
   Controls,
@@ -7,6 +7,7 @@ import {
   ReactFlow,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type Connection,
   type Edge,
   type EdgeMouseHandler,
@@ -15,6 +16,7 @@ import {
   type OnNodeDrag,
 } from "@xyflow/react";
 import { useEffect, useMemo } from "react";
+import { uniqueName } from "@/lib/naming";
 import { useModelStore } from "@/state/modelStore";
 import { buildGraph } from "./graph";
 import { AuxNode, CommentNode, FlowNode, LoopNode, StockNode } from "./nodes";
@@ -32,9 +34,13 @@ export function FlowCanvas() {
   const relationMode = useModelStore((s) => s.relationMode);
   const pendingRelationFrom = useModelStore((s) => s.pendingRelationFrom);
   const setPendingRelationFrom = useModelStore((s) => s.setPendingRelationFrom);
+  const flowMode = useModelStore((s) => s.flowMode);
+  const pendingFlowFrom = useModelStore((s) => s.pendingFlowFrom);
+  const setPendingFlowFrom = useModelStore((s) => s.setPendingFlowFrom);
   const editingId = useModelStore((s) => s.editingId);
   const setEditingId = useModelStore((s) => s.setEditingId);
 
+  const { screenToFlowPosition } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
@@ -53,8 +59,42 @@ export function FlowCanvas() {
     }
   };
 
+  // Second endpoint of a flow being drawn: completes addFlow(from, to) in the order clicked,
+  // so which stock and which direction are always exactly what was clicked — never guessed.
+  const completeFlowEndpoint = (stockId: string | null, pos: { x: number; y: number }) => {
+    if (!pendingFlowFrom) {
+      setPendingFlowFrom({ stockId, pos });
+      return;
+    }
+    const from = pendingFlowFrom.stockId;
+    const to = stockId;
+    if (from === to) {
+      // same stock twice, or cloud-to-cloud (both null) — neither is a meaningful flow
+      setPendingFlowFrom(null);
+      return;
+    }
+    try {
+      mutate((m) => {
+        const v = addFlow(m, {
+          name: uniqueName(m, "Flow"),
+          from,
+          to,
+          pos: { x: (pendingFlowFrom.pos.x + pos.x) / 2, y: (pendingFlowFrom.pos.y + pos.y) / 2 },
+        });
+        select(v.id);
+      });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+    setPendingFlowFrom(null);
+  };
+
   const onNodeClick: NodeMouseHandler = (_evt, node) => {
     if (node.type === "loop") return;
+    if (flowMode) {
+      if (node.type === "stock") completeFlowEndpoint(node.id, node.position);
+      return;
+    }
     if (relationMode && node.type !== "comment") {
       if (!pendingRelationFrom) {
         setPendingRelationFrom(node.id);
@@ -77,7 +117,11 @@ export function FlowCanvas() {
     if (edge.data?.connector) select(edge.id);
   };
 
-  const onPaneClick = () => {
+  const onPaneClick = (evt: React.MouseEvent) => {
+    if (flowMode) {
+      completeFlowEndpoint(null, screenToFlowPosition({ x: evt.clientX, y: evt.clientY }));
+      return;
+    }
     select(null);
     if (relationMode) setPendingRelationFrom(null);
   };
@@ -111,10 +155,7 @@ export function FlowCanvas() {
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
       if (!selectedId) return;
       e.preventDefault();
-      mutate((m) => {
-        if (m.comments.some((c) => c.id === selectedId)) deleteComment(m, selectedId);
-        else deleteElement(m, selectedId);
-      });
+      mutate((m) => deleteElement(m, selectedId));
       select(null);
     };
     window.addEventListener("keydown", handler);
@@ -146,6 +187,13 @@ export function FlowCanvas() {
         {relationMode && (
           <Panel position="top-center" className="rounded-md border bg-card px-3 py-1.5 text-xs shadow-md">
             {pendingRelationFrom ? "Click the target variable to complete the relation…" : "Click the source variable for a new relation…"}
+          </Panel>
+        )}
+        {flowMode && (
+          <Panel position="top-center" className="rounded-md border bg-card px-3 py-1.5 text-xs shadow-md">
+            {pendingFlowFrom
+              ? "Click the destination — a stock, or empty canvas for a cloud sink…"
+              : "Click the source — a stock, or empty canvas for a cloud source…"}
           </Panel>
         )}
       </ReactFlow>

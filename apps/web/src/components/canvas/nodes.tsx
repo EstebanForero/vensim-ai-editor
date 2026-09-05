@@ -32,6 +32,23 @@ export interface CommentNodeData extends Record<string, unknown> {
 
 const handleStyle = { width: 8, height: 8, opacity: 0 };
 
+const SIDES: { side: "top" | "right" | "bottom" | "left"; position: Position }[] = [
+  { side: "top", position: Position.Top },
+  { side: "right", position: Position.Right },
+  { side: "bottom", position: Position.Bottom },
+  { side: "left", position: Position.Left },
+];
+
+/** A target+source handle pair on every side, so an edge can attach to whichever side of this
+ * node is actually closest to the other end (see edgeRouting.ts's closestSides) instead of
+ * being forced through one fixed left/right pair regardless of where the other node sits. */
+function AllSideHandles() {
+  return SIDES.flatMap(({ side, position }) => [
+    <Handle key={`${side}-target`} type="target" position={position} id={`${side}-target`} style={handleStyle} />,
+    <Handle key={`${side}-source`} type="source" position={position} id={`${side}-source`} style={handleStyle} />,
+  ]);
+}
+
 /**
  * A variable's name, editable in place. `editing` is driven by FlowCanvas's
  * onNodeDoubleClick (React Flow's own double-click detection on the node, not a raw DOM
@@ -93,9 +110,8 @@ export function StockNode({ data }: NodeProps & { data: StockNodeData }) {
       )}
       style={{ minWidth: 90, minHeight: 45 }}
     >
-      <Handle type="target" position={Position.Left} style={handleStyle} />
+      <AllSideHandles />
       <EditableLabel id={variable.id} name={variable.name} editing={editing} className="line-clamp-2" />
-      <Handle type="source" position={Position.Right} style={handleStyle} />
     </div>
   );
 }
@@ -109,10 +125,9 @@ export function FlowNode({ data }: NodeProps & { data: FlowNodeData }) {
         selected ? "border-primary ring-2 ring-primary/40" : "border-[var(--flow-color)]",
       )}
     >
-      <Handle type="target" position={Position.Left} style={handleStyle} />
+      <AllSideHandles />
       <Droplet className="size-3" />
       <EditableLabel id={variable.id} name={variable.name} editing={editing} />
-      <Handle type="source" position={Position.Right} style={handleStyle} />
     </div>
   );
 }
@@ -191,9 +206,8 @@ export function AuxNode({ data }: NodeProps & { data: AuxNodeData }) {
         selected && "border-primary border-solid ring-2 ring-primary/40",
       )}
     >
-      <Handle type="target" position={Position.Left} style={handleStyle} />
+      <AllSideHandles />
       <EditableLabel id={variable.id} name={variable.name} editing={editing} />
-      <Handle type="source" position={Position.Right} style={handleStyle} />
     </div>
   );
 }
