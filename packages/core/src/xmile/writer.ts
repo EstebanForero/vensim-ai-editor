@@ -118,7 +118,7 @@ function writeView(model: Model): string {
   out += '      <view>\n';
 
   for (const stock of model.stocks) {
-    out += `        <stock name="${escapeXmlAttr(stock.name)}" x="${Math.round(stock.pos.x)}" y="${Math.round(stock.pos.y)}"/>\n`;
+    out += `        <stock name="${escapeXmlAttr(stock.name)}" x="${Math.round(stock.pos.x)}" y="${Math.round(stock.pos.y)}" width="${Math.round(stock.size.width)}" height="${Math.round(stock.size.height)}"/>\n`;
   }
   for (const flow of model.flows) {
     const fromVar = flow.from ? model.stocks.find((s) => s.id === flow.from) : undefined;
@@ -143,7 +143,7 @@ function writeView(model: Model): string {
     // notes on Vensim's XMILE-import quirks for the rest of that trail.
     const valveX = (p1.x + p2.x) / 2;
     const valveY = (p1.y + p2.y) / 2;
-    out += `        <flow name="${escapeXmlAttr(flow.name)}" x="${Math.round(valveX)}" y="${Math.round(valveY)}">\n`;
+    out += `        <flow name="${escapeXmlAttr(flow.name)}" x="${Math.round(valveX)}" y="${Math.round(valveY)}" width="${Math.round(flow.size.width)}" height="${Math.round(flow.size.height)}">\n`;
     out += "          <pts>\n";
     out += `            <pt x="${Math.round(p1.x)}" y="${Math.round(p1.y)}"/>\n`;
     out += `            <pt x="${Math.round(p2.x)}" y="${Math.round(p2.y)}"/>\n`;
@@ -151,7 +151,7 @@ function writeView(model: Model): string {
     out += "        </flow>\n";
   }
   for (const aux of model.auxiliaries) {
-    out += `        <aux name="${escapeXmlAttr(aux.name)}" x="${Math.round(aux.pos.x)}" y="${Math.round(aux.pos.y)}"/>\n`;
+    out += `        <aux name="${escapeXmlAttr(aux.name)}" x="${Math.round(aux.pos.x)}" y="${Math.round(aux.pos.y)}" width="${Math.round(aux.size.width)}" height="${Math.round(aux.size.height)}"/>\n`;
   }
   const posById = new Map<string, { x: number; y: number }>();
   for (const s of model.stocks) posById.set(s.id, s.pos);

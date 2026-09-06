@@ -99,7 +99,7 @@ describe("XMILE writer", () => {
     flow.pos = { x: 9999, y: -9999 }; // simulate a label dragged far off the actual pipe
 
     const xml = writeXmile(model);
-    const flowTag = xml.match(/<flow name="Outflow" x="(-?\d+)" y="(-?\d+)">/);
+    const flowTag = xml.match(/<flow name="Outflow" x="(-?\d+)" y="(-?\d+)" width="\d+" height="\d+">/);
     expect(flowTag).not.toBeNull();
     const declaredX = Number(flowTag![1]);
     const declaredY = Number(flowTag![2]);
@@ -124,5 +124,28 @@ describe("XMILE writer", () => {
     expect(xml).toContain("R1 loop: Population → Births → Population");
     // the small loop-polarity badge is exported too, distinct from the longer annotation
     expect(xml).toMatch(/<text_box x="-?\d+" y="-?\d+" width="27" height="27">R1<\/text_box>/);
+  });
+
+  // Regression: the writer used to omit width/height on <stock>/<flow>/<aux> entirely, which
+  // is valid XMILE (they default to a shape-appropriate size per spec 5.1.2) — but real-world
+  // testing through xmutil (Vensim's own creator's XMILE->MDL converter, see
+  // tools/xmutil-bridge) showed it carries the *absence* of width/height straight through as a
+  // literal 0, producing an .mdl where every shape (not just flows) is zero-sized and simply
+  // doesn't render in Vensim at all — a much worse failure than the mis-wired connections this
+  // was previously debugged for. Always emitting each element's own real size sidesteps relying
+  // on a reader applying a sensible default that this one demonstrably doesn't.
+  test("stocks, flows, and auxiliaries always declare a real width/height, never left to default", () => {
+    const model = createEmptyModel();
+    const a = addStock(model, { name: "A", initialEquation: "0" });
+    addFlow(model, { name: "F", equation: "1", to: a.id });
+    addAuxiliary(model, { name: "Aux", equation: "1" });
+
+    const xml = writeXmile(model);
+    for (const tag of ["stock", "flow", "aux"]) {
+      const match = xml.match(new RegExp(`<${tag} [^>]*width="(\\d+)" height="(\\d+)"`));
+      expect(match).not.toBeNull();
+      expect(Number(match![1])).toBeGreaterThan(0);
+      expect(Number(match![2])).toBeGreaterThan(0);
+    }
   });
 });

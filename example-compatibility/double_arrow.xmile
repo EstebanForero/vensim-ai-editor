@@ -5,6 +5,7 @@
     <product version="1.0">Vensim AI Editor</product>
     <options>
       <has_model_view/>
+      <uses_annotation/>
     </options>
     <name>Untitled Model</name>
   </header>
@@ -58,24 +59,24 @@
     </variables>
     <views>
       <view>
-        <stock name="Inventario de bicicletas" x="672" y="145"/>
-        <flow name="Recepción de bicicletas" x="529" y="151">
+        <stock name="Inventario de bicicletas" x="672" y="145" width="90" height="45"/>
+        <flow name="Recepción de bicicletas" x="529" y="151" width="92" height="52">
           <pts>
             <pt x="385" y="156"/>
             <pt x="672" y="145"/>
           </pts>
         </flow>
-        <flow name="Venta de bicicletas" x="817" y="149">
+        <flow name="Venta de bicicletas" x="817" y="149" width="92" height="52">
           <pts>
             <pt x="672" y="145"/>
             <pt x="962" y="153"/>
           </pts>
         </flow>
-        <aux name="Pedido de bicicletas" x="593" y="-5"/>
-        <aux name="Inventario deseado" x="475" y="-138"/>
-        <aux name="Tiempo de entrega" x="461" y="274"/>
-        <aux name="Tiempo de ajuste de inventario" x="640" y="-158"/>
-        <aux name="Demanda de bicicletas" x="865" y="-4"/>
+        <aux name="Pedido de bicicletas" x="593" y="-5" width="90" height="45"/>
+        <aux name="Inventario deseado" x="475" y="-138" width="90" height="45"/>
+        <aux name="Tiempo de entrega" x="461" y="274" width="90" height="45"/>
+        <aux name="Tiempo de ajuste de inventario" x="640" y="-158" width="90" height="45"/>
+        <aux name="Demanda de bicicletas" x="865" y="-4" width="90" height="45"/>
         <connector uid="0" angle="227.41">
           <from>Pedido de bicicletas</from>
           <to>Recepción de bicicletas</to>
@@ -104,6 +105,8 @@
           <from>Inventario de bicicletas</from>
           <to>Venta de bicicletas</to>
         </connector>
+        <text_box x="774" y="136" width="27" height="27">B1</text_box>
+        <text_box x="557" y="86" width="27" height="27">R1</text_box>
       </view>
     </views>
   </model>
