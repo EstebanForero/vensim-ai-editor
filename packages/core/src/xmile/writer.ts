@@ -128,13 +128,33 @@ function writeView(model: Model): string {
   for (const aux of model.auxiliaries) {
     out += `        <aux name="${escapeXmlAttr(aux.name)}" x="${Math.round(aux.pos.x)}" y="${Math.round(aux.pos.y)}"/>\n`;
   }
+  const posById = new Map<string, { x: number; y: number }>();
+  for (const s of model.stocks) posById.set(s.id, s.pos);
+  for (const f of model.flows) posById.set(f.id, f.pos);
+  for (const a of model.auxiliaries) posById.set(a.id, a.pos);
+
   model.connectors.forEach((c, i) => {
-    const fromName = allVariables(model).find((v) => v.id === c.from)?.name;
-    const toName = allVariables(model).find((v) => v.id === c.to)?.name;
-    if (!fromName || !toName) return;
-    out += `        <connector uid="${i}">\n`;
-    out += `          <from>${escapeXml(fromName)}</from>\n`;
-    out += `          <to>${escapeXml(toName)}</to>\n`;
+    const fromVar = allVariables(model).find((v) => v.id === c.from);
+    const toVar = allVariables(model).find((v) => v.id === c.to);
+    if (!fromVar || !toVar) return;
+    const fromPos = posById.get(c.from);
+    const toPos = posById.get(c.to);
+    // The `angle` attribute is REQUIRED by the XMILE spec (section 6.1.6): "The angle in
+    // degrees of the takeoff point from the center of the start object. 0 is 3 o'clock and
+    // angles increase counter-clockwise." Omitting it left every connector without a
+    // start-point direction, which is what made Vensim's importer draw them all as identical
+    // full-loop arcs. Screen y grows downward while the spec's angle is a standard
+    // counter-clockwise math angle, so the dy term is negated.
+    let angle = 0;
+    if (fromPos && toPos) {
+      const dx = toPos.x - fromPos.x;
+      const dy = toPos.y - fromPos.y;
+      angle = (Math.atan2(-dy, dx) * 180) / Math.PI;
+      if (angle < 0) angle += 360;
+    }
+    out += `        <connector uid="${i}" angle="${angle.toFixed(2)}">\n`;
+    out += `          <from>${escapeXml(fromVar.name)}</from>\n`;
+    out += `          <to>${escapeXml(toVar.name)}</to>\n`;
     out += "        </connector>\n";
   });
 

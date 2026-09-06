@@ -28,6 +28,12 @@ describe("XMILE writer", () => {
     expect(xml).toContain("<from>Rate</from>");
     expect(xml).toContain("<to>Transfer</to>");
 
+    // `angle` is REQUIRED by the XMILE spec (6.1.6): "The angle in degrees of the takeoff
+    // point from the center of the start object." Omitting it is what made Vensim's importer
+    // draw every connector as an identical full-loop arc instead of a straight/curved line
+    // toward its actual target.
+    expect(xml).toMatch(/<connector uid="\d+" angle="[\d.]+">/);
+
     // No dangling tags — every opened (non-self-closing) tag has a matching close.
     const opens = [...xml.matchAll(/<([a-z_]+)(?:\s[^>]*)?(?<!\/)>/g)].map((m) => m[1]);
     const closes = [...xml.matchAll(/<\/([a-z_]+)>/g)].map((m) => m[1]);

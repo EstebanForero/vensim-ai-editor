@@ -64,7 +64,7 @@
           </pts>
         </flow>
         <aux name="Rate Constant" x="690" y="620"/>
-        <connector uid="0">
+        <connector uid="0" angle="90.00">
           <from>Rate Constant</from>
           <to>connection</to>
         </connector>
@@ -72,3 +72,4 @@
     </views>
   </model>
 </xmile>
+
