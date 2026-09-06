@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { addAuxiliary, addConnector, addConstant, addFlow, addStock } from "../src/model/builder/index.js";
+import { addComment } from "../src/model/builder/comment.js";
+import { annotateLoops } from "../src/loops/annotate.js";
 import { detectLoops } from "../src/loops/detect.js";
 import { createEmptyModel } from "../src/model/types.js";
 
@@ -61,5 +63,70 @@ describe("detectLoops", () => {
     const loops = detectLoops(model);
     expect(loops).toHaveLength(1);
     expect(["clockwise", "counterclockwise"]).toContain(loops[0]!.direction);
+  });
+
+  test("numbers loops per-polarity (R1, R2, ... / B1, B2, ...) in the same order they're returned", () => {
+    const model = createEmptyModel();
+    // Two independent reinforcing loops and one balancing loop, so both counters get exercised.
+    const a1 = addAuxiliary(model, { name: "A1", equation: "1", pos: { x: 0, y: 0 } });
+    const a2 = addAuxiliary(model, { name: "A2", equation: "1", pos: { x: 100, y: 0 } });
+    addConnector(model, { from: a1.name, to: a2.name, polarity: "+" });
+    addConnector(model, { from: a2.name, to: a1.name, polarity: "+" }); // R
+
+    const b1 = addAuxiliary(model, { name: "B1v", equation: "1", pos: { x: 0, y: 200 } });
+    const b2 = addAuxiliary(model, { name: "B2v", equation: "1", pos: { x: 100, y: 200 } });
+    addConnector(model, { from: b1.name, to: b2.name, polarity: "+" });
+    addConnector(model, { from: b2.name, to: b1.name, polarity: "+" }); // R again
+
+    const c1 = addAuxiliary(model, { name: "C1", equation: "1", pos: { x: 0, y: 400 } });
+    const c2 = addAuxiliary(model, { name: "C2", equation: "1", pos: { x: 100, y: 400 } });
+    addConnector(model, { from: c1.name, to: c2.name, polarity: "+" });
+    addConnector(model, { from: c2.name, to: c1.name, polarity: "-" }); // B
+
+    const loops = detectLoops(model);
+    const rNumbers = loops.filter((l) => l.polarity === "R").map((l) => l.number);
+    const bNumbers = loops.filter((l) => l.polarity === "B").map((l) => l.number);
+    expect(rNumbers.sort()).toEqual([1, 2]);
+    expect(bNumbers).toEqual([1]);
+  });
+});
+
+describe("annotateLoops", () => {
+  test("creates one comment per loop, naming each element by name (not kind) around the cycle", () => {
+    const model = createEmptyModel();
+    const pop = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 } });
+    const births = addFlow(model, { name: "Births", equation: "Population * Birth Rate", to: pop.id, pos: { x: 100, y: 0 } });
+    addConstant(model, { name: "Birth Rate", value: 0.02, pos: { x: 50, y: 100 } });
+    addConnector(model, { from: "Population", to: "Births" });
+
+    const created = annotateLoops(model);
+    expect(created).toHaveLength(1);
+    expect(model.comments).toHaveLength(1);
+    expect(model.comments[0]!.text).toBe("R1 loop: Population → Births → Population");
+    // never the literal word "flow"/"stock" standing in for the element's own name
+    expect(model.comments[0]!.text).not.toMatch(/\bflow\b|\bstock\b/i);
+  });
+
+  test("is idempotent: re-running replaces its own earlier output instead of piling up duplicates", () => {
+    const model = createEmptyModel();
+    const pop = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 } });
+    addFlow(model, { name: "Births", equation: "Population * 0.02", to: pop.id, pos: { x: 100, y: 0 } });
+    addConnector(model, { from: "Population", to: "Births" });
+
+    annotateLoops(model);
+    annotateLoops(model);
+    expect(model.comments).toHaveLength(1);
+  });
+
+  test("leaves a user's own hand-written comments alone", () => {
+    const model = createEmptyModel();
+    const pop = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 } });
+    addFlow(model, { name: "Births", equation: "Population * 0.02", to: pop.id, pos: { x: 100, y: 0 } });
+    addConnector(model, { from: "Population", to: "Births" });
+    addComment(model, { text: "Don't touch this one" });
+
+    annotateLoops(model);
+    expect(model.comments.some((c) => c.text === "Don't touch this one")).toBe(true);
+    expect(model.comments).toHaveLength(2);
   });
 });

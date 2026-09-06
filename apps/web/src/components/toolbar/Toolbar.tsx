@@ -1,6 +1,17 @@
-import { addAuxiliary, addComment, addStock, autoLayout } from "@vensim-ai/core";
+import { addAuxiliary, addComment, addStock, annotateLoops, autoLayout } from "@vensim-ai/core";
 import { useReactFlow } from "@xyflow/react";
-import { Droplet, FolderOpen, GitBranch, LayoutGrid, MessageSquarePlus, RotateCw, Save, Square, Waves } from "lucide-react";
+import {
+  Droplet,
+  FolderOpen,
+  GitBranch,
+  LayoutGrid,
+  MessageSquarePlus,
+  MessageSquareText,
+  RotateCw,
+  Save,
+  Square,
+  Waves,
+} from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +40,8 @@ export function Toolbar() {
     mutate((m) => autoLayout(m));
     requestAnimationFrame(() => fitView({ duration: 300, padding: 0.2 }));
   };
+
+  const onAnnotateLoops = () => mutate((m) => annotateLoops(m));
 
   const onAddStock = () =>
     addNamed((m) => {
@@ -102,6 +115,14 @@ export function Toolbar() {
         title="Automatically re-arrange every stock/flow/auxiliary into a tidy layered layout based on their flow and causal connections, then fit the view"
       >
         <LayoutGrid className="size-4" /> Auto Layout
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onAnnotateLoops}
+        title={`Auto-generate one text annotation per feedback loop (e.g. "R1 loop: Population → Births → Population"), using each element's own name — re-running replaces this tool's own earlier annotations to match the model's current loops, and never touches a comment you wrote by hand`}
+      >
+        <MessageSquareText className="size-4" /> Annotate Loops
       </Button>
 
       <div className="mx-1 h-5 w-px bg-border" />

@@ -303,7 +303,7 @@ function connectorArrowRecord(
  * loop badges just say "R" or "B". Shape code `0` (a plain text box, not a built-in icon like
  * the `48` cloud) is what makes Vensim render this as text at all instead of a random glyph. */
 function loopBadgeRecord(id: number, loop: Loop): string {
-  return `12,${id},0,${Math.round(loop.centroid.x)},${Math.round(loop.centroid.y)},27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0\n${loop.polarity}\n`;
+  return `12,${id},0,${Math.round(loop.centroid.x)},${Math.round(loop.centroid.y)},27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0\n${loop.polarity}${loop.number}\n`;
 }
 
 /** A freestanding text annotation (Vensim's own "Comment" sketch tool produces this — see

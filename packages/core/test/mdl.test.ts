@@ -152,7 +152,7 @@ describe("mdl codec", () => {
     // box, not a built-in icon like Vensim's own cloud glyph) with a bare "R"/"B", matching
     // native Vensim's own loop-indicator convention (see example-compatibility/flow-diagram.mdl).
     expect(mdlText).toMatch(/^12,\d+,0,-?\d+,-?\d+,27,27,4,7,/m);
-    expect(mdlText).toMatch(/^R$/m);
+    expect(mdlText).toMatch(/^R\d+$/m);
 
     // Connector arrows carry field codes matching a real causal/info-link arrow (see
     // example-compatibility/flow-diagram.mdl) and a non-origin bend waypoint.

@@ -14,6 +14,7 @@
 // handing it a well-formed XMILE file sidesteps the undocumented sketch quirk rather than
 // fighting it further.
 
+import { detectLoops } from "../loops/detect.js";
 import { exprToString, tryParseExpr } from "../mdl/expr/index.js";
 import { allVariables, type Model } from "../model/types.js";
 
@@ -54,8 +55,13 @@ export function writeXmile(model: Model): string {
   out += '    <product version="1.0">Vensim AI Editor</product>\n';
   // Spec (2.2, 2.2.1): <options> is an OPTIONAL sub-tag of <header>, but "if a file makes use
   // of any of the [listed] functionality, it MUST be listed under the <options> tag" — this
-  // file always includes a <views> section below, so <has_model_view/> must be declared.
-  out += "    <options>\n      <has_model_view/>\n    </options>\n";
+  // file always includes a <views> section below, so <has_model_view/> must be declared, and
+  // <uses_annotation/> as well whenever a freestanding <text_box> (a user's own comment, or an
+  // auto-generated loop annotation/badge — see writeView) is actually emitted.
+  const usesAnnotation = model.comments.length > 0 || detectLoops(model).length > 0;
+  out += "    <options>\n      <has_model_view/>\n";
+  if (usesAnnotation) out += "      <uses_annotation/>\n";
+  out += "    </options>\n";
   out += `    <name>${escapeXml(model.name)}</name>\n`;
   out += "  </header>\n";
   out += "  <sim_specs>\n";
@@ -176,6 +182,24 @@ function writeView(model: Model): string {
     out += `          <to>${escapeXml(toVar.name)}</to>\n`;
     out += "        </connector>\n";
   });
+
+  // A freestanding annotation (spec 6.5.1: <text_box>) — a user's own comment, or an
+  // auto-generated loop chain (see loops/annotate.ts's annotateLoops) — round-trips as plain
+  // model text either way, so there's nothing format-specific to keep in sync between this and
+  // the `.mdl` writer's own `12,` comment records: both just serialize the same `model.comments`.
+  for (const c of model.comments) {
+    out += `        <text_box x="${Math.round(c.pos.x)}" y="${Math.round(c.pos.y)}" width="${Math.round(c.size.width)}" height="${Math.round(c.size.height)}">${escapeXml(c.text)}</text_box>\n`;
+  }
+
+  // The small "R1"/"B1" loop-polarity badge Vensim's own sketch draws for a manually-marked
+  // loop (the `.mdl` writer's loopBadgeRecord) — represented the same way here, as a tiny
+  // <text_box>, so a diagram's loop labels look the same regardless of which format it was
+  // opened from. Computed fresh from the model each export (not stored data) exactly like the
+  // `.mdl` path, so it always reflects the current relations/flows even if `annotateLoops` was
+  // never explicitly run.
+  for (const loop of detectLoops(model)) {
+    out += `        <text_box x="${Math.round(loop.centroid.x - 13)}" y="${Math.round(loop.centroid.y - 13)}" width="27" height="27">${loop.polarity}${loop.number}</text_box>\n`;
+  }
 
   out += "      </view>\n";
   out += "    </views>\n";

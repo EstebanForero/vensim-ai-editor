@@ -141,7 +141,7 @@ export function LoopNode({ data }: NodeProps & { data: LoopNodeData }) {
   const RotateIcon = loop.direction === "clockwise" ? RotateCw : RotateCcw;
   return (
     <div
-      title={`${isReinforcing ? "Reinforcing" : "Balancing"} loop (${loop.direction}): ${names.join(" → ")}`}
+      title={`${loop.polarity}${loop.number} — ${isReinforcing ? "Reinforcing" : "Balancing"} loop (${loop.direction}): ${names.join(" → ")}`}
       className={cn(
         "flex items-center gap-1 rounded-full border-2 px-1.5 py-1 text-xs font-bold shadow-md",
         isReinforcing
@@ -150,7 +150,10 @@ export function LoopNode({ data }: NodeProps & { data: LoopNodeData }) {
       )}
     >
       <RotateIcon className="size-3.5" />
-      <span>{loop.polarity}</span>
+      <span>
+        {loop.polarity}
+        {loop.number}
+      </span>
     </div>
   );
 }

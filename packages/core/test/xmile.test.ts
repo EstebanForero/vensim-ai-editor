@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { addAuxiliary, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
+import { addAuxiliary, addComment, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
+import { annotateLoops } from "../src/loops/annotate.js";
 import { createEmptyModel } from "../src/model/types.js";
 import { writeXmile } from "../src/xmile/writer.js";
 
@@ -107,5 +108,21 @@ describe("XMILE writer", () => {
     expect(pts).toHaveLength(2);
     expect(declaredX).toBe(Math.round((pts[0]!.x + pts[1]!.x) / 2));
     expect(declaredY).toBe(Math.round((pts[0]!.y + pts[1]!.y) / 2));
+  });
+
+  test("exports comments (including auto-generated loop annotations) as <text_box>, and declares uses_annotation", () => {
+    const model = createEmptyModel();
+    const pop = addStock(model, { name: "Population", initialEquation: "100" });
+    addFlow(model, { name: "Births", equation: "Population * 0.02", to: pop.id });
+    addConnector(model, { from: "Population", to: "Births" });
+    addComment(model, { text: "Hand-written note", pos: { x: 10, y: 20 }, size: { width: 100, height: 40 } });
+    annotateLoops(model);
+
+    const xml = writeXmile(model);
+    expect(xml).toContain("<uses_annotation/>");
+    expect(xml).toContain('<text_box x="10" y="20" width="100" height="40">Hand-written note</text_box>');
+    expect(xml).toContain("R1 loop: Population → Births → Population");
+    // the small loop-polarity badge is exported too, distinct from the longer annotation
+    expect(xml).toMatch(/<text_box x="-?\d+" y="-?\d+" width="27" height="27">R1<\/text_box>/);
   });
 });

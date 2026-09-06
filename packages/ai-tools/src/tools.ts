@@ -233,7 +233,13 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
   {
     name: "list_loops",
     description:
-      "Detect feedback loops formed by the model's relations and flows. Returns each loop's variable names, whether it's Reinforcing (R, an even number of \"-\" relations around the loop) or Balancing (B, an odd number), and its visual rotation (clockwise/counterclockwise) as drawn on the current canvas layout.",
+      "Detect feedback loops formed by the model's relations and flows. Returns each loop's label (R1, R2, B1, ... — numbered per polarity, matching the canvas badge and annotate_loops), variable names, whether it's Reinforcing (R, an even number of \"-\" relations around the loop) or Balancing (B, an odd number), and its visual rotation (clockwise/counterclockwise) as drawn on the current canvas layout.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "annotate_loops",
+    description:
+      "Auto-generate one text annotation per detected feedback loop, e.g. \"R1 loop: Population → Births → Population\" — using each element's actual name around the cycle (never a generic placeholder like \"flow\" or \"stock\"), placed near the loop on the canvas. Idempotent: re-running replaces this tool's own earlier output (matched by its own \"R1 loop: \"/\"B2 loop: \" prefix) to reflect the model's current loops, and never touches a comment the user wrote by hand. The annotations are plain comments, so they export identically in both .mdl and .xmile. Call this after building or restructuring a model with feedback loops, or whenever asked to label/explain the loops.",
     parameters: { type: "object", properties: {} },
   },
 ];

@@ -11,6 +11,11 @@ export interface Loop {
   direction: LoopDirection;
   /** Centroid of the loop's node positions — where to place the R/B badge. */
   centroid: { x: number; y: number };
+  /** 1-based ordinal *within this polarity* (R1, R2, B1, B2, ...), assigned in the same stable
+   * order `detectLoops` already returns loops in — so `${polarity}${number}` is a per-model
+   * loop label that stays consistent across the canvas badge, exported annotations, and the
+   * `list_loops`/`annotate_loops` AI tools, the same way Vensim modelers number loops by hand. */
+  number: number;
 }
 
 export interface DetectLoopsOptions {

@@ -6,6 +6,7 @@ import {
   addFlow,
   addStock,
   allVariables,
+  annotateLoops,
   autoLayout,
   deleteElement,
   detectLoops,
@@ -184,11 +185,16 @@ export function executeTool(model: Model, toolName: string, input: Record<string
       }
       case "list_loops": {
         const loops = detectLoops(model).map((loop) => ({
+          label: `${loop.polarity}${loop.number}`,
           polarity: loop.polarity,
           direction: loop.direction,
           variables: namesForLoop(model, loop.nodeIds),
         }));
         return { ok: true, result: { loops } };
+      }
+      case "annotate_loops": {
+        const created = annotateLoops(model);
+        return { ok: true, result: { annotated: created.length } };
       }
       default:
         return { ok: false, error: `Unknown tool "${toolName}".` };

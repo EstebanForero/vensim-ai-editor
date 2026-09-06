@@ -85,12 +85,24 @@ export function detectLoops(model: Model, options: DetectLoopsOptions = {}): Loo
     return {
       id: `loop_${cycle.nodeIds.join("_")}_${i}`,
       nodeIds: cycle.nodeIds,
-      polarity: negativeCount % 2 === 0 ? "R" : "B",
+      polarity: negativeCount % 2 === 0 ? ("R" as const) : ("B" as const),
       direction: loopDirection(points),
       centroid: clearOfNodes(rawCentroid, points, i),
+      number: 0, // assigned below, once the final shortest-first order is settled
     };
   });
 
   loops.sort((a, b) => a.nodeIds.length - b.nodeIds.length);
-  return loops.slice(0, limit);
+  const limited = loops.slice(0, limit);
+
+  // Numbered per polarity (R1, R2, ... / B1, B2, ...) in this same shortest-first order, so the
+  // numbering matches how a modeler would naturally scan the diagram for "the first loop", not
+  // an arbitrary internal id.
+  const counts: Record<"R" | "B", number> = { R: 0, B: 0 };
+  for (const loop of limited) {
+    counts[loop.polarity] += 1;
+    loop.number = counts[loop.polarity];
+  }
+
+  return limited;
 }

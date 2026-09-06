@@ -37,6 +37,12 @@ describe("executeTool", () => {
     const loopsRes = executeTool(model, "list_loops", {});
     expect(loopsRes.ok).toBe(true);
     expect(Array.isArray((loopsRes.result as any).loops)).toBe(true);
+
+    const annotateRes = executeTool(model, "annotate_loops", {});
+    expect(annotateRes.ok).toBe(true);
+    expect((annotateRes.result as any).annotated).toBe((loopsRes.result as any).loops.length);
+    const listAfter = executeTool(model, "list_model", {});
+    expect((listAfter.result as any).comments.length).toBe((annotateRes.result as any).annotated);
   });
 
   test("reports errors instead of throwing", () => {
