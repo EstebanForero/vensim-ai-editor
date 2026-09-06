@@ -59,7 +59,7 @@ describe("XMILE writer", () => {
     expect(xml).toContain('Population * "Birth Rate"');
   });
 
-  test("bends a flow's <pts> at a right angle, without moving its endpoints, when the stocks it connects sit diagonally", () => {
+  test("keeps a flow's <pts> as a plain 2-point pipe on the stocks' real positions, even diagonally", () => {
     const model = createEmptyModel();
     const a = addStock(model, { name: "A", initialEquation: "0" });
     a.pos = { x: 100, y: 100 };
@@ -73,16 +73,14 @@ describe("XMILE writer", () => {
       y: Number(m[2]),
     }));
 
-    // The pipe's ends must stay exactly on the stocks they connect — a flow floating away from
-    // its own stocks is the regression this test guards against.
-    expect(pts[0]).toEqual({ x: 100, y: 100 });
-    expect(pts[pts.length - 1]).toEqual({ x: 400, y: 250 });
-
-    // Spec (6.1.2): a flow's <pts> "MUST form right angles" — every consecutive pair of points
-    // must share an x or a y coordinate.
-    for (let i = 1; i < pts.length; i++) {
-      const [prev, cur] = [pts[i - 1]!, pts[i]!];
-      expect(prev.x === cur.x || prev.y === cur.y).toBe(true);
-    }
+    // The pipe's ends must stay exactly on the stocks they connect. A 3-point bent pipe was
+    // tried here to satisfy a strict reading of the spec's "MUST form right angles" language,
+    // but real Vensim reads a bend on a flow with an open (cloud) end as if it were itself a
+    // second open endpoint, drawing a spurious extra cloud+arrowhead — so this stays a plain
+    // 2-point pipe, diagonal or not.
+    expect(pts).toEqual([
+      { x: 100, y: 100 },
+      { x: 400, y: 250 },
+    ]);
   });
 });

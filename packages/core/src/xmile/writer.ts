@@ -122,15 +122,17 @@ function writeView(model: Model): string {
     // an endpoint with no named variable behind it is simply a bare, unconnected point.
     const p1 = fromVar ? fromVar.pos : { x: flow.pos.x - 60, y: flow.pos.y };
     const p2 = toVar ? toVar.pos : { x: flow.pos.x + 60, y: flow.pos.y };
-    // Spec (6.1.2): a flow's <pts> "MUST form right angles". The two endpoints above must stay
-    // the *actual* stock/cloud positions (snapping them onto the flow's own, independently
-    // movable position instead previously left the pipe floating away from the stocks it was
-    // supposed to touch — visually "disconnected"). So when the two ends aren't already
-    // aligned, add one right-angle bend between them rather than relocating either end.
-    const points = p1.x === p2.x || p1.y === p2.y ? [p1, p2] : [p1, { x: p2.x, y: p1.y }, p2];
+    // NOTE: the spec (6.1.2) reads as if a flow's <pts> "MUST form right angles", and an
+    // earlier version of this writer inserted a bend point to satisfy that whenever the two
+    // ends weren't already axis-aligned. In practice that broke real Vensim imports: Vensim
+    // reads a 3-point flow with an open (cloud) end as if the bend were itself a second open
+    // endpoint, drawing a spurious extra cloud+arrowhead at the corner in addition to the real
+    // one. A plain straight 2-point pipe — diagonal or not — is what Vensim actually handles
+    // correctly (confirmed empirically), so that's what's emitted here.
     out += `        <flow name="${escapeXmlAttr(flow.name)}" x="${Math.round(flow.pos.x)}" y="${Math.round(flow.pos.y)}">\n`;
     out += "          <pts>\n";
-    for (const pt of points) out += `            <pt x="${Math.round(pt.x)}" y="${Math.round(pt.y)}"/>\n`;
+    out += `            <pt x="${Math.round(p1.x)}" y="${Math.round(p1.y)}"/>\n`;
+    out += `            <pt x="${Math.round(p2.x)}" y="${Math.round(p2.y)}"/>\n`;
     out += "          </pts>\n";
     out += "        </flow>\n";
   }
