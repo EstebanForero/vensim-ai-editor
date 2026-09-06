@@ -59,7 +59,7 @@ describe("XMILE writer", () => {
     expect(xml).toContain('Population * "Birth Rate"');
   });
 
-  test("keeps a flow's <pts> axis-aligned even when the stocks it connects sit at diagonal positions", () => {
+  test("bends a flow's <pts> at a right angle, without moving its endpoints, when the stocks it connects sit diagonally", () => {
     const model = createEmptyModel();
     const a = addStock(model, { name: "A", initialEquation: "0" });
     a.pos = { x: 100, y: 100 };
@@ -72,10 +72,17 @@ describe("XMILE writer", () => {
       x: Number(m[1]),
       y: Number(m[2]),
     }));
-    expect(pts).toHaveLength(2);
-    // Spec (6.1.2): a flow's <pts> "MUST form right angles" — a single-segment pipe satisfies
-    // that only when its two points share an x or a y coordinate.
-    const [p1, p2] = pts;
-    expect(p1!.x === p2!.x || p1!.y === p2!.y).toBe(true);
+
+    // The pipe's ends must stay exactly on the stocks they connect — a flow floating away from
+    // its own stocks is the regression this test guards against.
+    expect(pts[0]).toEqual({ x: 100, y: 100 });
+    expect(pts[pts.length - 1]).toEqual({ x: 400, y: 250 });
+
+    // Spec (6.1.2): a flow's <pts> "MUST form right angles" — every consecutive pair of points
+    // must share an x or a y coordinate.
+    for (let i = 1; i < pts.length; i++) {
+      const [prev, cur] = [pts[i - 1]!, pts[i]!];
+      expect(prev.x === cur.x || prev.y === cur.y).toBe(true);
+    }
   });
 });
