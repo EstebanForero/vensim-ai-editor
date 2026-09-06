@@ -56,7 +56,10 @@ export function addFlow(model: Model, input: AddFlowInput): Flow {
     units: input.units ?? "",
     comment: input.comment ?? "",
     pos: input.pos ?? defaultFlowPosition(model, fromId, toId),
-    size: input.size ?? { width: 70, height: 30 },
+    // Matches Vensim's own default rate/flow label box size (confirmed against a flow drawn
+    // fresh in a real Vensim session, not just an example file — see writer.ts's valve-label
+    // pairing notes for why this specific size turned out to matter for more than looks).
+    size: input.size ?? { width: 92, height: 52 },
     from: fromId,
     to: toId,
   };

@@ -9,6 +9,19 @@
 // (Vensim's own "Comment" sketch tool produces this kind of freestanding text box) rather
 // than a verified byte-exact match — if a real Vensim install renders it oddly, the fix is
 // local to `commentRecord` below.
+//
+// A flow's valve<->name-label pairing (what makes Vensim treat them as one named Rate, rather
+// than orphaning the label into a disconnected gray box on re-save) is not documented anywhere
+// as an explicit field — Vensim's own docs only confirm attachment exists as a concept
+// ("attachment determines where the variable attached to the valve is placed... below, above,
+// left, right"), not how it's encoded in plain text. What's actually confirmed, empirically,
+// against three independently real-Vensim-drawn flows (this editor's two example-compatibility
+// reference files, plus a flow drawn fresh by hand in a live Vensim session specifically to
+// test this): the label sits exactly 34px below the valve's center, and its box is 46x26 half-
+// size (92x52 full — the same default size as a stock). Matching those two numbers exactly
+// (rather than a formula that lands merely close) is what this editor now does; if a valve
+// still gets orphaned on a real Vensim open+resave after this, the fix is local to the
+// `valveCenter` calculation and the Flow builder's default size, both flagged below.
 
 import { detectLoops, type Loop } from "../loops/index.js";
 import { allVariables, findVariable, type Connector, type Flow, type Model, type Position, type Variable } from "../model/types.js";
@@ -140,7 +153,15 @@ function writeSketch(model: Model): string {
     // that gap (rather than stacking them exactly on top of each other) is also what lets this
     // editor's own parser re-associate a causal arrow drawn into the valve back to this flow's
     // name on the next import (nearest-valve-to-flow matching, see applySketch).
-    const valveCenter = { x: labelCenter.x, y: labelCenter.y - (flow.size.height / 2 + 20) };
+    // 34px is not an approximation — it's the exact vertical gap Vensim's own "Insert Rate"
+    // tool places between a valve and its name label (confirmed identical across three
+    // independent real-Vensim-drawn flows: example-compatibility/flow-diagram.mdl,
+    // aitraining.mdl, and appgenfix.mdl's freshly hand-drawn conn1/conn2/conn3). This editor
+    // previously computed the gap from the flow's own box height instead, landing at 35px for
+    // its old default size — visually indistinguishable, but see the file header's
+    // compatibility notes on why Vensim only recognizes a valve and its label as one named Rate
+    // in the exact configuration its own tool produces, not merely a visually-close one.
+    const valveCenter = { x: labelCenter.x, y: labelCenter.y - 34 };
     out += `11,${valveId},0,${Math.round(valveCenter.x)},${Math.round(valveCenter.y)},6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0\n`;
     const flowHalf = halfSize(flow.size);
     out += `10,${idIndex.get(flow.id)},${flow.name},${Math.round(labelCenter.x)},${Math.round(labelCenter.y)},${Math.round(flowHalf.width)},${Math.round(flowHalf.height)},40,3,${VARIABLE_RECORD_TAIL}\n`;
