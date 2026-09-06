@@ -52,14 +52,20 @@ export function deleteElement(model: Model, id: string): void {
   model.connectors = model.connectors.filter((c) => c.id !== id && c.from !== id && c.to !== id);
 
   if (v.kind === "stock") {
+    const orphanedFlowIds: string[] = [];
     for (const flowId of [...v.inflows, ...v.outflows]) {
       const flow = model.flows.find((f) => f.id === flowId);
       if (flow) {
         if (flow.from === v.id) flow.from = null;
         if (flow.to === v.id) flow.to = null;
+        if (!flow.from && !flow.to) orphanedFlowIds.push(flow.id);
       }
     }
     model.stocks = model.stocks.filter((s) => s.id !== id);
+    // addFlow refuses to create a flow with neither a from nor a to stock — deleting this
+    // stock must not silently leave that invariant broken (a flow floating with both ends
+    // open reads, to any XMILE reader, as two separate unconnected cloud endpoints).
+    for (const flowId of orphanedFlowIds) deleteElement(model, flowId);
   } else if (v.kind === "flow") {
     for (const s of model.stocks) {
       s.inflows = s.inflows.filter((f) => f !== id);
