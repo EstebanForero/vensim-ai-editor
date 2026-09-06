@@ -1,0 +1,102 @@
+{UTF-8}
+Demanda de bicicletas = 8
+	~	bicicletas/día
+	~	
+	|
+Inventario de bicicletas = INTEG(Recepción de bicicletas -\
+		 Venta de bicicletas, 60)
+	~	bicicletas
+	~	Cantidad de bicicletas disponibles en la tienda
+	|
+Inventario deseado = 100
+	~	bicicletas
+	~	
+	|
+Pedido de bicicletas = MAX(0, (Inventario deseado - Inventario de bicicletas) /\
+		 Tiempo de ajuste de inventario)
+	~	bicicletas/día
+	~	Cantidad solicitada al proveedor; no puede ser negativa
+	|
+Recepción de bicicletas = Pedido de bicicletas / Tiempo de entrega
+	~	bicicletas/día
+	~	Entrada de bicicletas desde el proveedor
+	|
+Tiempo de ajuste de inventario = 10
+	~	días
+	~	
+	|
+Tiempo de entrega = 5
+	~	días
+	~	
+	|
+Venta de bicicletas = MIN(Demanda de bicicletas, Inventario de bicicletas / 1)
+	~	bicicletas/día
+	~	Salida por ventas; no puede superar el inventario disponible
+	|
+
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+INITIAL TIME = 0
+	~	
+	~	
+	|
+FINAL TIME = 60
+	~	
+	~	
+	|
+TIME STEP = 0.25
+	~	
+	~	
+	|
+SAVEPER = 0.25
+	~	
+	~	
+	|
+\\\---///
+V300  Do not put anything below this section - it will be ignored
+*main
+$192-192-192,0,Helvetica|10|B|0-0-0|0-0-0|-1--1--1|-1--1--1|96,96,100,0
+10,1,Inventario de bicicletas,672,145,0,0,3,3,0,0,0,0,0,0
+11,2,0,529,151,0,0,34
+10,3,Recepción de bicicletas,529,151,0,0,35,3,0,0,0,0,0,0
+12,4,0,385,156,0,0,8,0
+1,5,2,4,1,0,0,0,0,64,0,-1--1--1,,1|(457,153)|
+1,6,2,1,1,0,0,0,0,64,0,-1--1--1,,1|(600,148)|
+11,7,0,817,149,0,0,34
+10,8,Venta de bicicletas,817,149,0,0,35,3,0,0,0,0,0,0
+12,9,0,962,153,0,0,8,0
+1,10,7,1,1,0,0,0,0,64,0,-1--1--1,,1|(744,147)|
+1,11,7,9,1,0,0,0,0,64,0,-1--1--1,,1|(889,151)|
+10,12,Pedido de bicicletas,593,-5,0,0,3,3,0,0,0,0,0,0
+10,13,Inventario deseado,475,-138,0,0,3,3,0,0,0,0,0,0
+10,14,Tiempo de entrega,461,274,0,0,3,3,0,0,0,0,0,0
+10,15,Tiempo de ajuste de inventario,640,-158,0,0,3,3,0,0,0,0,0,0
+10,16,Demanda de bicicletas,865,-4,0,0,3,3,0,0,0,0,0,0
+1,17,12,3,1,0,0,0,0,64,0,-1--1--1,,1|(0,0)|
+1,18,14,3,1,0,0,0,0,64,0,-1--1--1,,1|(0,0)|
+1,19,13,12,1,0,0,0,0,64,0,-1--1--1,,1|(0,0)|
+1,20,1,12,1,0,0,0,0,64,0,-1--1--1,,1|(0,0)|
+1,21,15,12,1,0,0,0,0,64,0,-1--1--1,,1|(0,0)|
+1,22,16,8,1,0,0,0,0,64,0,-1--1--1,,1|(0,0)|
+1,23,1,8,1,0,0,0,0,64,0,-1--1--1,,1|(0,0)|
+///---\\\
+:L<%^E!@
+15:0,0,0,0,0,0
+19:100,0
+27:0,
+34:0,
+4:Time
+35:Date
+36:YYYY-MM-DD
+37:2000
+38:1
+39:1
+40:2
+41:0
+42:0
+24:0
+25:60
+26:60

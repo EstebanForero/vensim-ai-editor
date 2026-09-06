@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0">
+  <header>
+    <vendor>Vensim AI Editor</vendor>
+    <product version="1.0">Vensim AI Editor</product>
+    <options>
+      <has_model_view/>
+    </options>
+    <name>Untitled Model</name>
+  </header>
+  <sim_specs>
+    <start>0</start>
+    <stop>60</stop>
+    <dt>0.25</dt>
+    <method>euler</method>
+    <time_units>días</time_units>
+  </sim_specs>
+  <model>
+    <variables>
+      <stock name="Inventario de bicicletas">
+        <eqn>60</eqn>
+        <inflow>Recepción de bicicletas</inflow>
+        <outflow>Venta de bicicletas</outflow>
+        <units>bicicletas</units>
+        <doc>Cantidad de bicicletas disponibles en la tienda</doc>
+      </stock>
+      <flow name="Recepción de bicicletas">
+        <eqn>"Pedido de bicicletas" / "Tiempo de entrega"</eqn>
+        <units>bicicletas/día</units>
+        <doc>Entrada de bicicletas desde el proveedor</doc>
+      </flow>
+      <flow name="Venta de bicicletas">
+        <eqn>MIN("Demanda de bicicletas", "Inventario de bicicletas" / 1)</eqn>
+        <units>bicicletas/día</units>
+        <doc>Salida por ventas; no puede superar el inventario disponible</doc>
+      </flow>
+      <aux name="Pedido de bicicletas">
+        <eqn>MAX(0, ("Inventario deseado" - "Inventario de bicicletas") / "Tiempo de ajuste de inventario")</eqn>
+        <units>bicicletas/día</units>
+        <doc>Cantidad solicitada al proveedor; no puede ser negativa</doc>
+      </aux>
+      <aux name="Inventario deseado">
+        <eqn>100</eqn>
+        <units>bicicletas</units>
+      </aux>
+      <aux name="Tiempo de entrega">
+        <eqn>5</eqn>
+        <units>días</units>
+      </aux>
+      <aux name="Tiempo de ajuste de inventario">
+        <eqn>10</eqn>
+        <units>días</units>
+      </aux>
+      <aux name="Demanda de bicicletas">
+        <eqn>8</eqn>
+        <units>bicicletas/día</units>
+      </aux>
+    </variables>
+    <views>
+      <view>
+        <stock name="Inventario de bicicletas" x="672" y="145"/>
+        <flow name="Recepción de bicicletas" x="529" y="151">
+          <pts>
+            <pt x="385" y="156"/>
+            <pt x="672" y="145"/>
+          </pts>
+        </flow>
+        <flow name="Venta de bicicletas" x="817" y="149">
+          <pts>
+            <pt x="672" y="145"/>
+            <pt x="962" y="153"/>
+          </pts>
+        </flow>
+        <aux name="Pedido de bicicletas" x="593" y="-5"/>
+        <aux name="Inventario deseado" x="475" y="-138"/>
+        <aux name="Tiempo de entrega" x="461" y="274"/>
+        <aux name="Tiempo de ajuste de inventario" x="640" y="-158"/>
+        <aux name="Demanda de bicicletas" x="865" y="-4"/>
+        <connector uid="0" angle="227.41">
+          <from>Pedido de bicicletas</from>
+          <to>Recepción de bicicletas</to>
+        </connector>
+        <connector uid="1" angle="97.72">
+          <from>Tiempo de entrega</from>
+          <to>Recepción de bicicletas</to>
+        </connector>
+        <connector uid="2" angle="311.58">
+          <from>Inventario deseado</from>
+          <to>Pedido de bicicletas</to>
+        </connector>
+        <connector uid="3" angle="117.77">
+          <from>Inventario de bicicletas</from>
+          <to>Pedido de bicicletas</to>
+        </connector>
+        <connector uid="4" angle="252.92">
+          <from>Tiempo de ajuste de inventario</from>
+          <to>Pedido de bicicletas</to>
+        </connector>
+        <connector uid="5" angle="283.26">
+          <from>Demanda de bicicletas</from>
+          <to>Venta de bicicletas</to>
+        </connector>
+        <connector uid="6" angle="358.01">
+          <from>Inventario de bicicletas</from>
+          <to>Venta de bicicletas</to>
+        </connector>
+      </view>
+    </views>
+  </model>
+</xmile>
+

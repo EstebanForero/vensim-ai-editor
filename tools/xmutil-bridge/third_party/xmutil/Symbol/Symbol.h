@@ -1,0 +1,94 @@
+#ifndef _XMUTIL_SYMBOL_H
+#define _XMUTIL_SYMBOL_H
+
+#include <set>
+#include <string>
+
+#include "../ContextInfo.h"
+#include "../Function/State.h"
+#include "SymbolTableBase.h"
+
+class Model;  // forward declaration
+class Function;
+class Variable;
+namespace tinyxml2 {
+class XMLElement;
+}
+
+class ModelGroup {
+public:
+  ModelGroup(const std::string &name, ModelGroup *owner)
+      : sName(name), pOwner(owner), iDepth(0), pModel(NULL), pModule(NULL), pVariables(NULL) {
+  }
+  ModelGroup(const std::string &name, ModelGroup *owner, int depth)
+      : sName(name), pOwner(owner), iDepth(depth), pModel(NULL), pModule(NULL), pVariables(NULL) {
+  }
+  std::vector<Variable *> vVariables;
+  std::string sName;
+  ModelGroup *pOwner;
+  tinyxml2::XMLElement *pModule;     // this groups module element in the owning module
+  tinyxml2::XMLElement *pModel;      // this groups model elemen in the main document
+  tinyxml2::XMLElement *pVariables;  // variables list in the module
+  int iDepth;                        // 0 means root level 1 nested once and so on
+};
+
+/* abstract class Symbol - used for model vairblaes, models, units
+   and other things that may appear in the symbol table - these things
+   share the same search space for lookup but are conceptually distinct */
+
+enum SYMTYPE { Symtype_None, Symtype_Variable, Symtype_Units, Symtype_Model, Symtype_Function };
+
+class Symbol : public SymbolTableBase {
+public:
+  Symbol(SymbolNameSpace *sns, const std::string &name);
+  virtual ~Symbol(void) = 0;
+  virtual SYMTYPE isType(void);
+  virtual bool CheckComputed(ContextInfo *info, bool first) {
+    return true;
+  }  // do nothing
+  virtual void CheckPlaceholderVars(Model *m) {
+  }  // do nothing
+  virtual void SetupState(ContextInfo *info) {
+  }  // do nothing
+  virtual int SubscriptCount(std::vector<Symbol *> &elmlist) {
+    return 0;
+  }
+  const std::string &GetName(void);
+  inline void SetName(const std::string &name) {
+    sName = name;
+  }
+  void SetOwner(Symbol *var);
+  void AddSubrange(Symbol *sub, Symbol *oldowner);
+  std::set<Symbol *> *Subranges() {
+    return pSubranges;
+  }
+  Symbol *Owner() {
+    return pOwner ? pOwner : this;
+  }
+
+private:
+  std::string sName;
+  Symbol *pOwner;
+  std::set<Symbol *> *pSubranges;  // backward from SetOwber
+};
+
+// Orders Symbol (or Variable) pointers by display name so that set iteration
+// is deterministic. A std::set keyed on raw pointers iterates in heap-address
+// order, which silently varies with allocation history and allocator, and any
+// such order that reaches serialized output makes the output nondeterministic.
+// Name-only ordering is a strict weak ordering with no ties here because
+// name uniqueness per namespace is enforced by the find-before-create
+// discipline at every symbol-creation site (SymbolNameSpace::Insert's assert
+// only backstops it in debug builds), so two distinct symbols in one
+// namespace never share a name -- and every container ordered this way holds
+// symbols from a single namespace. Variables created by
+// Model::AddUnnamedVariable share an empty name and must never be put in a
+// SymbolNameLess-keyed set; they are unreachable by the current users of this
+// comparator.
+struct SymbolNameLess {
+  bool operator()(Symbol *a, Symbol *b) const {
+    return a->GetName() < b->GetName();
+  }
+};
+
+#endif  // once

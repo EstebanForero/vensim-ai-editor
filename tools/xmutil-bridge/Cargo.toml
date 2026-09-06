@@ -1,0 +1,13 @@
+[package]
+name = "xmutil-bridge"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "CLI wrapper around bobeberlein/xmutil's convert_xmile_to_mdl, for converting this editor's XMILE export into a Vensim-native .mdl using Vensim's own creator's reference implementation instead of a hand-rolled sketch writer."
+
+[[bin]]
+name = "xmutil-bridge"
+path = "src/main.rs"
+
+[build-dependencies]
+cc = "1"
