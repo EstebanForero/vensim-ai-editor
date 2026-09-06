@@ -1,6 +1,6 @@
 import { useReactFlow } from "@xyflow/react";
 import { Bot, KeyRound, Send, Settings2, Wrench } from "lucide-react";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +23,18 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const sessionRef = useRef<AgentSession>(createAgentSession());
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { fitView } = useReactFlow();
+
+  // Grows the textarea to fit its content (up to the CSS max-h cap, beyond which it scrolls
+  // instead) — a fixed `rows={2}` alone just scrolls internally from the very first extra line,
+  // which reads as a single-line box with a scrollbar rather than an actually multi-line input.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
 
   const send = async () => {
     const text = input.trim();
@@ -132,6 +143,7 @@ export function ChatPanel() {
 
       <div className="flex items-end gap-2 border-t p-2">
         <Textarea
+          ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -142,8 +154,8 @@ export function ChatPanel() {
           }}
           placeholder="Describe what to build or change… (Shift+Enter for a new line)"
           disabled={isAgentRunning}
-          rows={2}
-          className="max-h-40 min-h-[2.25rem] resize-y text-sm"
+          rows={1}
+          className="max-h-40 min-h-[2.25rem] resize-none overflow-y-auto text-sm"
         />
         <Button size="icon" onClick={send} disabled={isAgentRunning} className="shrink-0">
           <Send className="size-4" />
