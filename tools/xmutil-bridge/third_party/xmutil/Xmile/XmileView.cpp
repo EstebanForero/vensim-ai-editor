@@ -174,6 +174,17 @@ void XmileView::AllocateElements(tinyxml2::XMLElement *viewEl, std::vector<std::
       int uid = AllocateVariableElement(d.var, d.x, d.y);
       if (uid < 0)
         continue;
+      // PATCHED (not upstream): readDecl never reads width/height from XMILE at all (Decl only
+      // carries x/y), so every VensimVariableElement/VensimValveElement/VensimCommentElement
+      // this reader allocates keeps its default-initialized 0,0 size — the .mdl writer then
+      // emits that literal 0,0, which real Vensim treats as a zero-sized (i.e. invisible) shape
+      // rather than applying a sensible default. Real-world testing (see
+      // tools/xmutil-bridge/README.md) showed a converted diagram with every shape present in
+      // the file but none of them visible. Setting each element's size explicitly here, to the
+      // same half-dimensions this project's own .mdl writer already uses (see
+      // packages/core/src/mdl/writer.ts), is the minimal fix.
+      _view->Elements()[uid]->SetWidth(45);
+      _view->Elements()[uid]->SetHeight(23);
       recordUid(child, d.norm, uid);
     } else if (tag == "flow") {
       Decl d;
@@ -184,6 +195,13 @@ void XmileView::AllocateElements(tinyxml2::XMLElement *viewEl, std::vector<std::
         errs.push_back(std::string("<flow name=\"") + d.norm + "\">: could not allocate adjacent valve/variable slots");
         continue;
       }
+      // PATCHED (not upstream): see the AllocateVariableElement patch above for why this is
+      // needed at all. valveUid = varUid - 1 is this reader's own pairing convention (see
+      // AllocateValveAndVariable below).
+      _view->Elements()[varUid - 1]->SetWidth(6);
+      _view->Elements()[varUid - 1]->SetHeight(8);
+      _view->Elements()[varUid]->SetWidth(46);
+      _view->Elements()[varUid]->SetHeight(26);
       recordUid(child, d.norm, varUid);
       // Pipe endpoints: <pts><pt x= y=/><pt x= y=/></pts>. Resolve each
       // endpoint to either an existing stock/aux UID (positional match) or a
@@ -313,6 +331,10 @@ int XmileView::AllocateValveAndVariable(Variable *flowVar, int x, int y) {
 int XmileView::AllocateCloud(int x, int y) {
   int uid = ReserveNextSlot();
   _view->Elements()[uid] = new VensimCommentElement(x, y);
+  // PATCHED (not upstream): see the AllocateVariableElement patch's comment for why this is
+  // needed — an unsized cloud is an invisible cloud once written to .mdl.
+  _view->Elements()[uid]->SetWidth(10);
+  _view->Elements()[uid]->SetHeight(8);
   return uid;
 }
 
