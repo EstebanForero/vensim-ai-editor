@@ -129,7 +129,15 @@ function writeView(model: Model): string {
     // endpoint, drawing a spurious extra cloud+arrowhead at the corner in addition to the real
     // one. A plain straight 2-point pipe — diagonal or not — is what Vensim actually handles
     // correctly (confirmed empirically), so that's what's emitted here.
-    out += `        <flow name="${escapeXmlAttr(flow.name)}" x="${Math.round(flow.pos.x)}" y="${Math.round(flow.pos.y)}">\n`;
+    // The valve's own declared x/y is written as the exact midpoint of the pipe it's drawn on
+    // — not `flow.pos` (the UI's independently-draggable label position), which can drift off
+    // the actual line between the two pts once a connected stock moves. A valve that isn't on
+    // its own pipe reads as ambiguous to Vensim's importer, which appears to fall back to
+    // drawing an arrowhead at both ends instead of picking a direction — see writer.ts's other
+    // notes on Vensim's XMILE-import quirks for the rest of that trail.
+    const valveX = (p1.x + p2.x) / 2;
+    const valveY = (p1.y + p2.y) / 2;
+    out += `        <flow name="${escapeXmlAttr(flow.name)}" x="${Math.round(valveX)}" y="${Math.round(valveY)}">\n`;
     out += "          <pts>\n";
     out += `            <pt x="${Math.round(p1.x)}" y="${Math.round(p1.y)}"/>\n`;
     out += `            <pt x="${Math.round(p2.x)}" y="${Math.round(p2.y)}"/>\n`;

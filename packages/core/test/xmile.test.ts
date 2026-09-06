@@ -83,4 +83,29 @@ describe("XMILE writer", () => {
       { x: 400, y: 250 },
     ]);
   });
+
+  // Regression: the writer used to declare the flow's own x/y (its valve's position) as the
+  // model's independently-draggable `flow.pos`, which drifts off the actual pipe once a
+  // connected stock moves — a valve that isn't on its own pipe is exactly the kind of malformed
+  // XMILE that real-world testing showed Vensim's importer rendering as a double-headed arrow
+  // instead of picking a single direction. The declared position must always be the exact
+  // midpoint of the two <pts>, regardless of where flow.pos itself has drifted to.
+  test("declares the flow's own x/y as the exact midpoint of its <pts>, not the (possibly stale) UI drag position", () => {
+    const model = createEmptyModel();
+    const a = addStock(model, { name: "A", initialEquation: "0" });
+    a.pos = { x: 0, y: 100 };
+    const flow = addFlow(model, { name: "Outflow", equation: "1", from: a.id }); // to: cloud sink
+    flow.pos = { x: 9999, y: -9999 }; // simulate a label dragged far off the actual pipe
+
+    const xml = writeXmile(model);
+    const flowTag = xml.match(/<flow name="Outflow" x="(-?\d+)" y="(-?\d+)">/);
+    expect(flowTag).not.toBeNull();
+    const declaredX = Number(flowTag![1]);
+    const declaredY = Number(flowTag![2]);
+
+    const pts = [...xml.matchAll(/<pt x="(-?\d+)" y="(-?\d+)"\/>/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+    expect(pts).toHaveLength(2);
+    expect(declaredX).toBe(Math.round((pts[0]!.x + pts[1]!.x) / 2));
+    expect(declaredY).toBe(Math.round((pts[0]!.y + pts[1]!.y) / 2));
+  });
 });

@@ -48,13 +48,13 @@
         <stock name="Stock" x="700" y="330"/>
         <stock name="Stock1" x="460" y="500"/>
         <stock name="Stock2" x="920" y="500"/>
-        <flow name="Inflow" x="500" y="330">
+        <flow name="Inflow" x="570" y="330">
           <pts>
             <pt x="440" y="330"/>
             <pt x="700" y="330"/>
           </pts>
         </flow>
-        <flow name="Outflow" x="900" y="330">
+        <flow name="Outflow" x="830" y="330">
           <pts>
             <pt x="700" y="330"/>
             <pt x="960" y="330"/>
