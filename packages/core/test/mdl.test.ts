@@ -240,4 +240,32 @@ describe("mdl codec", () => {
       expect(line.split(",")).toHaveLength(21);
     }
   });
+
+  // Regression: Vensim recognizes a flow's valve and its own name-label as one paired "Rate"
+  // PURELY by numeric uid adjacency (valve_uid, valve_uid + 1) — confirmed straight from Vensim's
+  // own xmutil converter source (src/Mdl/MDLGenerator.cpp: "Vensim draws a flow as an attached
+  // valve immediately followed by the flow's own variable record, and consumers resolve the pair
+  // by that adjacency alone"). This writer previously assigned every variable's id in one pass
+  // and appended each flow's valve id afterward from a separate, later counter, so the two ids
+  // were textually adjacent in the emitted file (which the older, weaker test below checked) but
+  // NOT numerically consecutive — which is what Vensim itself actually keys off, and which is
+  // very plausibly why a real Vensim resave kept orphaning the label into a disconnected box.
+  test("a flow's valve id and its own name-label id are numerically consecutive", () => {
+    const model = createEmptyModel("Adjacency");
+    const a = addStock(model, { name: "A" });
+    const b = addStock(model, { name: "B" });
+    // Stocks are declared before the flow so a pre-flow id pass (the old, buggy scheme) would
+    // have already consumed ids 1 and 2 before ever reaching the flow — exactly the shape that
+    // used to break adjacency.
+    addFlow(model, { name: "Transfer", from: a.id, to: b.id });
+    addAuxiliary(model, { name: "Aux", equation: "1" });
+
+    const mdlText = writeMdl(model);
+    const lines = mdlText.split("\n");
+    const labelLine = lines.find((l) => l.startsWith("10,") && l.split(",")[2] === "Transfer")!;
+    const valveLine = lines.find((l) => l.startsWith("11,"))!;
+    const labelId = Number(labelLine.split(",")[1]);
+    const valveId = Number(valveLine.split(",")[1]);
+    expect(labelId).toBe(valveId + 1);
+  });
 });

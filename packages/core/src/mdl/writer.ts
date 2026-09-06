@@ -122,11 +122,30 @@ const VARIABLE_RECORD_TAIL = "0,0,-1,0,0,0,0,0,0,0,0,0";
 
 function writeSketch(model: Model): string {
   const vars = allVariables(model);
+
+  // Vensim pairs a flow's valve with its own name-label PURELY by uid adjacency — "Vensim draws
+  // a flow as an attached valve immediately followed by the flow's own variable record, and
+  // consumers resolve the pair by that adjacency alone" (confirmed straight from Vensim's own
+  // xmutil converter source, src/Mdl/MDLGenerator.cpp's SuppressedSketchSlots comment: rule 2
+  // treats `elements[valve_uid + 1]` as the paired flow, unconditionally). This editor's writer
+  // previously assigned every variable (stocks, flows, auxiliaries) a single id up front in one
+  // pass, THEN appended each flow's valve id afterward in a separate, later-starting counter —
+  // so a flow's own label id and its valve's id were never actually consecutive integers. That
+  // silently broke the one thing Vensim uses to recognize the pairing at all, which is the root
+  // cause behind this exact writer's original valve/label "orphaning on resave" saga (see the
+  // file header). Every id below is now assigned in ONE pass, in variable order, where a flow
+  // consumes two CONSECUTIVE ids (valve, then its own label) instead of one id assigned far
+  // apart from the other.
   const idIndex = new Map<string, number>();
-  let counter = 0;
+  const valveIdByFlow = new Map<string, number>();
+  let nextId = 0;
   for (const v of vars) {
-    counter += 1;
-    idIndex.set(v.id, counter);
+    nextId += 1;
+    if (v.kind === "flow") {
+      valveIdByFlow.set(v.id, nextId);
+      nextId += 1;
+    }
+    idIndex.set(v.id, nextId);
   }
 
   let out = "\\\\\\---/// Sketch information - do not modify anything except names\n";
@@ -142,12 +161,8 @@ function writeSketch(model: Model): string {
     out += `10,${idIndex.get(v.id)},${v.name},${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},${shapeType},3,${VARIABLE_RECORD_TAIL}\n`;
   }
 
-  const valveIdByFlow = new Map<string, number>();
-  let nextId = counter;
   for (const flow of model.flows) {
-    nextId += 1;
-    const valveId = nextId;
-    valveIdByFlow.set(flow.id, valveId);
+    const valveId = valveIdByFlow.get(flow.id)!;
     const labelCenter = center(flow.pos, flow.size);
     // Vensim draws a flow as a small valve icon with its name label just below it — matching
     // that gap (rather than stacking them exactly on top of each other) is also what lets this
