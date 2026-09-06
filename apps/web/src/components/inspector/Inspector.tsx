@@ -7,6 +7,7 @@ import {
   setCommentText,
   setConnectorPolarity,
   setEquation,
+  setFlowEndpoint,
   variableRelationships,
   type Polarity,
 } from "@vensim-ai/core";
@@ -136,6 +137,64 @@ function CommentInspector({ commentId }: { commentId: string }) {
   );
 }
 
+const CLOUD = "__cloud__";
+
+/**
+ * A flow's From/To stocks, made visible and directly editable — until now the only way to see
+ * whether a flow was genuinely wired to a stock (vs. a cloud, vs. accidentally disconnected on
+ * both ends) was the raw equation text in the "Text" tab. A flow that looks connected on the
+ * canvas because it happens to sit next to a stock, but isn't actually linked, shows up here as
+ * "Cloud" on both sides instead — and can be fixed right here rather than deleted/recreated.
+ */
+function FlowEndpoints({ flowId }: { flowId: string }) {
+  const model = useModelStore((s) => s.model);
+  const mutate = useModelStore((s) => s.mutate);
+  const flow = model.flows.find((f) => f.id === flowId);
+  if (!flow) return null;
+
+  const setEnd = (which: "from" | "to", value: string) => {
+    try {
+      mutate((m) => setFlowEndpoint(m, flowId, which, value === CLOUD ? null : value));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const Select = ({ which, value }: { which: "from" | "to"; value: string | null }) => (
+    <select
+      className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+      value={value ?? CLOUD}
+      onChange={(e) => setEnd(which, e.target.value)}
+    >
+      <option value={CLOUD}>Cloud (unconnected)</option>
+      {model.stocks.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.name}
+        </option>
+      ))}
+    </select>
+  );
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>Connects</Label>
+      <div className="flex items-center gap-2">
+        <span className="w-8 text-xs text-muted-foreground">From</span>
+        <Select which="from" value={flow.from} />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-8 text-xs text-muted-foreground">To</span>
+        <Select which="to" value={flow.to} />
+      </div>
+      {!flow.from && !flow.to && (
+        <p className="text-xs text-destructive">
+          Not connected to any stock — this flow won't do anything, and exports as two disconnected clouds.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function VariableInspector() {
   const model = useModelStore((s) => s.model);
   const selectedId = useModelStore((s) => s.selectedId);
@@ -248,13 +307,16 @@ function VariableInspector() {
         />
         {variable.kind === "stock" && (
           <p className="text-xs text-muted-foreground">
-            Inflows: {variable.inflows.length} · Outflows: {variable.outflows.length}
+            Inflows: {variable.inflows.map((id) => model.flows.find((f) => f.id === id)?.name ?? id).join(", ") || "none"} · Outflows:{" "}
+            {variable.outflows.map((id) => model.flows.find((f) => f.id === id)?.name ?? id).join(", ") || "none"}
           </p>
         )}
         <p className="text-xs text-muted-foreground">
           Start typing a name for suggestions — variables show their units, functions show a description.
         </p>
       </div>
+
+      {variable.kind === "flow" && <FlowEndpoints flowId={variable.id} />}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="var-units">Units</Label>

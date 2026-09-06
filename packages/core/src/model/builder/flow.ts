@@ -68,3 +68,42 @@ export function addFlow(model: Model, input: AddFlowInput): Flow {
   if (toId) findStockOrThrow(model, toId).inflows.push(flow.id);
   return flow;
 }
+
+function findFlowOrThrow(model: Model, id: string): Flow {
+  const f = model.flows.find((x) => x.id === id);
+  if (!f) throw new ModelError(`Flow ${id} not found.`);
+  return f;
+}
+
+/** Re-points one end ("from" or "to") of an existing flow at a different stock, or clears it
+ * to a cloud with `null` — keeping the flow's own `from`/`to` fields and the stocks'
+ * `inflows`/`outflows` arrays consistent with each other, the same invariant `addFlow` and
+ * `deleteElement` already maintain. This is the flow's connection made editable after the
+ * fact — until now the only way to change it was to delete and recreate the flow, and the only
+ * way to *see* it was the raw equation text, which is why a mis-wired or orphaned flow (both
+ * ends null) was hard to notice or fix from the canvas/inspector alone. */
+export function setFlowEndpoint(model: Model, flowId: string, which: "from" | "to", stockRef: string | null): Flow {
+  const flow = findFlowOrThrow(model, flowId);
+  const newStockId = resolveStockRef(model, stockRef);
+  const oldStockId = flow[which];
+  if (newStockId === oldStockId) return flow;
+
+  const otherEnd = which === "from" ? flow.to : flow.from;
+  if (!newStockId && !otherEnd) {
+    throw new ModelError(`Flow "${flow.name}" must connect to at least one stock (from and/or to).`);
+  }
+
+  if (oldStockId) {
+    const oldStock = findStockOrThrow(model, oldStockId);
+    const list = which === "from" ? oldStock.outflows : oldStock.inflows;
+    const idx = list.indexOf(flow.id);
+    if (idx !== -1) list.splice(idx, 1);
+  }
+  if (newStockId) {
+    const newStock = findStockOrThrow(model, newStockId);
+    const list = which === "from" ? newStock.outflows : newStock.inflows;
+    list.push(flow.id);
+  }
+  flow[which] = newStockId;
+  return flow;
+}

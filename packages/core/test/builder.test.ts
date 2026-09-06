@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { addAuxiliary, addConnector, addFlow, addStock, deleteElement, renameVariable, setEquation } from "../src/model/builder/index.js";
+import { addAuxiliary, addConnector, addFlow, addStock, deleteElement, renameVariable, setEquation, setFlowEndpoint } from "../src/model/builder/index.js";
 import { createEmptyModel } from "../src/model/types.js";
 import { validateModel } from "../src/model/validate.js";
 
@@ -84,6 +84,35 @@ describe("builder", () => {
     deleteElement(model, a.id);
     expect(model.flows).toHaveLength(1);
     expect(model.flows[0]!.from).toBe(b.id);
+  });
+
+  test("setFlowEndpoint re-points a flow and keeps stock inflow/outflow lists in sync", () => {
+    const model = createEmptyModel();
+    const a = addStock(model, { name: "A" });
+    const b = addStock(model, { name: "B" });
+    const c = addStock(model, { name: "C" });
+    const flow = addFlow(model, { name: "Transfer", from: a.id, to: b.id });
+    expect(a.outflows).toEqual([flow.id]);
+    expect(b.inflows).toEqual([flow.id]);
+
+    setFlowEndpoint(model, flow.id, "to", c.id);
+    expect(flow.to).toBe(c.id);
+    expect(b.inflows).toEqual([]); // removed from the old target
+    expect(c.inflows).toEqual([flow.id]); // added to the new one
+    expect(a.outflows).toEqual([flow.id]); // the untouched end is unaffected
+
+    setFlowEndpoint(model, flow.id, "to", null); // c -> cloud
+    expect(flow.to).toBeNull();
+    expect(c.inflows).toEqual([]);
+    expect(validateModel(model)).toEqual([]); // still connected via `from`, not orphaned
+  });
+
+  test("setFlowEndpoint refuses to leave a flow with neither end connected", () => {
+    const model = createEmptyModel();
+    const a = addStock(model, { name: "A" });
+    const flow = addFlow(model, { name: "Transfer", from: a.id }); // to: cloud
+    expect(() => setFlowEndpoint(model, flow.id, "from", null)).toThrow();
+    expect(flow.from).toBe(a.id); // rejected — unchanged
   });
 
   // An AI (or anything else calling these builders without an explicit `pos`, which is the
