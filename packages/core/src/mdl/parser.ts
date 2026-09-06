@@ -31,6 +31,19 @@ function splitSections(text: string): { equations: string; sketch: string } {
   return { equations: text.slice(0, match.index), sketch: text.slice(match.index) };
 }
 
+// Vensim wraps a long equation across multiple lines by ending each wrapped line with a
+// trailing `\` immediately before the newline (confirmed against xmutil's own MDLGenerator —
+// see MDLGenerator.cpp's WarnIfLineTooLong — and observed directly in its output for this
+// project's own bicycle-shop model). Joining these BEFORE tokenizing means a real multi-line
+// equation parses as one expression instead of silently truncating at the first line (which
+// both drops the rest of the equation's text AND, worse, can make an otherwise-valid equation
+// fail to parse at all if the split lands mid-expression). Only applied to the equations
+// section — the sketch section uses backslash in its own unrelated marker syntax
+// (`\\\---///`), which this must never touch.
+function joinLineContinuations(equationsText: string): string {
+  return equationsText.replace(/\\\r?\n[ \t]*/g, " ");
+}
+
 function parseRecords(equationsText: string): RawRecord[] {
   const records: RawRecord[] = [];
   // Records are pipe-terminated. Split on '|' at top level (equations here never contain
@@ -87,7 +100,7 @@ function parseIntegCall(equation: string): { flowExpr: string; initial: string }
 export function parseMdl(text: string): Model {
   const model = createEmptyModel();
   const { equations, sketch } = splitSections(stripHeader(text));
-  const records = parseRecords(equations);
+  const records = parseRecords(joinLineContinuations(equations));
 
   const stockRecords: { name: string; flowExpr: string; initial: string; units: string; comment: string }[] = [];
   const plainRecords: RawRecord[] = [];
