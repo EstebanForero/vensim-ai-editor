@@ -8,6 +8,12 @@ import { parseMdl } from "../src/mdl/parser.js";
 import { writeMdl } from "../src/mdl/writer.js";
 import { simulate } from "../src/sim/engine.js";
 
+/** The `10,` shape id this editor's writer assigned to a variable by its exact name. */
+function idOf(mdlText: string, name: string): string {
+  const line = mdlText.split("\n").find((l) => l.startsWith("10,") && l.split(",")[2] === name)!;
+  return line.split(",")[1]!;
+}
+
 const SAMPLE_MDL = `{UTF-8}
 Population= INTEG (
 	Births-Deaths,
@@ -153,6 +159,18 @@ describe("mdl codec", () => {
     const connectorLines = mdlText.split("\n").filter((l) => l.startsWith("1,") && l.includes(",1,0,43,0,0,192,0,"));
     expect(connectorLines.length).toBeGreaterThan(0);
     for (const line of connectorLines) expect(line).not.toContain("|(0,0)|");
+
+    // "Population -> Births" must target the flow's *valve* shape id, not its name-label id —
+    // confirmed against every real causal-arrow-into-a-flow in both example-compatibility
+    // files, which always address the valve. The valve is the `11,` line right before the
+    // flow's own `10,` name-label line in this editor's own writer output.
+    const lines = mdlText.split("\n");
+    const labelLine = lines.find((l) => l.startsWith("10,") && l.includes(",Births,"))!;
+    const valveLine = lines[lines.indexOf(labelLine) - 1]!;
+    expect(valveLine.startsWith("11,")).toBe(true);
+    const valveId = valveLine.split(",")[1];
+    const popToBirths = connectorLines.find((l) => l.split(",")[2] === idOf(mdlText, "Population"))!;
+    expect(popToBirths.split(",")[3]).toBe(valveId);
 
     // The file must still parse cleanly — comments/curve points don't confuse the codec.
     const reparsed = parseMdl(mdlText);

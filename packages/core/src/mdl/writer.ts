@@ -129,10 +129,12 @@ function writeSketch(model: Model): string {
     out += `10,${idIndex.get(v.id)},${v.name},${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},${shapeType},3,${VARIABLE_RECORD_TAIL}\n`;
   }
 
+  const valveIdByFlow = new Map<string, number>();
   let nextId = counter;
   for (const flow of model.flows) {
     nextId += 1;
     const valveId = nextId;
+    valveIdByFlow.set(flow.id, valveId);
     const labelCenter = center(flow.pos, flow.size);
     // Vensim draws a flow as a small valve icon with its name label just below it — matching
     // that gap (rather than stacking them exactly on top of each other) is also what lets this
@@ -177,7 +179,7 @@ function writeSketch(model: Model): string {
   let arrowId = nextId;
   for (const c of model.connectors) {
     arrowId += 1;
-    out += connectorArrowRecord(model, c, arrowId, idIndex);
+    out += connectorArrowRecord(model, c, arrowId, idIndex, valveIdByFlow);
   }
 
   let commentId = arrowId;
@@ -216,15 +218,23 @@ function cloudPosition(model: Model, flow: Flow, valveCenter: Position, isSource
   return { x: valveCenter.x + (isSourceSide ? -100 : 100), y: valveCenter.y };
 }
 
-/** Variables to draw a Vensim "graph pad" trend box for on export. Explicit `pinnedGraphs`
- * (round-tripped from a file that already had them) win; otherwise default to every stock —
- * the levels are what a human Vensim user overwhelmingly charts, and it's what real Vensim
- * exports of small models (see example-compatibility/) tend to carry. */
+/** Variables to draw a Vensim "graph pad" trend box for on export — only ever `pinnedGraphs`
+ * round-tripped from a file that already had them. Earlier this defaulted to one per stock
+ * when a model had none, which just clutters a diagram built or edited in this app with empty
+ * chart placeholders it never asked for (there's no run data behind them until Vensim
+ * simulates). A human Vensim user adds these deliberately; this editor should only ever
+ * preserve ones that were already there, never invent new ones. */
 function graphPadNames(model: Model): string[] {
-  return model.pinnedGraphs.length > 0 ? model.pinnedGraphs : model.stocks.map((s) => s.name);
+  return model.pinnedGraphs;
 }
 
-function connectorArrowRecord(model: Model, c: Connector, arrowId: number, idIndex: Map<string, number>): string {
+function connectorArrowRecord(
+  model: Model,
+  c: Connector,
+  arrowId: number,
+  idIndex: Map<string, number>,
+  valveIdByFlow: Map<string, number>,
+): string {
   const fromVar = findVariable(model, c.from);
   const toVar = findVariable(model, c.to);
   const fromCenter = fromVar && center(fromVar.pos, fromVar.size);
@@ -237,7 +247,15 @@ function connectorArrowRecord(model: Model, c: Connector, arrowId: number, idInd
   // generic style flag, so it must actually track this connector's polarity rather than always
   // showing '+' regardless of what the connector's polarity really is.
   const pol = c.polarity === "-" ? 45 : 43;
-  return `1,${arrowId},${idIndex.get(c.from)},${idIndex.get(c.to)},1,0,${pol},0,0,192,0,-1--1--1,,1|(${Math.round(bend.x)},${Math.round(bend.y)})|\n`;
+  // A relation into/out of a Flow must target that flow's *valve* shape id, not its name-label
+  // — confirmed against every real-Vensim causal arrow into a flow across both reference files
+  // (e.g. flow-diagram.mdl's `1,12,1,5,...` targets the valve id 5, never the label id 6).
+  // Pointing at the label instead (this editor's earlier behavior) still referenced a real
+  // shape, but not the one Vensim itself always uses, and cost this relation when a user tried
+  // to edit it in a real Vensim session (see the writer.ts file header's compatibility notes).
+  const fromId = (fromVar?.kind === "flow" ? valveIdByFlow.get(fromVar.id) : undefined) ?? idIndex.get(c.from);
+  const toId = (toVar?.kind === "flow" ? valveIdByFlow.get(toVar.id) : undefined) ?? idIndex.get(c.to);
+  return `1,${arrowId},${fromId},${toId},1,0,${pol},0,0,192,0,-1--1--1,,1|(${Math.round(bend.x)},${Math.round(bend.y)})|\n`;
 }
 
 /** A Reinforcing/Balancing loop-polarity badge, in the same shape real Vensim itself writes
