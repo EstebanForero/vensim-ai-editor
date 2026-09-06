@@ -52,6 +52,10 @@ export function writeXmile(model: Model): string {
   out += "  <header>\n";
   out += "    <vendor>Vensim AI Editor</vendor>\n";
   out += '    <product version="1.0">Vensim AI Editor</product>\n';
+  // Spec (2.2, 2.2.1): <options> is an OPTIONAL sub-tag of <header>, but "if a file makes use
+  // of any of the [listed] functionality, it MUST be listed under the <options> tag" — this
+  // file always includes a <views> section below, so <has_model_view/> must be declared.
+  out += "    <options>\n      <has_model_view/>\n    </options>\n";
   out += `    <name>${escapeXml(model.name)}</name>\n`;
   out += "  </header>\n";
   out += "  <sim_specs>\n";
@@ -116,8 +120,15 @@ function writeView(model: Model): string {
     // A flow's pipe is just two points — the source end (a stock's position, or an open point
     // off to one side for a cloud) and the sink end. No separate valve/cloud shape is needed;
     // an endpoint with no named variable behind it is simply a bare, unconnected point.
-    const p1 = fromVar ? fromVar.pos : { x: flow.pos.x - 60, y: flow.pos.y };
-    const p2 = toVar ? toVar.pos : { x: flow.pos.x + 60, y: flow.pos.y };
+    const rawP1 = fromVar ? fromVar.pos : { x: flow.pos.x - 60, y: flow.pos.y };
+    const rawP2 = toVar ? toVar.pos : { x: flow.pos.x + 60, y: flow.pos.y };
+    // Spec (6.1.2): a flow's <pts> "MUST form right angles" — the two stocks it connects can
+    // sit at arbitrary, unaligned positions on the canvas, so pin the pipe to a single
+    // horizontal or vertical run (whichever axis the flow actually spans more) through the
+    // flow's own position rather than drawing a diagonal line between the two stock centers.
+    const horizontal = Math.abs(rawP2.x - rawP1.x) >= Math.abs(rawP2.y - rawP1.y);
+    const p1 = horizontal ? { x: rawP1.x, y: flow.pos.y } : { x: flow.pos.x, y: rawP1.y };
+    const p2 = horizontal ? { x: rawP2.x, y: flow.pos.y } : { x: flow.pos.x, y: rawP2.y };
     out += `        <flow name="${escapeXmlAttr(flow.name)}" x="${Math.round(flow.pos.x)}" y="${Math.round(flow.pos.y)}">\n`;
     out += "          <pts>\n";
     out += `            <pt x="${Math.round(p1.x)}" y="${Math.round(p1.y)}"/>\n`;

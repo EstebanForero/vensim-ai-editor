@@ -16,6 +16,11 @@ describe("XMILE writer", () => {
 
     expect(xml).toContain('<xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0">');
 
+    // Spec (2.2.1): any file using view-related functionality "MUST be listed under the
+    // <options> tag" — this writer always emits a <views> section, so <has_model_view/> must
+    // be declared in the header.
+    expect(xml).toContain("<has_model_view/>");
+
     // A flow between two real stocks appears as an <outflow>/<inflow> on each stock (XMILE's
     // own convention, confirmed against real .xmile files from SDXorg/test-models) — this is
     // the exact case that kept breaking in the Vensim `.mdl` sketch format, since XMILE's flow
@@ -52,5 +57,25 @@ describe("XMILE writer", () => {
 
     const xml = writeXmile(model);
     expect(xml).toContain('Population * "Birth Rate"');
+  });
+
+  test("keeps a flow's <pts> axis-aligned even when the stocks it connects sit at diagonal positions", () => {
+    const model = createEmptyModel();
+    const a = addStock(model, { name: "A", initialEquation: "0" });
+    a.pos = { x: 100, y: 100 };
+    const b = addStock(model, { name: "B", initialEquation: "0" });
+    b.pos = { x: 400, y: 250 }; // not aligned with A on either axis
+    addFlow(model, { name: "Transfer", equation: "1", from: a.id, to: b.id });
+
+    const xml = writeXmile(model);
+    const pts = [...xml.matchAll(/<pt x="(-?\d+)" y="(-?\d+)"\/>/g)].map((m) => ({
+      x: Number(m[1]),
+      y: Number(m[2]),
+    }));
+    expect(pts).toHaveLength(2);
+    // Spec (6.1.2): a flow's <pts> "MUST form right angles" — a single-segment pipe satisfies
+    // that only when its two points share an x or a y coordinate.
+    const [p1, p2] = pts;
+    expect(p1!.x === p2!.x || p1!.y === p2!.y).toBe(true);
   });
 });

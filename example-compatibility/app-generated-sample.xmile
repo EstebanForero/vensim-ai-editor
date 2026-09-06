@@ -3,6 +3,9 @@
   <header>
     <vendor>Vensim AI Editor</vendor>
     <product version="1.0">Vensim AI Editor</product>
+    <options>
+      <has_model_view/>
+    </options>
     <name>App Generated Sample</name>
   </header>
   <sim_specs>
