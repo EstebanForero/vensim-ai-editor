@@ -1,14 +1,25 @@
-import { parseMdl, writeMdl, type Model } from "@vensim-ai/core";
+import { parseMdl, writeMdl, writeXmile, type Model } from "@vensim-ai/core";
 
-export function downloadMdl(model: Model): void {
-  const text = writeMdl(model);
-  const blob = new Blob([text], { type: "text/plain" });
+function download(text: string, filename: string, mimeType: string): void {
+  const blob = new Blob([text], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${model.name || "model"}.mdl`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export function downloadMdl(model: Model): void {
+  download(writeMdl(model), `${model.name || "model"}.mdl`, "text/plain");
+}
+
+/** XMILE (the OASIS open standard) as an alternative export target — Vensim can open it
+ * directly (File > Open, XMILE filter) using its own built-in importer, which sidesteps the
+ * undocumented valve/label "attachment" quirk in Vensim's own native `.mdl` sketch format (see
+ * packages/core/src/xmile/writer.ts for the full story). */
+export function downloadXmile(model: Model): void {
+  download(writeXmile(model), `${model.name || "model"}.xmile`, "application/xml");
 }
 
 export function openMdlFilePicker(onLoaded: (model: Model, fileName: string) => void, onError: (message: string) => void): void {

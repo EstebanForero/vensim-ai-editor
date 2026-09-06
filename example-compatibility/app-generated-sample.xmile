@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0">
+  <header>
+    <vendor>Vensim AI Editor</vendor>
+    <product version="1.0">Vensim AI Editor</product>
+    <name>App Generated Sample</name>
+  </header>
+  <sim_specs>
+    <start>0</start>
+    <stop>100</stop>
+    <dt>0.25</dt>
+    <method>euler</method>
+    <time_units>Time</time_units>
+  </sim_specs>
+  <model>
+    <variables>
+      <stock name="Stock">
+        <eqn>50</eqn>
+        <inflow>Inflow</inflow>
+        <outflow>Outflow</outflow>
+      </stock>
+      <stock name="Stock1">
+        <eqn>100</eqn>
+        <outflow>connection</outflow>
+      </stock>
+      <stock name="Stock2">
+        <eqn>0</eqn>
+        <inflow>connection</inflow>
+      </stock>
+      <flow name="Inflow">
+        <eqn>5</eqn>
+      </flow>
+      <flow name="Outflow">
+        <eqn>3</eqn>
+      </flow>
+      <flow name="connection">
+        <eqn>5</eqn>
+      </flow>
+      <aux name="Rate Constant">
+        <eqn>0.1</eqn>
+      </aux>
+    </variables>
+    <views>
+      <view>
+        <stock name="Stock" x="700" y="330"/>
+        <stock name="Stock1" x="460" y="500"/>
+        <stock name="Stock2" x="920" y="500"/>
+        <flow name="Inflow" x="500" y="330">
+          <pts>
+            <pt x="440" y="330"/>
+            <pt x="700" y="330"/>
+          </pts>
+        </flow>
+        <flow name="Outflow" x="900" y="330">
+          <pts>
+            <pt x="700" y="330"/>
+            <pt x="960" y="330"/>
+          </pts>
+        </flow>
+        <flow name="connection" x="690" y="500">
+          <pts>
+            <pt x="460" y="500"/>
+            <pt x="920" y="500"/>
+          </pts>
+        </flow>
+        <aux name="Rate Constant" x="690" y="620"/>
+        <connector uid="0">
+          <from>Rate Constant</from>
+          <to>connection</to>
+        </connector>
+      </view>
+    </views>
+  </model>
+</xmile>

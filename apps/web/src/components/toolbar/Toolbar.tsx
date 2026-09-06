@@ -4,7 +4,7 @@ import { Droplet, FolderOpen, GitBranch, LayoutGrid, MessageSquarePlus, RotateCw
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { downloadMdl, openMdlFilePicker } from "@/lib/fileIO";
+import { downloadMdl, downloadXmile, openMdlFilePicker } from "@/lib/fileIO";
 import { uniqueName } from "@/lib/naming";
 import { SAMPLE_MODELS } from "@/lib/sampleModels";
 import { useModelStore } from "@/state/modelStore";
@@ -135,6 +135,14 @@ export function Toolbar() {
         </Button>
         <Button size="sm" variant="ghost" onClick={() => downloadMdl(model)}>
           <Save className="size-4" /> Save .mdl
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => downloadXmile(model)}
+          title="Export as XMILE (the OASIS open standard) — Vensim can open this directly (File > Open, XMILE filter), and it sidesteps the .mdl format's undocumented flow-valve attachment quirk"
+        >
+          <Save className="size-4" /> Save .xmile
         </Button>
       </div>
     </div>
