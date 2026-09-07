@@ -226,6 +226,35 @@ TIME STEP  = 0.25
     expect(stockAfter.outflows).toHaveLength(1);
   });
 
+  // Regression: real Vensim's own Equations view showed a mojibake replacement character for a
+  // flow name referenced with an accent (e.g. "Recepción") inside a QUOTED reference (the
+  // stock's own INTEG argument), while the exact same name's unquoted definition line displayed
+  // fine — consistent with Vensim's quoted-name reading path using a codepage-sensitive routine
+  // distinct from its unquoted-identifier path, so a quoted accented reference can silently
+  // resolve to a different (phantom, always-zero) variable than the one its own definition line
+  // created. A live-Vensim comparison against this exact scenario showed the accented flow's
+  // contribution reading as if it were entirely absent from the simulation. Stripping diacritics
+  // at export time, everywhere a name is written, keeps the definition and every reference to it
+  // byte-identical ASCII.
+  test("strips accents from variable names everywhere they're written, including quoted references", () => {
+    const model = createEmptyModel("AccentedNames");
+    const stock = addStock(model, { name: "Inventario de bicicletas", initialEquation: "60" });
+    addFlow(model, { name: "Recepción de bicicletas", equation: "5", to: stock.id });
+    addFlow(model, { name: "Venta", equation: '"Recepción de bicicletas" * 0.5', from: stock.id });
+
+    const mdlText = writeMdl(model);
+    expect(mdlText).not.toMatch(/[À-ſ]/); // no Latin-1 Supplement / Latin Extended-A accented letters anywhere
+    expect(mdlText).toContain("Recepcion de bicicletas=");
+    expect(mdlText).toContain('"Recepcion de bicicletas" -Venta'); // the stock's INTEG term
+    expect(mdlText).toContain('"Recepcion de bicicletas" * 0.5'); // the quoted reference inside Venta's own equation
+
+    const reparsed = parseMdl(mdlText);
+    expect(reparsed.flows.map((f) => f.name).sort()).toEqual(["Recepcion de bicicletas", "Venta"]);
+    const stockAfter = reparsed.stocks[0]!;
+    expect(stockAfter.inflows).toHaveLength(1);
+    expect(stockAfter.outflows).toHaveLength(1);
+  });
+
   test("writes R/B loop comment annotations and curved relation arrows for native Vensim", () => {
     const model = createEmptyModel("LoopExport");
     const stock = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 } });

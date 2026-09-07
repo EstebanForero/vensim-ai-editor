@@ -38,7 +38,45 @@ function variableRecord(name: string, equation: string, units: string, comment: 
   return `${quoteNameIfNeeded(name)}= ${equation}\n\t~\t${units}\n\t~\t${comment}\n\t|\n\n`;
 }
 
+/** Strips accents/diacritics (e.g. "Recepción" -> "Recepcion") — real Vensim's own Equations
+ * view showed a mojibake replacement character for a name referenced with an accent inside a
+ * QUOTED reference (the stock's INTEG argument), while the exact same name's own unquoted
+ * definition line displayed fine. That's consistent with Vensim's quoted-name reading path using
+ * a codepage-sensitive routine that mishandles non-ASCII bytes, distinct from its unquoted
+ * identifier path — the practical effect: a quoted accented reference can silently resolve to a
+ * different (phantom, always-zero) variable than the one its own definition line created, with
+ * no parse error and no visual difference in the sketch. Stripping diacritics from every variable
+ * name at export time — not just where this one bug was found, everywhere a name is written —
+ * keeps every name plain ASCII so it can never hit this again, regardless of which Vensim code
+ * path ends up reading it. */
+function mdlSafeName(name: string): string {
+  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/** Rewrites every quoted reference to `orig` inside a raw equation string to use its
+ * diacritic-stripped form. A referenced name is only ever safe to bare-substring-match when
+ * quoted — the same `needsQuotes` rule the expression printer uses (in expr/printer.ts) already
+ * forces quotes on any name containing a non-ASCII character, so an accented name can never
+ * legally appear unquoted in equation text; matching only the quoted form avoids ever touching
+ * an unrelated substring. */
+function rewriteQuotedRefs(equation: string, nameMap: Map<string, string>): string {
+  let out = equation;
+  for (const [orig, safe] of nameMap) {
+    out = out.split(`"${orig}"`).join(`"${safe}"`);
+  }
+  return out;
+}
+
 export function writeMdl(model: Model): string {
+  // Built once, up front, so every reference to an accented name — whether it's the name's own
+  // definition line, a quoted reference inside another variable's equation text, a sketch label,
+  // or the stock's own hand-built INTEG term list — resolves to the exact same ASCII spelling.
+  const nameMap = new Map<string, string>();
+  for (const v of allVariables(model)) {
+    const safe = mdlSafeName(v.name);
+    if (safe !== v.name) nameMap.set(v.name, safe);
+  }
+
   let out = "{UTF-8}\n";
 
   for (const stock of model.stocks) {
@@ -53,22 +91,24 @@ export function writeMdl(model: Model): string {
     const inflowTerms = stock.inflows
       .map((id) => model.flows.find((f) => f.id === id)?.name)
       .filter((n): n is string => !!n)
+      .map((n) => nameMap.get(n) ?? n)
       .map(quoteRefIfNeeded);
     const outflowTerms = stock.outflows
       .map((id) => model.flows.find((f) => f.id === id)?.name)
       .filter((n): n is string => !!n)
+      .map((n) => nameMap.get(n) ?? n)
       .map(quoteRefIfNeeded);
     const parts = [...inflowTerms.map((n) => `+${n}`), ...outflowTerms.map((n) => `-${n}`)];
     const netExpr = parts.length ? parts.join(" ").replace(/^\+/, "") : "0";
-    out += `${quoteNameIfNeeded(stock.name)}= INTEG (\n\t${netExpr},\n\t\t${stock.initialEquation})\n\t~\t${stock.units}\n\t~\t${stock.comment}\n\t|\n\n`;
+    out += `${mdlSafeName(stock.name)}= INTEG (\n\t${netExpr},\n\t\t${rewriteQuotedRefs(stock.initialEquation, nameMap)})\n\t~\t${stock.units}\n\t~\t${stock.comment}\n\t|\n\n`;
   }
 
   for (const flow of model.flows) {
-    out += variableRecord(flow.name, flow.equation, flow.units, flow.comment);
+    out += variableRecord(mdlSafeName(flow.name), rewriteQuotedRefs(flow.equation, nameMap), flow.units, flow.comment);
   }
 
   for (const aux of model.auxiliaries) {
-    out += variableRecord(aux.name, aux.equation, aux.units, aux.comment);
+    out += variableRecord(mdlSafeName(aux.name), rewriteQuotedRefs(aux.equation, nameMap), aux.units, aux.comment);
   }
 
   out += "********************************************************\n\t.Control\n";
@@ -176,7 +216,7 @@ function writeSketch(model: Model): string {
     const shapeType = shapeTypeFor(v);
     const c = center(v.pos, v.size);
     const half = halfSize(v.size);
-    out += `10,${nextId},${v.name},${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},${shapeType},3,${VARIABLE_RECORD_TAIL}\n`;
+    out += `10,${nextId},${mdlSafeName(v.name)},${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},${shapeType},3,${VARIABLE_RECORD_TAIL}\n`;
   }
 
   for (const flow of model.flows) {
@@ -201,7 +241,7 @@ function writeSketch(model: Model): string {
     const valveCenter = { x: labelCenter.x, y: labelCenter.y - 34 };
     out += `11,${valveId},0,${Math.round(valveCenter.x)},${Math.round(valveCenter.y)},6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0\n`;
     const flowHalf = halfSize(flow.size);
-    out += `10,${idIndex.get(flow.id)},${flow.name},${Math.round(labelCenter.x)},${Math.round(labelCenter.y)},${Math.round(flowHalf.width)},${Math.round(flowHalf.height)},40,3,${VARIABLE_RECORD_TAIL}\n`;
+    out += `10,${idIndex.get(flow.id)},${mdlSafeName(flow.name)},${Math.round(labelCenter.x)},${Math.round(labelCenter.y)},${Math.round(flowHalf.width)},${Math.round(flowHalf.height)},40,3,${VARIABLE_RECORD_TAIL}\n`;
 
     // The "source" side (where material is drawn from — a cloud for an inflow, the upstream
     // stock for an outflow) and the "sink" side (where it goes — the downstream stock for an
