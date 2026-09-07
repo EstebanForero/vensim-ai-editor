@@ -1,7 +1,17 @@
 import type { Expr } from "./ast.js";
 
-function needsQuotes(name: string): boolean {
+export function needsQuotes(name: string): boolean {
   return /[^A-Za-z0-9_]/.test(name) || /^\d/.test(name);
+}
+
+/** Quotes a variable name only when Vensim would otherwise misparse a bare reference to it
+ * (spaces, accents, a leading digit, ...) — used anywhere a name is referenced *inside* an
+ * expression, never on the left-hand side of its own `Name = eqn` definition line (that
+ * position is unambiguous up to the `=`, and real Vensim files leave it bare even for
+ * multi-word names — see example-compatibility/app-generated-samplcopye.mdl's own
+ * `Rate Constant= 0.1`). */
+export function quoteRefIfNeeded(name: string): string {
+  return needsQuotes(name) ? `"${name}"` : name;
 }
 
 // Mirrors parser.ts's precedence chain exactly (lowest to highest):

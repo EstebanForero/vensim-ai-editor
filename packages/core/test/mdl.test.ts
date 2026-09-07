@@ -197,6 +197,35 @@ TIME STEP  = 0.25
     expect(toStock?.name).toBe("B");
   });
 
+  // Regression: a stock's INTEG net-flow term list was built by raw string concatenation
+  // ("+Name"/"-Name") instead of going through the expression printer, so it was the one place
+  // in the writer that never quoted a multi-word flow name. Vensim can't parse an unquoted
+  // multi-word name inside INTEG's argument, so it silently fails to link the flow to its
+  // stock — the flow's own definition line is still perfectly valid on its own, so the visible
+  // symptom in a real Vensim session is the flow rendering as an unattached "shadow" variable
+  // near the stock (no valve icon, no pipe), not a parse error. Every prior test used
+  // single-word flow names, so this never showed up until a real multi-word name did.
+  test("quotes a multi-word flow name inside its stock's INTEG net-flow expression", () => {
+    const model = createEmptyModel("QuotedIntegTerm");
+    const stock = addStock(model, { name: "Inventory", initialEquation: "50" });
+    addFlow(model, { name: "Order Fulfillment", equation: "10", to: stock.id });
+    addFlow(model, { name: "Customer Returns", equation: "1", to: stock.id });
+    addFlow(model, { name: "Damage Loss", equation: "1", from: stock.id });
+
+    const mdlText = writeMdl(model);
+    expect(mdlText).toContain('"Order Fulfillment"');
+    expect(mdlText).toContain('"Customer Returns"');
+    expect(mdlText).toContain('"Damage Loss"');
+    // Not just present anywhere — specifically quoted where it's referenced inside INTEG.
+    expect(mdlText).toMatch(/INTEG \(\s*"Order Fulfillment" \+"Customer Returns" -"Damage Loss"/);
+
+    const reparsed = parseMdl(mdlText);
+    expect(reparsed.flows).toHaveLength(3);
+    const stockAfter = reparsed.stocks.find((s) => s.name === "Inventory")!;
+    expect(stockAfter.inflows).toHaveLength(2);
+    expect(stockAfter.outflows).toHaveLength(1);
+  });
+
   test("writes R/B loop comment annotations and curved relation arrows for native Vensim", () => {
     const model = createEmptyModel("LoopExport");
     const stock = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 } });

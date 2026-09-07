@@ -1,6 +1,6 @@
 {UTF-8}
 Inventario de bicicletas= INTEG (
-	Recepción de bicicletas -Venta de bicicletas,
+	"Recepción de bicicletas" -"Venta de bicicletas",
 		60)
 	~	bicicletas
 	~	Cantidad de bicicletas disponibles en la tienda

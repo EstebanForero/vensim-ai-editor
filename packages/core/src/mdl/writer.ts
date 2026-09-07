@@ -23,9 +23,13 @@
 // still gets orphaned on a real Vensim open+resave after this, the fix is local to the
 // `valveCenter` calculation and the Flow builder's default size, both flagged below.
 
+import { quoteRefIfNeeded } from "./expr/printer.js";
 import { detectLoops, type Loop } from "../loops/index.js";
 import { allVariables, findVariable, type Connector, type Flow, type Model, type Position, type Variable } from "../model/types.js";
 
+// Real Vensim never quotes a name on the LEFT of its own `Name = eqn` definition line — that
+// position is unambiguous up to the `=` (confirmed by a real multi-word def,
+// example-compatibility/app-generated-samplcopye.mdl's `Rate Constant= 0.1`, left bare).
 function quoteNameIfNeeded(name: string): string {
   return name;
 }
@@ -38,12 +42,22 @@ export function writeMdl(model: Model): string {
   let out = "{UTF-8}\n";
 
   for (const stock of model.stocks) {
+    // Referencing a flow here is an expression context, not a definition's own LHS — a
+    // multi-word (or accented) flow name needs the same quoting the expression printer already
+    // applies everywhere else. This was the one place in the writer that hand-built a term list
+    // by string concatenation instead of going through the expression printer, so it was the
+    // one place this quoting was missing — with a real symptom: Vensim can't parse an unquoted
+    // multi-word name inside INTEG's flow-sum argument, so it never links the flow to this
+    // stock, and instead shows the flow as an unattached "shadow" variable near it (no valve
+    // icon, no pipe) despite the flow's own definition line being completely valid on its own.
     const inflowTerms = stock.inflows
       .map((id) => model.flows.find((f) => f.id === id)?.name)
-      .filter((n): n is string => !!n);
+      .filter((n): n is string => !!n)
+      .map(quoteRefIfNeeded);
     const outflowTerms = stock.outflows
       .map((id) => model.flows.find((f) => f.id === id)?.name)
-      .filter((n): n is string => !!n);
+      .filter((n): n is string => !!n)
+      .map(quoteRefIfNeeded);
     const parts = [...inflowTerms.map((n) => `+${n}`), ...outflowTerms.map((n) => `-${n}`)];
     const netExpr = parts.length ? parts.join(" ").replace(/^\+/, "") : "0";
     out += `${quoteNameIfNeeded(stock.name)}= INTEG (\n\t${netExpr},\n\t\t${stock.initialEquation})\n\t~\t${stock.units}\n\t~\t${stock.comment}\n\t|\n\n`;
