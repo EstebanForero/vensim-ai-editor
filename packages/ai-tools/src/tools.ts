@@ -204,7 +204,21 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
         stop_time: { type: "number" },
         dt: { type: "number" },
         integration_method: { type: "string", enum: ["euler", "rk4"] },
-        time_units: { type: "string" },
+        // Vensim's own .mdl format has no dedicated "time units" field — this value is written
+        // as the literal ~units line on TIME STEP/INITIAL TIME/FINAL TIME/SAVEPER (see
+        // mdl/writer.ts), and real Vensim only recognizes a fixed set of English time-unit
+        // words there for its own unit-checking and DELAY/SMOOTH-family defaults. A model whose
+        // simulation prompt is in Spanish (or any other language) still needs an English value
+        // here — "días" is not a word Vensim's importer recognizes, and it's a plain string this
+        // schema previously let the model set to anything, silently producing a model whose time
+        // axis Vensim can't reason about even though the numeric TIME STEP itself still loads
+        // and runs unchanged.
+        time_units: {
+          type: "string",
+          enum: ["Second", "Minute", "Hour", "Day", "Week", "Month", "Quarter", "Year"],
+          description:
+            "Always an English Vensim time-unit keyword, regardless of what language the rest of the conversation or the model's variable names are in.",
+        },
       },
     },
   },
