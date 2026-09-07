@@ -375,7 +375,17 @@ void MDLGenerator::EmitVariableRecord(std::string &out, int uid, VensimVariableE
   std::string line = "10," + std::to_string(uid) + "," + name + ",";
   line += std::to_string(e->X()) + "," + std::to_string(e->Y()) + "," + std::to_string(e->Width()) + "," +
           std::to_string(e->Height()) + ",";
-  line += std::to_string(shape) + "," + std::to_string(bits) + ",0,0,0,0,0,0";
+  // NOT UPSTREAM. The reader (VensimVariableElement's parse ctor, above) only
+  // ever consumes through `bits` and ignores everything after -- this used to
+  // stop there too, emitting 6 trailing zero fields where real Vensim itself
+  // writes 12, always with a literal -1 in the third slot (pen/border color
+  // index; see example-compatibility/flow-diagram.mdl's `10,1,Poblacion,...`
+  // records, and this editor's own packages/core/src/mdl/writer.ts, which
+  // already reproduces this exact tail). A reader lenient enough to accept the
+  // short form is not evidence real Vensim's own importer is -- and the
+  // "flow renders as a plain box, not a valve icon" symptom this patches
+  // pointed straight at a record-shape mismatch, not a logical one.
+  line += std::to_string(shape) + "," + std::to_string(bits) + ",0,0,-1,0,0,0,0,0,0,0,0,0";
   WarnIfLineTooLong(line, "sketch variable record", e->GetVariable()->GetName());
   out += line + "\n";
 }
@@ -404,16 +414,33 @@ void MDLGenerator::EmitValveRecord(std::string &out, int uid, VensimValveElement
   // 11,uid,name,x,y,w,h,shape (VensimView.cpp:84-98). The name token is read and
   // discarded; only shape bit5 (attached) is meaningful. 34 = 32|2 sets bit5.
   int shape = e->Attached() ? 34 : 2;
+  // NOT UPSTREAM. Same gap as EmitVariableRecord above -- this used to stop
+  // right after `shape` (8 fields total) where a real Vensim-written valve
+  // record carries 13 more (see flow-diagram.mdl's `11,5,0,373,410,6,8,34,3,0,
+  // 0,1,0,...`, matched exactly by packages/core/src/mdl/writer.ts). Every
+  // valve in a converted file was missing its entire tail.
   out += "11," + std::to_string(uid) + ",0," + std::to_string(e->X()) + "," + std::to_string(e->Y()) + "," +
-         std::to_string(e->Width()) + "," + std::to_string(e->Height()) + "," + std::to_string(shape) + "\n";
+         std::to_string(e->Width()) + "," + std::to_string(e->Height()) + "," + std::to_string(shape) +
+         ",3,0,0,1,0,0,0,0,0,0,0,0,0\n";
 }
 
 void MDLGenerator::EmitCommentRecord(std::string &out, int uid, VensimCommentElement *e) {
   // 12,uid,name,x,y,w,h,shape,bits (VensimView.cpp:64-82). The reader consumes
   // the following line as scratch text iff bits bit2 is set, so bits is emitted
   // as 0 (bit2 clear) and no trailing text line follows.
-  out += "12," + std::to_string(uid) + ",0," + std::to_string(e->X()) + "," + std::to_string(e->Y()) + "," +
-         std::to_string(e->Width()) + "," + std::to_string(e->Height()) + ",8,0\n";
+  //
+  // NOT UPSTREAM. The only caller of the programmatic VensimCommentElement(x,y)
+  // ctor in this build is XmileView::AllocateCloud -- every element reaching
+  // this function is a flow's cloud endpoint, never a free-text annotation (no
+  // <text_box> importer exists in this vendored copy). Real Vensim's own cloud
+  // record does not use a text name at all: the "name" slot instead carries the
+  // literal built-in-icon marker 48, with shape 0 (see flow-diagram.mdl's
+  // `12,2,48,209,410,10,8,0,3,0,0,-1,...`, matched by writer.ts's cloudPosition
+  // emission). This used to write name-slot 0 and shape 8 -- Vensim's plain
+  // "oval placeholder" encoding, not its cloud icon -- so every cloud endpoint
+  // rendered as a generic box instead of the cloud graphic.
+  out += "12," + std::to_string(uid) + ",48," + std::to_string(e->X()) + "," + std::to_string(e->Y()) + "," +
+         std::to_string(e->Width()) + "," + std::to_string(e->Height()) + ",0,3,0,0,-1,0,0,0,0,0,0,0,0,0\n";
 }
 
 void MDLGenerator::EmitConnectorRecord(std::string &out, int uid, VensimConnectorElement *e,
