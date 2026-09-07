@@ -97,7 +97,8 @@ private:
   void EmitVariableRecord(std::string &out, int uid, VensimVariableElement *e);
   void EmitValveRecord(std::string &out, int uid, VensimValveElement *e);
   void EmitCommentRecord(std::string &out, int uid, VensimCommentElement *e);
-  void EmitConnectorRecord(std::string &out, int uid, VensimConnectorElement *e);
+  void EmitConnectorRecord(std::string &out, int uid, VensimConnectorElement *e,
+                            const std::vector<VensimViewElement *> &elems);
   // Emit the trailing :L settings section: the integration method (15:), unit
   // equivalences (22:), and the Vensim default cosmetic lines. Must follow the
   // sketch terminator emitted by GenerateSketch (the parser only reads settings

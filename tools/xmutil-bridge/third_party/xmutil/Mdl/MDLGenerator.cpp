@@ -416,7 +416,8 @@ void MDLGenerator::EmitCommentRecord(std::string &out, int uid, VensimCommentEle
          std::to_string(e->Width()) + "," + std::to_string(e->Height()) + ",8,0\n";
 }
 
-void MDLGenerator::EmitConnectorRecord(std::string &out, int uid, VensimConnectorElement *e) {
+void MDLGenerator::EmitConnectorRecord(std::string &out, int uid, VensimConnectorElement *e,
+                                        const std::vector<VensimViewElement *> &elems) {
   // 1,uid,from,to,<ign>,<ign>,POL,<6 ign>,N|(x,y)| (VensimView.cpp:115-144).
   // Invalidated connectors carry from==to==0 (Invalidate()) and are dropped.
   // POL is the polarity char's ASCII code as a decimal int: 43='+', 45='-',
@@ -431,9 +432,43 @@ void MDLGenerator::EmitConnectorRecord(std::string &out, int uid, VensimConnecto
     pol = 43;
   else if (p == '-')
     pol = 45;
-  out += "1," + std::to_string(uid) + "," + std::to_string(e->From()) + "," + std::to_string(e->To()) + ",1,0," +
-         std::to_string(pol) + ",0,0,64,0,-1--1--1,,1|(" + std::to_string(e->X()) + "," + std::to_string(e->Y()) +
-         ")|\n";
+
+  // NOT UPSTREAM. This reader (VensimView.cpp) uses the exact same `1,` record
+  // for two structurally different things: a causal/info-link arrow between two
+  // variables, and the material-flow pipe from a flow's valve out to its
+  // stock/cloud endpoints. XmileView::ProcessViews (AllocateConnector calls
+  // around line 258-259) creates the pipe halves as plain VensimConnectorElement
+  // instances with polarity 0, indistinguishable from a real causal arrow at
+  // this point -- so this function used to emit style=1,dtype=64 (the causal
+  // encoding) for BOTH, which is not the encoding real Vensim itself writes for
+  // a pipe (see example-compatibility/flow-diagram.mdl: valve->stock pipes are
+  // style=100,dtype=192 and valve->cloud pipes are style=4,dtype=192 -- this
+  // editor's own packages/core/src/mdl/writer.ts already matches that). Style=1
+  // is Vensim's causal-arrow marker; a valve is never the source of a causal
+  // link in a real Vensim-authored file, so a reader keying pipe-vs-causal
+  // rendering off this field (rather than off From() merely pointing at an
+  // `11,` valve record) would draw nothing at all for these -- which matches
+  // exactly the "double .mdl, I don't see any flow" symptom this patches.
+  //
+  // Restoring the real encoding needs to know two things ordinary
+  // VensimConnectorElement state doesn't carry: whether this arrow originates
+  // at a valve at all, and (if so) whether its other end is a real stock or a
+  // cloud -- from the same two real-file examples, that alone (not
+  // source-vs-sink direction) is what selects 100 vs 4.
+  bool fromIsValve = e->From() >= 0 && static_cast<size_t>(e->From()) < elems.size() && elems[e->From()] &&
+                      elems[e->From()]->Type() == VensimViewElement::ElementTypeVALVE;
+  int style = 1;
+  int dtype = 64;
+  if (fromIsValve) {
+    bool toIsVariable = e->To() >= 0 && static_cast<size_t>(e->To()) < elems.size() && elems[e->To()] &&
+                         elems[e->To()]->Type() == VensimViewElement::ElementTypeVARIABLE;
+    style = toIsVariable ? 100 : 4;
+    dtype = 192;
+  }
+
+  out += "1," + std::to_string(uid) + "," + std::to_string(e->From()) + "," + std::to_string(e->To()) + "," +
+         std::to_string(style) + ",0," + std::to_string(pol) + ",0,0," + std::to_string(dtype) +
+         ",0,-1--1--1,,1|(" + std::to_string(e->X()) + "," + std::to_string(e->Y()) + ")|\n";
 }
 
 std::vector<bool> MDLGenerator::SuppressedSketchSlots(const std::vector<VensimViewElement *> &elems) const {
@@ -603,7 +638,7 @@ void MDLGenerator::GenerateSketch(std::string &out) {
         EmitCommentRecord(out, (int)uid, static_cast<VensimCommentElement *>(e));
         break;
       case VensimViewElement::ElementTypeCONNECTOR:
-        EmitConnectorRecord(out, (int)uid, static_cast<VensimConnectorElement *>(e));
+        EmitConnectorRecord(out, (int)uid, static_cast<VensimConnectorElement *>(e), elems);
         break;
       }
     }
