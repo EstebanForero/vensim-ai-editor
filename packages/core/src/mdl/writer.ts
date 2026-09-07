@@ -144,30 +144,25 @@ const VARIABLE_RECORD_TAIL = "0,0,-1,0,0,0,0,0,0,0,0,0";
 function writeSketch(model: Model): string {
   const vars = allVariables(model);
 
-  // Vensim pairs a flow's valve with its own name-label PURELY by uid adjacency — "Vensim draws
-  // a flow as an attached valve immediately followed by the flow's own variable record, and
-  // consumers resolve the pair by that adjacency alone" (confirmed straight from Vensim's own
-  // xmutil converter source, src/Mdl/MDLGenerator.cpp's SuppressedSketchSlots comment: rule 2
-  // treats `elements[valve_uid + 1]` as the paired flow, unconditionally). This editor's writer
-  // previously assigned every variable (stocks, flows, auxiliaries) a single id up front in one
-  // pass, THEN appended each flow's valve id afterward in a separate, later-starting counter —
-  // so a flow's own label id and its valve's id were never actually consecutive integers. That
-  // silently broke the one thing Vensim uses to recognize the pairing at all, which is the root
-  // cause behind this exact writer's original valve/label "orphaning on resave" saga (see the
-  // file header). Every id below is now assigned in ONE pass, in variable order, where a flow
-  // consumes two CONSECUTIVE ids (valve, then its own label) instead of one id assigned far
-  // apart from the other.
+  // Every uid below is handed out from ONE counter, in the exact order its record is WRITTEN —
+  // never reserved ahead of time for something written later. A real Vensim-authored file's
+  // uids only ever increase as you read down the file (confirmed against
+  // example-compatibility/flow-diagram.mdl); this writer previously reserved ids for every
+  // variable (stocks, flow valve+label pairs, auxiliaries) in one early pass, THEN handed out
+  // cloud/arrow ids from a separate later-starting counter per flow — so uid *values* were still
+  // internally consistent, but a later flow's pre-reserved (lower) valve id ended up WRITTEN
+  // after an earlier flow's (higher) cloud/arrow ids, i.e. uids that go backward partway through
+  // the file. A live-Vensim test isolating this exact scenario (real record content, renumbered
+  // only to reproduce this specific backward jump) reproduced the bug precisely at that jump:
+  // everything up to it rendered correctly, everything from it onward did not (ghosted flows,
+  // orphaned clouds) — so this is not merely a style preference, it's the root cause. The fix is
+  // structural: stocks and auxiliaries are assigned and written first (their own ids can't
+  // create this problem since neither has cloud/arrow children), and each flow's valve, label,
+  // clouds, and pipe arrows are now assigned and written together as one never-interrupted block
+  // — so no later flow's ids can ever be smaller than an earlier flow's.
   const idIndex = new Map<string, number>();
   const valveIdByFlow = new Map<string, number>();
   let nextId = 0;
-  for (const v of vars) {
-    nextId += 1;
-    if (v.kind === "flow") {
-      valveIdByFlow.set(v.id, nextId);
-      nextId += 1;
-    }
-    idIndex.set(v.id, nextId);
-  }
 
   let out = "\\\\\\---/// Sketch information - do not modify anything except names\n";
   out += "V300  Do not put anything below this section - it will be ignored\n";
@@ -176,14 +171,20 @@ function writeSketch(model: Model): string {
 
   for (const v of vars) {
     if (v.kind === "flow") continue; // flows get a name label + separate valve icon below
+    nextId += 1;
+    idIndex.set(v.id, nextId);
     const shapeType = shapeTypeFor(v);
     const c = center(v.pos, v.size);
     const half = halfSize(v.size);
-    out += `10,${idIndex.get(v.id)},${v.name},${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},${shapeType},3,${VARIABLE_RECORD_TAIL}\n`;
+    out += `10,${nextId},${v.name},${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},${shapeType},3,${VARIABLE_RECORD_TAIL}\n`;
   }
 
   for (const flow of model.flows) {
-    const valveId = valveIdByFlow.get(flow.id)!;
+    nextId += 1;
+    const valveId = nextId;
+    valveIdByFlow.set(flow.id, valveId);
+    nextId += 1;
+    idIndex.set(flow.id, nextId);
     const labelCenter = center(flow.pos, flow.size);
     // Vensim draws a flow as a small valve icon with its name label just below it — matching
     // that gap (rather than stacking them exactly on top of each other) is also what lets this
