@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { addAuxiliary, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
+import { addAuxiliary, addComment, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
 import { detectLoops } from "../src/loops/index.js";
 import { createEmptyModel } from "../src/model/types.js";
 import { parseMdl } from "../src/mdl/parser.js";
@@ -253,6 +253,24 @@ TIME STEP  = 0.25
     const stockAfter = reparsed.stocks[0]!;
     expect(stockAfter.inflows).toHaveLength(1);
     expect(stockAfter.outflows).toHaveLength(1);
+  });
+
+  // Regression: real Vensim's own `12,` comment-record reader only reads the following line as
+  // the box's text when bit 2 (value 4) of the `bits` field (right after shape) is set —
+  // otherwise it treats the text as an unrelated following record instead, so the note loads
+  // empty in Vensim. commentRecord wrote `bits=3` (no bit 2), so a freeform note or a full loop
+  // annotation sentence never actually carried its text into Vensim, even though this editor's
+  // own parser (which doesn't check `bits` at all) round-tripped it fine — masking the bug in
+  // every prior test. loopBadgeRecord's small "R"/"B" circle already used `bits=7` correctly,
+  // which is why only the badge (not the full sentence) was visible in a real Vensim session.
+  test("sets the comment record's bits field so real Vensim reads its text line", () => {
+    const model = createEmptyModel("NoteExport");
+    addComment(model, { text: "Hand-written note", pos: { x: 10, y: 20 }, size: { width: 100, height: 40 } });
+
+    const mdlText = writeMdl(model);
+    const line = mdlText.split("\n").find((l) => l.startsWith("12,") && !l.includes(",48,"))!;
+    const bits = Number(line.split(",")[8]);
+    expect(bits & 4).toBe(4);
   });
 
   test("writes R/B loop comment annotations and curved relation arrows for native Vensim", () => {

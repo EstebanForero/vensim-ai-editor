@@ -373,13 +373,24 @@ function loopBadgeRecord(id: number, loop: Loop): string {
  * to place text here that doesn't correspond to a declared model variable. Shape code `0`
  * marks a plain text box — Vensim reserves nonzero codes (e.g. `48`) for built-in icons like
  * the flow-cloud glyph, which have no text line to read at all, so using one here would make
- * real Vensim render a cloud icon instead of this comment's text. */
+ * real Vensim render a cloud icon instead of this comment's text.
+ *
+ * The `bits` field (the one right after shape) has a bit(2) = 4 meaning "this record's text
+ * lives on the following line, read it" (see the vendored xmutil reader's own comment-record
+ * parse constructor: `if (bits & (1 << 2)) { ...ReadLine...name = buf; }`, VensimView.cpp). This
+ * previously wrote `bits=3` (no bit 2), which tells a real Vensim reader the OPPOSITE — that
+ * there's no text line to consume — so the actual note content was never read at all: the
+ * comment box loaded empty, and the text line itself was left to be misread as if it were an
+ * unrelated following sketch record. `loopBadgeRecord` right above already gets this right
+ * (`bits=7`, bit 2 set) — matching it here is what makes a freeform note or a full loop
+ * annotation sentence ("R1 loop: A → B → A") actually carry its text into Vensim, not just the
+ * small circled R/B badge. */
 function commentRecord(id: number, text: string, pos: Position, size?: { width: number; height: number }): string {
   const w = size?.width ?? Math.max(24, text.length * 8);
   const h = size?.height ?? 16;
   const c = center(pos, { width: w, height: h });
   const half = halfSize({ width: w, height: h });
-  return `12,${id},0,${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},0,3,${VARIABLE_RECORD_TAIL}\n${text}\n`;
+  return `12,${id},0,${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},0,7,${VARIABLE_RECORD_TAIL}\n${text}\n`;
 }
 
 /** A Vensim "graph pad" — the trend-chart widget Vensim's sketch editor draws when a variable
