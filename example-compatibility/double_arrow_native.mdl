@@ -1,0 +1,101 @@
+{UTF-8}
+Inventario de bicicletas= INTEG (
+	Recepción de bicicletas -Venta de bicicletas,
+		60)
+	~	bicicletas
+	~	Cantidad de bicicletas disponibles en la tienda
+	|
+
+Recepción de bicicletas= "Pedido de bicicletas" / "Tiempo de entrega"
+	~	bicicletas/día
+	~	Entrada de bicicletas desde el proveedor
+	|
+
+Venta de bicicletas= MIN("Demanda de bicicletas", "Inventario de bicicletas" / 1)
+	~	bicicletas/día
+	~	Salida por ventas; no puede superar el inventario disponible
+	|
+
+Pedido de bicicletas= MAX(0, ("Inventario deseado" - "Inventario de bicicletas") / "Tiempo de ajuste de inventario")
+	~	bicicletas/día
+	~	Cantidad solicitada al proveedor; no puede ser negativa
+	|
+
+Inventario deseado= 100
+	~	bicicletas
+	~	
+	|
+
+Tiempo de entrega= 5
+	~	días
+	~	
+	|
+
+Tiempo de ajuste de inventario= 10
+	~	días
+	~	
+	|
+
+Demanda de bicicletas= 8
+	~	bicicletas/día
+	~	
+	|
+
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+
+FINAL TIME= 60
+	~	días
+	~	The final time for the simulation.
+	|
+
+INITIAL TIME= 0
+	~	días
+	~	The initial time for the simulation.
+	|
+
+SAVEPER= TIME STEP
+	~	días
+	~	The frequency with which output is stored.
+	|
+
+TIME STEP= 0.25
+	~	días
+	~	The time step for the simulation.
+	|
+
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*View 1
+$192-192-192,0,Times New Roman|12||0-0-0|0-0-0|0-0-255|-1--1--1|-1--1--1|96,96,100,0
+10,1,Inventario de bicicletas,717,168,45,23,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,6,Pedido de bicicletas,638,18,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,7,Inventario deseado,520,-115,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,8,Tiempo de entrega,506,297,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,9,Tiempo de ajuste de inventario,685,-135,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,10,Demanda de bicicletas,910,19,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+11,2,0,575,143,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,3,Recepción de bicicletas,575,177,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,11,48,476,126,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,12,2,11,100,0,0,22,0,192,0,-1--1--1,,1|(526,134)|
+1,13,2,1,4,0,0,22,0,192,0,-1--1--1,,1|(646,155)|
+11,4,0,863,141,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,5,Venta de bicicletas,863,175,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,14,4,1,100,0,0,22,0,192,0,-1--1--1,,1|(790,154)|
+12,15,48,961,123,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,16,4,15,4,0,0,22,0,192,0,-1--1--1,,1|(912,132)|
+1,17,6,2,1,0,43,0,0,192,0,-1--1--1,,1|(646,113)|
+1,18,8,2,1,0,43,0,0,192,0,-1--1--1,,1|(511,220)|
+1,19,7,6,1,0,43,0,0,192,0,-1--1--1,,1|(546,-20)|
+1,20,1,6,1,0,43,0,0,192,0,-1--1--1,,1|(640,112)|
+1,21,9,6,1,0,43,0,0,192,0,-1--1--1,,1|(623,-71)|
+1,22,10,4,1,0,43,0,0,192,0,-1--1--1,,1|(926,109)|
+1,23,1,4,1,0,43,0,0,192,0,-1--1--1,,1|(788,208)|
+12,24,0,745,147,27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B1
+12,25,0,598,97,27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0
+R1
+///---\\\

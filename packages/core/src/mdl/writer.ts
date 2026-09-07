@@ -65,7 +65,14 @@ export function writeMdl(model: Model): string {
   out += variableRecord("TIME STEP", String(model.simSpec.dt), model.simSpec.timeUnits, "The time step for the simulation.");
 
   out += writeSketch(model);
-  return out;
+
+  // Every real Vensim-saved .mdl this editor has as a reference (flow-diagram.mdl,
+  // aitraining.mdl) uses CRLF line endings throughout, and so does Vensim's own xmutil
+  // converter's output — this writer emitted plain LF. A positional/line-oriented reader that
+  // scans specifically for "\r\n" (rather than treating "\n" alone as a line terminator) would
+  // either fail to find a line boundary at all or leave a stray "\r" glued onto the last field
+  // of every line, corrupting exactly the kind of trailing numeric fields this format leans on.
+  return out.replace(/\n/g, "\r\n");
 }
 
 /** Deterministic +1/-1 from a string, used to alternate which side a relation's curve bends
