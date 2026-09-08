@@ -368,29 +368,32 @@ function loopBadgeRecord(id: number, loop: Loop): string {
   return `12,${id},0,${Math.round(loop.centroid.x)},${Math.round(loop.centroid.y)},27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0\n${loop.polarity}${loop.number}\n`;
 }
 
-/** A freestanding text annotation (Vensim's own "Comment" sketch tool produces this — see
- * file header for the confidence caveat), not tied to any variable's equation, so it's safe
- * to place text here that doesn't correspond to a declared model variable. Shape code `0`
- * marks a plain text box — Vensim reserves nonzero codes (e.g. `48`) for built-in icons like
- * the flow-cloud glyph, which have no text line to read at all, so using one here would make
- * real Vensim render a cloud icon instead of this comment's text.
+/** A freestanding text annotation (Vensim's own "Comment" sketch tool produces this), not tied
+ * to any variable's equation, so it's safe to place text here that doesn't correspond to a
+ * declared model variable.
  *
- * The `bits` field (the one right after shape) has a bit(2) = 4 meaning "this record's text
- * lives on the following line, read it" (see the vendored xmutil reader's own comment-record
- * parse constructor: `if (bits & (1 << 2)) { ...ReadLine...name = buf; }`, VensimView.cpp). This
- * previously wrote `bits=3` (no bit 2), which tells a real Vensim reader the OPPOSITE — that
- * there's no text line to consume — so the actual note content was never read at all: the
- * comment box loaded empty, and the text line itself was left to be misread as if it were an
- * unrelated following sketch record. `loopBadgeRecord` right above already gets this right
- * (`bits=7`, bit 2 set) — matching it here is what makes a freeform note or a full loop
- * annotation sentence ("R1 loop: A → B → A") actually carry its text into Vensim, not just the
- * small circled R/B badge. */
+ * Shape code `8` — confirmed straight from a real Vensim session: adding a Comment by hand in
+ * Vensim and saving produced `12,21,0,388,168,80,40,8,7,0,0,-1,0,0,0,0,0,0,0,0,0` (a live diff
+ * against example-compatibility/flow-diagram.mdl after the user added one). This previously
+ * wrote shape `0`, which loads as a static, non-draggable, non-editable text overlay rather than
+ * an ordinary movable/editable comment box — `8` is the same shape-type code an auxiliary box
+ * uses (see shapeTypeFor), which is exactly the "plain draggable box" family. `48` (a genuinely
+ * different, *built-in-icon* marker used only in the name-string position, not here) is reserved
+ * for things like the flow-cloud glyph, which has no text line at all — unrelated to this shape
+ * field.
+ *
+ * The `bits` field (the one right after shape) has bit(2) = 4 meaning "this record's text lives
+ * on the following line, read it" (confirmed by the same real Vensim diff, and by the vendored
+ * xmutil reader's own comment-record parse constructor: `if (bits & (1 << 2)) { ...ReadLine...
+ * name = buf; }`, VensimView.cpp) — `bits=7` here (matching `loopBadgeRecord` above) is what
+ * makes a freeform note or a full loop-annotation sentence actually carry its text into Vensim,
+ * not just load as an empty box. */
 function commentRecord(id: number, text: string, pos: Position, size?: { width: number; height: number }): string {
   const w = size?.width ?? Math.max(24, text.length * 8);
   const h = size?.height ?? 16;
   const c = center(pos, { width: w, height: h });
   const half = halfSize({ width: w, height: h });
-  return `12,${id},0,${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},0,7,${VARIABLE_RECORD_TAIL}\n${text}\n`;
+  return `12,${id},0,${Math.round(c.x)},${Math.round(c.y)},${Math.round(half.width)},${Math.round(half.height)},8,7,${VARIABLE_RECORD_TAIL}\n${text}\n`;
 }
 
 /** A Vensim "graph pad" — the trend-chart widget Vensim's sketch editor draws when a variable
