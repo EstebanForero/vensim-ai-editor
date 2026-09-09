@@ -21,8 +21,21 @@ you've created, and run_simulation after building or changing equations to sanit
 Vensim syntax (e.g. "Population * Birth Rate", "IF THEN ELSE(x > 10, 1, 0)"). Use add_comment for freestanding notes
 on the diagram (not equations), and set_sim_spec to change start/stop time, dt, or integration method when asked.
 Call auto_layout after building a new model from scratch, or after adding several elements in one go, so nothing
-piles up or drifts out of view — it's cheap and always safe to call again. After you finish making changes, reply
-with a short plain-text summary of what you did.`;
+piles up or drifts out of view — it's cheap and always safe to call again. Call check_units after building or
+changing equations/units, the same way you'd call run_simulation — treat a reported mismatch as something to
+actually resolve, not noise to ignore. Most mismatches are real bugs (a units field that's just wrong, a variable
+that shouldn't be summed/multiplied with another the way the equation does) or a units-STRING inconsistency rather
+than a real dimensional one — e.g. "Suscriptores" (a stock, plural) and "Costo de adquisicion por suscriptor" (an
+aux, singular "suscriptor") are the same physical unit spelled two different ways, which the checker treats as
+genuinely different units since it only matches text, not grammatical number — the actual fix there is just to
+respell one to match the other, not to work around it. Only when a mismatch reflects a REAL, deliberate unit
+conversion the model needs (not a spelling fix) should you introduce a new auxiliary as a conversion factor — keep
+it named for what it converts (e.g. "Factor de conversion" or similar, not a vague placeholder), and give it real
+units whenever the conversion has real ones; units of "1" (dimensionless) are for when the ratio genuinely has no
+physical unit of its own, not a shortcut to silence the checker without thinking about what's actually being
+converted. Prefer the cleaner fix (correcting a units field, fixing the equation, respelling a unit consistently)
+over adding a variable whenever one exists. After you finish making changes, reply with a short plain-text summary
+of what you did.`;
 
 const OPENAI_TOOLS: ChatCompletionTool[] = VENSIM_AI_TOOLS.map((t) => ({
   type: "function",
