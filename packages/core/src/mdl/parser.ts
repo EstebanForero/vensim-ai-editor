@@ -8,6 +8,7 @@
 
 import { addAuxiliary, addComment, addConnector, addFlow, addStock } from "../model/builder/index.js";
 import { stripDiacritics } from "../model/builder/helpers.js";
+import { stripRangeSuffix } from "../model/units.js";
 import { createEmptyModel, findVariableByName, type Model } from "../model/types.js";
 import { exprToString, tryParseExpr, type Expr } from "./expr/index.js";
 import { splitTopLevelCommas } from "./util.js";
@@ -108,7 +109,7 @@ export function parseMdl(text: string): Model {
 
   for (const r of records) {
     if (CONTROL_NAMES.has(r.name.toUpperCase())) {
-      applyControl(model, r.name.toUpperCase(), r.equation);
+      applyControl(model, r.name.toUpperCase(), r.equation, r.units);
       continue;
     }
     const integ = parseIntegCall(r.equation);
@@ -191,7 +192,7 @@ export function parseMdl(text: string): Model {
   return model;
 }
 
-function applyControl(model: Model, name: string, equation: string): void {
+function applyControl(model: Model, name: string, equation: string, units: string): void {
   const num = Number(equation.trim());
   switch (name) {
     case "FINAL TIME":
@@ -202,6 +203,18 @@ function applyControl(model: Model, name: string, equation: string): void {
       break;
     case "TIME STEP":
       if (!Number.isNaN(num)) model.simSpec.dt = num;
+      // TIME STEP's own `~` units line is the model's actual declared time unit (FINAL
+      // TIME/INITIAL TIME/SAVEPER carry the same string in every real file, so any one of them
+      // would do, but this editor's own writer always uses TIME STEP as the canonical source —
+      // see mdl/writer.ts). Previously never read at all: every imported file silently lost its
+      // real time unit, staying at createEmptyModel's "Time" placeholder regardless of what the
+      // file actually declared (e.g. a real "Month" was dropped on the floor on import).
+      // The units line can carry a trailing "[min,max]" data-range hint (Vensim's own
+      // convention, e.g. flow-diagram.mdl's "Year [0,?]") that's unrelated to the actual time
+      // unit word — stripped here so simSpec.timeUnits stays the clean keyword a units-spelling
+      // check (model/units.ts's checkTimeUnitSpelling) or a re-export can compare/use directly.
+      const cleaned = stripRangeSuffix(units);
+      if (cleaned) model.simSpec.timeUnits = cleaned;
       break;
     case "SAVEPER":
       break; // driven by dt in this editor

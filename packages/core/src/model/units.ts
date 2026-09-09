@@ -38,7 +38,7 @@ const DIMENSIONLESS_WORDS = new Set(["1", "dmnl", "dimensionless", "fraction", "
  * for appending a variable's expected data range directly onto the units string (see e.g.
  * example-compatibility/flow-diagram.mdl's `~ Year [0,?]`) — that's a range annotation, not part
  * of the unit's actual dimension. */
-function stripRangeSuffix(s: string): string {
+export function stripRangeSuffix(s: string): string {
   return s.replace(/\[[^\]]*\]\s*$/, "").trim();
 }
 
@@ -279,14 +279,67 @@ export interface UnitIssue {
   message: string;
 }
 
+// Vensim's own time-unit keyword is a fixed, English-only set (see the AI tool's set_sim_spec
+// schema, packages/ai-tools/src/tools.ts) — but a variable's own declared units string is free
+// text, and this editor's own accent-stripping doesn't translate words, only strip diacritics,
+// so a rate declared "recursos/mes" alongside a model time unit of "Month" stays "mes" forever
+// even though both mean the same thing. Real Vensim's own Units Check flags this: it compares a
+// unit's time-denominator word against the model's actual declared time unit, as plain text, and
+// "mes" ≠ "Month" to that comparison. This mirrors that specific check — distinct from (and
+// unrelated to) the general dimensional-consistency check above, since "mes" and "Month" denote
+// the very same dimension, just spelled differently. Only Spanish equivalents are covered here,
+// since that's the demonstrated real-world case; extending to another language is a matter of
+// adding more entries below, not changing the mechanism.
+const TIME_UNIT_ALIASES: Record<string, string> = {
+  second: "second", seconds: "second", segundo: "second", segundos: "second",
+  minute: "minute", minutes: "minute", minuto: "minute", minutos: "minute",
+  hour: "hour", hours: "hour", hora: "hour", horas: "hour",
+  day: "day", days: "day", dia: "day", dias: "day", día: "day", días: "day",
+  week: "week", weeks: "week", semana: "week", semanas: "week",
+  month: "month", months: "month", mes: "month", meses: "month",
+  quarter: "quarter", quarters: "quarter", trimestre: "quarter", trimestres: "quarter",
+  year: "year", years: "year", ano: "year", anos: "year", año: "year", años: "year",
+};
+
+/** Checks every declared units string in the model for a time-unit word that doesn't literally
+ * match `model.simSpec.timeUnits` — including a same-concept translation ("mes" for a "Month"
+ * model), which the dimensional check above can't catch since it only compares atom text, and
+ * "mes"/"Month" denote the same dimension by construction (both mean "1 model time step's
+ * unit"), not a mismatched one. */
+function checkTimeUnitSpelling(model: Model): UnitIssue[] {
+  const declaredTimeUnit = model.simSpec.timeUnits.trim();
+  const canonical = TIME_UNIT_ALIASES[declaredTimeUnit.toLowerCase()];
+  if (!canonical) return []; // an unrecognized time unit — nothing confident to compare against
+
+  const issues: UnitIssue[] = [];
+  for (const v of allVariables(model)) {
+    const dim = parseUnits(v.units);
+    if (dim === "unknown") continue;
+    for (const atom of Object.keys(dim)) {
+      const atomCanonical = TIME_UNIT_ALIASES[atom];
+      if (!atomCanonical) continue; // not a recognized time-unit word at all — leave it alone
+      if (atom === declaredTimeUnit.toLowerCase()) continue; // exact match, nothing to flag
+      issues.push({
+        variableId: v.id,
+        variableName: v.name,
+        message: `Units use "${atom}" as a time unit, but the model's time unit is "${declaredTimeUnit}" — Vensim requires the exact same word everywhere a time unit appears.`,
+      });
+    }
+  }
+  return issues;
+}
+
 /**
  * Runs a Vensim-Ctrl+U-style structural units check over every stock/flow/auxiliary with an
- * equation. Reports two kinds of issue: an internal inconsistency within the equation itself
- * (e.g. adding two differently-unit'd terms, or MIN/MAX arguments that don't match), and a
- * mismatch between the equation's own computed units and the variable's declared `units` field.
- * A variable with no declared units, an unparseable units string, or an equation this analysis
- * can't fully resolve (an unrecognized function, non-literal exponent, ...) is never flagged —
- * only confident structural mismatches are reported.
+ * equation, plus a model-wide time-unit spelling pass. Reports three kinds of issue: an internal
+ * inconsistency within an equation itself (e.g. adding two differently-unit'd terms, or MIN/MAX
+ * arguments that don't match), a mismatch between an equation's own computed units and the
+ * variable's declared `units` field, and any declared units using a time-unit word that doesn't
+ * literally match the model's own `simSpec.timeUnits` — including a same-concept translation
+ * ("mes" for a "Month" model), which real Vensim's own Units Check also flags as a mismatch even
+ * though both denote the same dimension. A variable with no declared units, an unparseable units
+ * string, or an equation this analysis can't fully resolve (an unrecognized function, non-literal
+ * exponent, ...) is never flagged — only confident structural mismatches are reported.
  */
 export function checkUnits(model: Model): UnitIssue[] {
   const vars = allVariables(model);
@@ -322,6 +375,8 @@ export function checkUnits(model: Model): UnitIssue[] {
   for (const s of model.stocks) check(s, s.initialEquation);
   for (const f of model.flows) check(f, f.equation);
   for (const a of model.auxiliaries) check(a, a.equation);
+
+  issues.push(...checkTimeUnitSpelling(model));
 
   return issues;
 }

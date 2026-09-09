@@ -115,4 +115,35 @@ describe("checkUnits", () => {
     expect(issues.some((i) => i.variableName === "S")).toBe(true);
     void p;
   });
+
+  // Regression: reported directly from a real Vensim session — a model whose flows/auxiliaries
+  // declared units like "recursos/mes" alongside a model time unit of "Month" showed unit errors
+  // in real Vensim that this checker completely missed. The dimensional check alone can't catch
+  // this: "mes" and "Month" denote the exact same dimension (both ARE the model's time unit),
+  // just spelled differently — real Vensim's own Units Check compares that spelling literally,
+  // and flags exactly this.
+  test("flags a units string using a translated time-unit word instead of the model's own spelling", () => {
+    const model = createEmptyModel();
+    model.simSpec.timeUnits = "Month";
+    addAuxiliary(model, { name: "Asignacion mensual", equation: "250", units: "recursos/mes" });
+
+    const issues = checkUnits(model);
+    expect(issues.some((i) => i.message.includes('"mes"') && i.message.includes('"Month"'))).toBe(true);
+  });
+
+  test("does not flag a units string that already uses the model's own time-unit spelling", () => {
+    const model = createEmptyModel();
+    model.simSpec.timeUnits = "Month";
+    addAuxiliary(model, { name: "Monthly Budget", equation: "250", units: "resources/Month" });
+
+    expect(checkUnits(model)).toEqual([]);
+  });
+
+  test("an unrecognized time-unit word (not English or a known translation) is left alone", () => {
+    const model = createEmptyModel();
+    model.simSpec.timeUnits = "Month";
+    addAuxiliary(model, { name: "A", equation: "1", units: "widgets/fortnight" });
+
+    expect(checkUnits(model)).toEqual([]);
+  });
 });

@@ -76,6 +76,10 @@ describe("mdl codec", () => {
     expect(model.auxiliaries.map((a) => a.name).sort()).toEqual(["Birth Rate", "Death Rate"]);
     expect(model.simSpec.stopTime).toBe(100);
     expect(model.simSpec.dt).toBe(0.25);
+    // Regression: applyControl only ever read TIME STEP's numeric value, never its own `~`
+    // units line — every imported file silently lost its real time unit, staying at
+    // createEmptyModel's "Time" placeholder no matter what the file actually declared.
+    expect(model.simSpec.timeUnits).toBe("Month");
 
     // Sketch coordinates are the shape's *center*, and w,h (40,20 here) are *half*-width/
     // half-height per Vensim's own sketch-format reference — so the full box is 80x40, and
