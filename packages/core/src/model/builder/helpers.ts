@@ -34,15 +34,27 @@ export function resolveVariableRef(model: Model, ref: string): Variable {
   throw new ModelError(`No variable found matching "${ref}".`);
 }
 
-function escapeRegExp(s: string): string {
+export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** A regex matching every reference to `name` inside equation text — quoted or bare — without
+ * matching a partial word or a name that's merely a substring of a longer identifier. Shared by
+ * a real rename (renameReferencesInEquations, below) and by the .mdl writer's own accent
+ * normalization (mdl/writer.ts's rewriteEquationRefs), which both need to find every occurrence
+ * of a name inside arbitrary equation text, not just ones already wrapped in quotes — an
+ * equation can reference a multi-word or accented name completely unquoted (this editor's own
+ * parser tolerates it, matching known variable names contextually), so a quoted-only search
+ * misses exactly that case. */
+export function referencePattern(name: string): RegExp {
+  return new RegExp(`(?<!["\\w])${escapeRegExp(name)}(?!["\\w])`, "g");
 }
 
 /** Word-boundary rename of every reference to `oldName` inside equation text, across the whole model. */
 export function renameReferencesInEquations(model: Model, oldName: string, newName: string): void {
   const needsQuoting = /[^A-Za-z0-9_]/.test(newName);
   const replacement = needsQuoting ? `"${newName}"` : newName;
-  const pattern = new RegExp(`(?<!["\\w])${escapeRegExp(oldName)}(?!["\\w])`, "g");
+  const pattern = referencePattern(oldName);
   for (const v of allVariables(model)) {
     if ("equation" in v && v.equation) v.equation = v.equation.replace(pattern, replacement);
     if ("initialEquation" in v && v.initialEquation) {

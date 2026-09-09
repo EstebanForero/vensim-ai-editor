@@ -255,6 +255,44 @@ TIME STEP  = 0.25
     expect(stockAfter.outflows).toHaveLength(1);
   });
 
+  // Regression: the accent-stripping fix above only rewrote QUOTED references, on the (false)
+  // assumption that an accented name could never legally appear unquoted in equation text. It
+  // can: this editor's own equation parser tolerates a bare multi-word/accented reference typed
+  // directly (by a user or the AI) without quotes, matching known variable names contextually —
+  // so a real model built that way (an unquoted reference to an accented name from a DIFFERENT
+  // variable's equation) hit the exact bug this whole mechanism exists to prevent: the export's
+  // accent-stripped definition line and the untouched unquoted reference became two different
+  // strings, which Vensim treats as two different variables — the referenced one undefined, so
+  // it shows up as an unattached "shadow" placeholder carrying the actual connection, while the
+  // real, correctly-placed box sits with nothing wired into it. (Found from a live Vensim
+  // session's actual mojibake'd Equations view, not a hypothetical.)
+  test("rewrites an unquoted accented reference inside a DIFFERENT variable's equation too", () => {
+    const model = createEmptyModel("UnquotedAccentedRef");
+    addAuxiliary(model, { name: "Efecto de recomendación", equation: "1" });
+    addAuxiliary(model, { name: "Efectividad de marketing", equation: "2" });
+    // Typed the way this editor's own lenient parser accepts: no quotes around either
+    // multi-word/accented reference.
+    addAuxiliary(model, {
+      name: "Adquisicion de suscriptores",
+      equation: "Efecto de recomendación + Efectividad de marketing",
+    });
+
+    const mdlText = writeMdl(model);
+    expect(mdlText).not.toMatch(/[À-ſ]/);
+    // The reference must use the SAME spelling as the definition line, whichever form (quoted
+    // or bare) each ends up in.
+    expect(mdlText).toContain("Efecto de recomendacion=");
+    expect(mdlText).toMatch(/Adquisicion de suscriptores= .*Efecto de recomendacion/);
+    expect(mdlText).not.toContain("recomendación"); // the accented spelling must not survive anywhere
+
+    const reparsed = parseMdl(mdlText);
+    const adquisicion = reparsed.auxiliaries.find((a) => a.name === "Adquisicion de suscriptores")!;
+    // Round-trips back into a model where the reference actually resolves to the real variable —
+    // not a name Vensim (or this editor's own parser) would treat as a second, undefined one.
+    expect(reparsed.auxiliaries.some((a) => a.name === "Efecto de recomendacion")).toBe(true);
+    expect(adquisicion.equation).toContain("Efecto de recomendacion");
+  });
+
   // Regression: real Vensim's own `12,` comment-record reader only reads the following line as
   // the box's text when bit 2 (value 4) of the `bits` field (right after shape) is set —
   // otherwise it treats the text as an unrelated following record instead, so the note loads

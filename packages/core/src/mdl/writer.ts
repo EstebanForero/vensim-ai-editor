@@ -24,6 +24,7 @@
 // `valveCenter` calculation and the Flow builder's default size, both flagged below.
 
 import { quoteRefIfNeeded } from "./expr/printer.js";
+import { referencePattern } from "../model/builder/helpers.js";
 import { detectLoops, type Loop } from "../loops/index.js";
 import { allVariables, findVariable, type Connector, type Flow, type Model, type Position, type Variable } from "../model/types.js";
 
@@ -53,16 +54,33 @@ function mdlSafeName(name: string): string {
   return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-/** Rewrites every quoted reference to `orig` inside a raw equation string to use its
- * diacritic-stripped form. A referenced name is only ever safe to bare-substring-match when
- * quoted — the same `needsQuotes` rule the expression printer uses (in expr/printer.ts) already
- * forces quotes on any name containing a non-ASCII character, so an accented name can never
- * legally appear unquoted in equation text; matching only the quoted form avoids ever touching
- * an unrelated substring. */
-function rewriteQuotedRefs(equation: string, nameMap: Map<string, string>): string {
+/** Rewrites every reference to an accented/multi-word name inside a raw equation string to use
+ * its diacritic-stripped form — quoted OR bare. A first version of this only rewrote references
+ * already wrapped in quotes, on the assumption that Vensim's own `needsQuotes` rule (any name
+ * with a non-ASCII character) meant an accented reference could never legally appear unquoted —
+ * true of what THIS EDITOR'S writer itself always emits, but not of an equation's raw text as
+ * actually stored on the model: this editor's own equation parser tolerates a bare multi-word or
+ * accented reference typed directly (by a user or the AI) without quotes, matching known
+ * variable names contextually. A real model built that way — an unquoted `Efecto de
+ * recomendación` referenced from another variable's equation, while its own definition line got
+ * the usual accent-stripped `Efecto de recomendacion` — hit exactly the bug this whole function
+ * exists to prevent: Vensim treats the two spellings as two different variables, and since the
+ * accented one is referenced but never defined, it shows up as an undefined "shadow" placeholder
+ * with the connection, while the real (correctly-spelled, sketch-placed) box sits unconnected.
+ * `referencePattern` (shared with an actual rename, model/builder/helpers.ts) matches a name
+ * wherever it appears as a whole reference, quoted or not, and this always re-quotes the
+ * replacement when needed regardless of how the original reference was written. */
+function rewriteEquationRefs(equation: string, nameMap: Map<string, string>): string {
   let out = equation;
   for (const [orig, safe] of nameMap) {
+    // Exact quoted occurrences first — referencePattern's word-boundary check deliberately
+    // excludes anything quote-adjacent (so renaming "Rate" doesn't also corrupt an unrelated
+    // "Interest Rate" reference elsewhere), which means it can never match a reference that's
+    // already wrapped in its own quotes. Handling that form here first, unconditionally, then
+    // letting referencePattern below catch whatever's left over (necessarily unquoted, since
+    // this already replaced every quoted occurrence), covers both without either regressing.
     out = out.split(`"${orig}"`).join(`"${safe}"`);
+    out = out.replace(referencePattern(orig), quoteRefIfNeeded(safe));
   }
   return out;
 }
@@ -100,15 +118,15 @@ export function writeMdl(model: Model): string {
       .map(quoteRefIfNeeded);
     const parts = [...inflowTerms.map((n) => `+${n}`), ...outflowTerms.map((n) => `-${n}`)];
     const netExpr = parts.length ? parts.join(" ").replace(/^\+/, "") : "0";
-    out += `${mdlSafeName(stock.name)}= INTEG (\n\t${netExpr},\n\t\t${rewriteQuotedRefs(stock.initialEquation, nameMap)})\n\t~\t${stock.units}\n\t~\t${stock.comment}\n\t|\n\n`;
+    out += `${mdlSafeName(stock.name)}= INTEG (\n\t${netExpr},\n\t\t${rewriteEquationRefs(stock.initialEquation, nameMap)})\n\t~\t${stock.units}\n\t~\t${stock.comment}\n\t|\n\n`;
   }
 
   for (const flow of model.flows) {
-    out += variableRecord(mdlSafeName(flow.name), rewriteQuotedRefs(flow.equation, nameMap), flow.units, flow.comment);
+    out += variableRecord(mdlSafeName(flow.name), rewriteEquationRefs(flow.equation, nameMap), flow.units, flow.comment);
   }
 
   for (const aux of model.auxiliaries) {
-    out += variableRecord(mdlSafeName(aux.name), rewriteQuotedRefs(aux.equation, nameMap), aux.units, aux.comment);
+    out += variableRecord(mdlSafeName(aux.name), rewriteEquationRefs(aux.equation, nameMap), aux.units, aux.comment);
   }
 
   out += "********************************************************\n\t.Control\n";
