@@ -22,7 +22,7 @@ const polarityProperty = {
   type: "string",
   enum: ["+", "-"],
   description:
-    "\"+\" (default) if an increase in `from` tends to increase `to`; \"-\" if it tends to decrease it. Required for correct Reinforcing/Balancing loop detection.",
+    "\"+\" if an increase in `from` (holding every other input fixed) tends to increase `to`; \"-\" if it tends to decrease it. Correct polarity is required for correct Reinforcing/Balancing loop detection, so don't guess: think through the actual causal effect the way you'd take a partial derivative — e.g. for `Rate = Pressure / Resistance`, Pressure is \"+\" (increasing it increases Rate) and Resistance is \"-\" (increasing it decreases Rate). Omit this field entirely when `to` already has an equation — it's inferred automatically from that equation's structure, which is more reliable than guessing from the variable names alone; only pass it explicitly when the target has no equation yet, or when the structural sign is genuinely ambiguous (e.g. a difference of two terms) and you can reason it out from context.",
 };
 
 export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
@@ -115,6 +115,12 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
       },
       required: ["id", "polarity"],
     },
+  },
+  {
+    name: "refresh_relation_polarities",
+    description:
+      "Re-infers polarity for every relation whose target variable's own equation determines it structurally, and updates any that changed. Call this after building or substantially editing equations (set_equation already does this automatically for relations pointing at the one variable just edited, but this catches everything at once) — never needed after add_relation alone, which already infers polarity itself. Leaves anything genuinely ambiguous (or targeting a stock) untouched, so it never overwrites a deliberate polarity choice with a guess.",
+    parameters: { type: "object", properties: {} },
   },
   {
     name: "set_equation",
@@ -242,6 +248,12 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
     name: "run_simulation",
     description:
       "Run the simulation with the model's current sim spec (start/stop/dt/integration method) and return final values and a downsampled time series for each variable, so results can be inspected before iterating on the model.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "check_units",
+    description:
+      "Runs a Vensim-Ctrl+U-style structural units check across every stock/flow/auxiliary that has an equation: computes what units the equation's right-hand side actually works out to (by multiplying/dividing the declared units of whatever variables it references) and compares that against the variable's own declared `units` field, plus flags internal inconsistencies within an equation (e.g. adding two differently-unit'd terms, or MIN/MAX arguments that don't share units) regardless of the declared field. Only confident structural mismatches are reported — a variable with no declared units, or an equation this analysis can't fully resolve, is never flagged. Call this after building or editing a model's equations/units, or whenever asked to check/audit units.",
     parameters: { type: "object", properties: {} },
   },
   {

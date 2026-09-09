@@ -1,5 +1,6 @@
 import { ModelError } from "../errors.js";
-import { findVariable, type Model, type Position, type SimSpec, type Variable } from "../types.js";
+import { allVariables, findVariable, type Model, type Position, type SimSpec, type Variable } from "../types.js";
+import { inferConnectorPolarity } from "./connector.js";
 import { assertUniqueName, renameReferencesInEquations, resolveVariableRef } from "./helpers.js";
 
 /** Merges any subset of sim-spec fields (start/stop/dt/integration method/time units). */
@@ -21,6 +22,18 @@ export function setEquation(
   } else {
     if (v.kind === "stock") throw new ModelError(`"${v.name}" is a stock; set its inflows/outflows instead of an equation.`);
     v.equation = equation;
+    // The equation just changed, so any relation feeding INTO this variable may have a
+    // different — or now-determinable — polarity. Only touches connectors whose sign the new
+    // equation actually pins down structurally; anything ambiguous keeps whatever polarity was
+    // already set (a manual override survives an unrelated equation tweak elsewhere).
+    const vars = allVariables(model);
+    for (const c of model.connectors) {
+      if (c.to !== v.id) continue;
+      const from = vars.find((x) => x.id === c.from);
+      if (!from) continue;
+      const inferred = inferConnectorPolarity(model, from, v);
+      if (inferred) c.polarity = inferred;
+    }
   }
   return v;
 }

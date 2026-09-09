@@ -3,6 +3,8 @@ export * from "./model/builder/index.js";
 export * from "./model/derived.js";
 export * from "./model/validate.js";
 export * from "./model/errors.js";
+export * from "./model/polarity.js";
+export * from "./model/units.js";
 export * from "./mdl/expr/index.js";
 export * from "./mdl/parser.js";
 export * from "./mdl/writer.js";

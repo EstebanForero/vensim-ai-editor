@@ -8,6 +8,7 @@ import {
   allVariables,
   annotateLoops,
   autoLayout,
+  checkUnits,
   deleteElement,
   detectLoops,
   findVariable,
@@ -16,6 +17,7 @@ import {
   ModelError,
   moveComment,
   moveElement,
+  refreshInferredPolarities,
   renameVariable,
   setCommentText,
   setConnectorPolarity,
@@ -124,6 +126,10 @@ export function executeTool(model: Model, toolName: string, input: Record<string
         const c = setConnectorPolarity(model, str(input.id), polarity(input.polarity));
         return { ok: true, result: { id: c.id, polarity: c.polarity } };
       }
+      case "refresh_relation_polarities": {
+        const changed = refreshInferredPolarities(model);
+        return { ok: true, result: { changed: changed.map((c) => ({ id: c.id, polarity: c.polarity })) } };
+      }
       case "set_equation": {
         const which = input.which === "initial" ? "initial" : "equation";
         const v = setEquation(model, str(input.id_or_name), str(input.equation), which);
@@ -182,6 +188,10 @@ export function executeTool(model: Model, toolName: string, input: Record<string
         const series: Record<string, number[]> = {};
         for (const [name, values] of Object.entries(sim.series)) series[name] = downsample(values, 50);
         return { ok: true, result: { time: downsample(sim.time, 50), finalValues, series } };
+      }
+      case "check_units": {
+        const issues = checkUnits(model);
+        return { ok: true, result: { issues } };
       }
       case "list_loops": {
         const loops = detectLoops(model).map((loop) => ({

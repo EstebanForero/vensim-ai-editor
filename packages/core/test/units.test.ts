@@ -1,0 +1,118 @@
+import { describe, expect, test } from "bun:test";
+import { checkUnits, parseUnits } from "../src/model/units.js";
+import { addAuxiliary, addStock } from "../src/model/builder/index.js";
+import { createEmptyModel } from "../src/model/types.js";
+
+describe("parseUnits", () => {
+  test("simple atom", () => {
+    expect(parseUnits("bicicletas")).toEqual({ bicicletas: 1 });
+  });
+
+  test("quotient", () => {
+    expect(parseUnits("bicicletas/día")).toEqual({ bicicletas: 1, día: -1 });
+  });
+
+  test("product", () => {
+    expect(parseUnits("dollars*year")).toEqual({ dollars: 1, year: 1 });
+  });
+
+  test("exponent", () => {
+    expect(parseUnits("meter^2")).toEqual({ meter: 2 });
+  });
+
+  test("dimensionless words", () => {
+    expect(parseUnits("Dmnl")).toEqual({});
+    expect(parseUnits("1")).toEqual({});
+  });
+
+  test("an empty units string is unknown, not a claim of dimensionless", () => {
+    expect(parseUnits("")).toBe("unknown");
+  });
+
+  test("strips a trailing [min,max] range suffix", () => {
+    expect(parseUnits("Year [0,?]")).toEqual({ year: 1 });
+  });
+
+  test("cancels out to dimensionless", () => {
+    expect(parseUnits("year/year")).toEqual({});
+  });
+
+  test("unparseable syntax comes back unknown, not a wrong guess", () => {
+    expect(parseUnits("(people+widgets)/year")).toBe("unknown");
+  });
+});
+
+describe("checkUnits", () => {
+  test("R = P / T with correctly-declared units: no issues", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "P", equation: "5", units: "widgets" });
+    addAuxiliary(model, { name: "T", equation: "2", units: "day" });
+    addAuxiliary(model, { name: "R", equation: "P / T", units: "widgets/day" });
+
+    expect(checkUnits(model)).toEqual([]);
+  });
+
+  test("declared units don't match what the equation computes", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "P", equation: "5", units: "widgets" });
+    addAuxiliary(model, { name: "T", equation: "2", units: "day" });
+    addAuxiliary(model, { name: "R", equation: "P / T", units: "widgets" }); // missing /day
+
+    const issues = checkUnits(model);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.variableName).toBe("R");
+    expect(issues[0]!.message).toContain("widgets/day");
+  });
+
+  test("adding two differently-unit'd terms is flagged even without a declared-units mismatch", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "A", equation: "5", units: "widgets" });
+    addAuxiliary(model, { name: "B", equation: "2", units: "day" });
+    addAuxiliary(model, { name: "C", equation: "A + B", units: "widgets" });
+
+    const issues = checkUnits(model);
+    expect(issues.some((i) => i.variableName === "C" && i.message.includes("sum of mismatched units"))).toBe(true);
+  });
+
+  test("a bare numeric-literal equation is never flagged against its declared units", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "Target", equation: "100", units: "widgets" });
+    expect(checkUnits(model)).toEqual([]);
+  });
+
+  test("a variable with no declared units is never flagged, and doesn't poison downstream checks", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "Mystery", equation: "5" }); // no units
+    addAuxiliary(model, { name: "R", equation: "Mystery * 2", units: "widgets" });
+    expect(checkUnits(model)).toEqual([]);
+  });
+
+  test("MIN/MAX arguments must share units", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "A", equation: "5", units: "widgets" });
+    addAuxiliary(model, { name: "B", equation: "2", units: "day" });
+    addAuxiliary(model, { name: "R", equation: "MIN(A, B)" });
+
+    const issues = checkUnits(model);
+    expect(issues.some((i) => i.message.includes("MIN(...) arguments"))).toBe(true);
+  });
+
+  test("EXP/LN require a dimensionless argument", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "A", equation: "5", units: "widgets" });
+    addAuxiliary(model, { name: "R", equation: "EXP(A)" });
+
+    const issues = checkUnits(model);
+    expect(issues.some((i) => i.message.includes("EXP(...) argument must be dimensionless"))).toBe(true);
+  });
+
+  test("a stock's initial equation is checked against its own declared units", () => {
+    const model = createEmptyModel();
+    const p = addAuxiliary(model, { name: "P", equation: "5", units: "widgets" });
+    addStock(model, { name: "S", initialEquation: "P", units: "day" });
+
+    const issues = checkUnits(model);
+    expect(issues.some((i) => i.variableName === "S")).toBe(true);
+    void p;
+  });
+});

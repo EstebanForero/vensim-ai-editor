@@ -1,9 +1,11 @@
 import {
+  checkUnits,
   createEmptyModel,
   simulate,
   validateModel,
   type Model,
   type SimResult,
+  type UnitIssue,
   type ValidationIssue,
 } from "@vensim-ai/core";
 import { create } from "zustand";
@@ -28,6 +30,12 @@ interface ModelStoreState {
   selectedId: string | null;
   simResult: SimResult | null;
   issues: ValidationIssue[];
+  /** null = the units check (Ctrl+U, matching Vensim's own shortcut) hasn't been run yet this
+   * session; [] = it was run and found nothing. Kept separate from `issues` (which re-validates
+   * on every mutation) since a units check is a deliberate, on-demand report, same as in Vensim
+   * itself, not a live-updating badge. */
+  unitIssues: UnitIssue[] | null;
+  unitsDialogOpen: boolean;
   chatMessages: ChatMessage[];
   isAgentRunning: boolean;
 
@@ -56,6 +64,8 @@ interface ModelStoreState {
   mutate: (fn: (model: Model) => void) => void;
   select: (id: string | null) => void;
   runSimulation: () => void;
+  runUnitsCheck: () => void;
+  setUnitsDialogOpen: (open: boolean) => void;
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
   setAiModel: (name: string) => void;
@@ -79,6 +89,8 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   selectedId: null,
   simResult: null,
   issues: [],
+  unitIssues: null,
+  unitsDialogOpen: false,
   chatMessages: [],
   isAgentRunning: false,
 
@@ -112,6 +124,12 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
       set({ simResult: null });
     }
   },
+
+  runUnitsCheck: () => {
+    const { model } = get();
+    set({ unitIssues: checkUnits(model), unitsDialogOpen: true });
+  },
+  setUnitsDialogOpen: (open) => set({ unitsDialogOpen: open }),
 
   setApiKey: (key) => {
     writeLocalStorage("vensim-ai:apiKey", key);

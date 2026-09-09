@@ -1,6 +1,7 @@
 import { ModelError } from "../errors.js";
 import { nextId } from "../ids.js";
-import type { Connector, Model, Polarity, Position } from "../types.js";
+import { inferPolarity } from "../polarity.js";
+import { allVariables, type Connector, type Model, type Polarity, type Position, type Variable } from "../types.js";
 import { resolveVariableRef } from "./helpers.js";
 
 export interface AddConnectorInput {
@@ -8,8 +9,22 @@ export interface AddConnectorInput {
   from: string;
   /** id or name of the target variable. */
   to: string;
-  /** Whether an increase in `from` tends to increase ("+", default) or decrease ("-") `to`. */
+  /** Whether an increase in `from` tends to increase ("+") or decrease ("-") `to`. Omit to
+   * infer it automatically from `to`'s own equation (see inferConnectorPolarity) — falls back
+   * to "+" only when the equation doesn't pin the sign down structurally. */
   polarity?: Polarity;
+}
+
+/** Structurally infers whether increasing `source` (holding every other input fixed) increases
+ * or decreases `target`'s own equation — see model/polarity.ts for the actual sign analysis.
+ * Returns `null` when `target` has no equation to analyze (a stock; its behavior comes from its
+ * inflows/outflows, not a direct formula a connector would feed into) or when the sign can't be
+ * pinned down structurally, in which case callers should keep whatever polarity was already
+ * there rather than treat `null` as a particular sign. */
+export function inferConnectorPolarity(model: Model, source: Variable, target: Variable): Polarity | null {
+  if (!("equation" in target) || !target.equation) return null;
+  const knownNames = allVariables(model).map((v) => v.name);
+  return inferPolarity(target.equation, source.name, knownNames);
 }
 
 /** Adds a causal relation (a.k.a. connector) between two variables. Also how a pure
@@ -22,12 +37,13 @@ export function addConnector(model: Model, input: AddConnectorInput): Connector 
     if (input.polarity) dup.polarity = input.polarity;
     return dup;
   }
+  const polarity = input.polarity ?? inferConnectorPolarity(model, from, to) ?? "+";
   const connector: Connector = {
     kind: "connector",
     id: nextId("conn"),
     from: from.id,
     to: to.id,
-    polarity: input.polarity ?? "+",
+    polarity,
     bend: null,
   };
   model.connectors.push(connector);
@@ -39,6 +55,26 @@ export function setConnectorPolarity(model: Model, connectorId: string, polarity
   if (!c) throw new ModelError(`No relation found with id "${connectorId}".`);
   c.polarity = polarity;
   return c;
+}
+
+/** Re-infers polarity for every connector whose target's equation currently determines it
+ * structurally, leaving anything ambiguous (or targeting a stock) exactly as it was — useful
+ * after an equation edit so relations drawn before the equation existed/changed stay accurate.
+ * Returns the connectors that were actually changed. */
+export function refreshInferredPolarities(model: Model): Connector[] {
+  const changed: Connector[] = [];
+  for (const c of model.connectors) {
+    const vars = allVariables(model);
+    const from = vars.find((v) => v.id === c.from);
+    const to = vars.find((v) => v.id === c.to);
+    if (!from || !to) continue;
+    const inferred = inferConnectorPolarity(model, from, to);
+    if (inferred && inferred !== c.polarity) {
+      c.polarity = inferred;
+      changed.push(c);
+    }
+  }
+  return changed;
 }
 
 /** Sets (or, with `null`, clears back to auto-curve) the manual curve-handle position for a relation. */

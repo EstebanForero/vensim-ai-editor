@@ -7,18 +7,20 @@ import {
   LayoutGrid,
   MessageSquarePlus,
   MessageSquareText,
+  Ruler,
   RotateCw,
   Save,
   Square,
   Waves,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { downloadMdl, downloadXmile, openMdlFilePicker } from "@/lib/fileIO";
 import { uniqueName } from "@/lib/naming";
 import { SAMPLE_MODELS } from "@/lib/sampleModels";
 import { useModelStore } from "@/state/modelStore";
+import { UnitsCheckDialog } from "./UnitsCheckDialog";
 
 export function Toolbar() {
   const model = useModelStore((s) => s.model);
@@ -31,8 +33,22 @@ export function Toolbar() {
   const toggleFlowMode = useModelStore((s) => s.toggleFlowMode);
   const showLoops = useModelStore((s) => s.showLoops);
   const toggleShowLoops = useModelStore((s) => s.toggleShowLoops);
+  const runUnitsCheck = useModelStore((s) => s.runUnitsCheck);
   const [fileError, setFileError] = useState<string | null>(null);
   const { fitView } = useReactFlow();
+
+  // Ctrl+U (or Cmd+U on Mac) — matches Vensim's own Units Check shortcut. The browser's default
+  // "view page source" action for Ctrl+U is what needs preventDefault here.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "u") {
+        e.preventDefault();
+        runUnitsCheck();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [runUnitsCheck]);
 
   const addNamed = (fn: (m: typeof model) => void) => mutate(fn);
 
@@ -124,6 +140,14 @@ export function Toolbar() {
       >
         <MessageSquareText className="size-4" /> Annotate Loops
       </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={runUnitsCheck}
+        title="Check units (Ctrl+U) — a structural check of every equation's units against its variable's declared units, the same idea as Vensim's own Units Check"
+      >
+        <Ruler className="size-4" /> Check Units
+      </Button>
 
       <div className="mx-1 h-5 w-px bg-border" />
       <select
@@ -166,6 +190,8 @@ export function Toolbar() {
           <Save className="size-4" /> Save .xmile
         </Button>
       </div>
+
+      <UnitsCheckDialog />
     </div>
   );
 }
