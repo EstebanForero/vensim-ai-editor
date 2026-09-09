@@ -1,7 +1,7 @@
 import { ModelError } from "../errors.js";
 import { nextId } from "../ids.js";
 import type { Comment, Model, Position, Size } from "../types.js";
-import { autoPlacePosition } from "./helpers.js";
+import { autoPlacePosition, stripDiacritics } from "./helpers.js";
 
 const DEFAULT_SIZE: Size = { width: 160, height: 60 };
 
@@ -17,7 +17,7 @@ export function addComment(model: Model, input: AddCommentInput = {}): Comment {
   const comment: Comment = {
     kind: "comment",
     id: nextId("comment"),
-    text: input.text ?? "Comment",
+    text: stripDiacritics(input.text ?? "Comment"),
     pos: input.pos ?? autoPlacePosition(model),
     size: input.size ?? DEFAULT_SIZE,
   };
@@ -33,7 +33,7 @@ function findCommentOrThrow(model: Model, id: string): Comment {
 
 export function setCommentText(model: Model, id: string, text: string): Comment {
   const c = findCommentOrThrow(model, id);
-  c.text = text;
+  c.text = stripDiacritics(text);
   return c;
 }
 

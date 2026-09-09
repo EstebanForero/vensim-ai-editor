@@ -1,7 +1,7 @@
 import { ModelError } from "../errors.js";
 import { allVariables, findVariable, type Model, type Position, type SimSpec, type Variable } from "../types.js";
 import { inferConnectorPolarity } from "./connector.js";
-import { assertUniqueName, renameReferencesInEquations, resolveVariableRef } from "./helpers.js";
+import { assertUniqueName, renameReferencesInEquations, resolveVariableRef, stripDiacritics } from "./helpers.js";
 
 /** Merges any subset of sim-spec fields (start/stop/dt/integration method/time units). */
 export function setSimSpec(model: Model, patch: Partial<SimSpec>): SimSpec {
@@ -16,12 +16,13 @@ export function setEquation(
   which: "equation" | "initial" = "equation",
 ): Variable {
   const v = resolveVariableRef(model, id);
+  const safeEquation = stripDiacritics(equation);
   if (which === "initial") {
     if (v.kind !== "stock") throw new ModelError(`"${v.name}" is not a stock; it has no initial equation.`);
-    v.initialEquation = equation;
+    v.initialEquation = safeEquation;
   } else {
     if (v.kind === "stock") throw new ModelError(`"${v.name}" is a stock; set its inflows/outflows instead of an equation.`);
-    v.equation = equation;
+    v.equation = safeEquation;
     // The equation just changed, so any relation feeding INTO this variable may have a
     // different — or now-determinable — polarity. Only touches connectors whose sign the new
     // equation actually pins down structurally; anything ambiguous keeps whatever polarity was
@@ -38,12 +39,25 @@ export function setEquation(
   return v;
 }
 
+export function setVariableUnits(model: Model, id: string, units: string): Variable {
+  const v = resolveVariableRef(model, id);
+  v.units = stripDiacritics(units);
+  return v;
+}
+
+export function setVariableComment(model: Model, id: string, comment: string): Variable {
+  const v = resolveVariableRef(model, id);
+  v.comment = stripDiacritics(comment);
+  return v;
+}
+
 export function renameVariable(model: Model, id: string, newName: string): Variable {
   const v = resolveVariableRef(model, id);
-  assertUniqueName(model, newName, v.id);
+  const safeName = stripDiacritics(newName);
+  assertUniqueName(model, safeName, v.id);
   const oldName = v.name;
-  v.name = newName;
-  renameReferencesInEquations(model, oldName, newName);
+  v.name = safeName;
+  renameReferencesInEquations(model, oldName, safeName);
   return v;
 }
 

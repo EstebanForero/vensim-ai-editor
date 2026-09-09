@@ -7,6 +7,7 @@
 // their raw equation text is preserved in `unsupportedRaw` rather than dropped or crashed on.
 
 import { addAuxiliary, addComment, addConnector, addFlow, addStock } from "../model/builder/index.js";
+import { stripDiacritics } from "../model/builder/helpers.js";
 import { createEmptyModel, findVariableByName, type Model } from "../model/types.js";
 import { exprToString, tryParseExpr, type Expr } from "./expr/index.js";
 import { splitTopLevelCommas } from "./util.js";
@@ -246,7 +247,12 @@ function applySketch(model: Model, sketch: string): void {
     const fields = splitTopLevelCommas(line);
     // 10,<id>,<name>,<x>,<y>,<width>,<height>,...
     const id = fields[1];
-    const name = fields[2];
+    // Equation-section names all go through addStock/addFlow/addAuxiliary, which now strip
+    // diacritics at creation — a sketch record's raw name (from a file authored elsewhere, or
+    // predating that fix) must be normalized the same way here, or it silently fails to match
+    // its own variable by name (findVariableByName below, and every later id->name lookup this
+    // map feeds) whenever the two spellings differ only by an accent.
+    const name = fields[2] ? stripDiacritics(fields[2]) : fields[2];
     const x = Number(fields[3]);
     const y = Number(fields[4]);
     const w = Number(fields[5]);
@@ -350,8 +356,9 @@ function applySketch(model: Model, sketch: string): void {
     const text = lines[i + 1]?.trim();
     if (!text || isAutoLoopBadge(text)) continue;
     const graphMatch = /^(.+),Graph$/.exec(text);
-    if (graphMatch && findVariableByName(model, graphMatch[1]!)) {
-      model.pinnedGraphs.push(graphMatch[1]!);
+    const graphVarName = graphMatch ? stripDiacritics(graphMatch[1]!) : null;
+    if (graphVarName && findVariableByName(model, graphVarName)) {
+      model.pinnedGraphs.push(graphVarName);
       continue;
     }
     // w,h here are half-width/half-height too — see the `10,` handling above.

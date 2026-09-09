@@ -19,6 +19,23 @@ export function autoPlacePosition(model: Model): Position {
   return { x: 120 + col * 160, y: 120 + row * 110 };
 }
 
+/** Strips accents/diacritics (e.g. "Recepción" -> "Recepcion") — applied at every point free
+ * text enters the model (a variable's name, its equation text, units, comment; a freestanding
+ * comment's text), not just at .mdl export time. An accented name is completely valid Vensim
+ * syntax on its own, but this editor hit a real, live-Vensim-confirmed bug from it: a name
+ * referenced with an accent from a DIFFERENT variable's equation, while its own definition line
+ * (or some other reference to the same name) ended up spelled without one — two different
+ * strings, which Vensim treats as two different variables, one of them an undefined "shadow"
+ * silently carrying the actual connection while the real box sits unwired (see mdl/writer.ts's
+ * mdlSafeName/rewriteEquationRefs, which patched this at export time after the fact). Stripping
+ * at the source instead means every copy of a name — however many places it gets typed or
+ * referenced, by a user or the AI — is the same ASCII string from the moment it exists, so this
+ * exact class of mismatch can't happen at all, and the export-time version becomes a no-op
+ * safety net rather than the only line of defense. */
+export function stripDiacritics(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 export function assertUniqueName(model: Model, name: string, ignoreId?: string): void {
   const existing = findVariableByName(model, name);
   if (existing && existing.id !== ignoreId) {

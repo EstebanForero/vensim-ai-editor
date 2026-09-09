@@ -311,6 +311,55 @@ TIME STEP  = 0.25
     expect(bits & 4).toBe(4);
   });
 
+  // Regression: with accents now stripped at the source (every builder call, so equation-section
+  // names are always plain ASCII), a raw sketch `10,` record's name must be normalized the same
+  // way before it's used to look up that variable — otherwise an accented name in a hand-authored
+  // or externally-produced .mdl file (this editor's own writer never emits one, but a parsed
+  // input file legitimately can) silently fails to match, dropping the sketch position AND
+  // failing to resolve the connector endpoints that reference it via that same id.
+  test("matches an accented sketch record name against its (now accent-stripped) equation-section variable", () => {
+    const mdlText = [
+      "{UTF-8}",
+      "Poblacion= INTEG (",
+      "\tnacimientos,",
+      "\t\t100)",
+      "\t~\tconejos",
+      "\t~\t",
+      "\t|",
+      "",
+      "nacimientos= tasa de recomendación",
+      "\t~\tconejos/Year",
+      "\t~\t",
+      "\t|",
+      "",
+      "tasa de recomendación= 0.1",
+      "\t~\t1/Year",
+      "\t~\t",
+      "\t|",
+      "",
+      "\\\\\\---/// Sketch information - do not modify anything except names",
+      "V300  Do not put anything below this section - it will be ignored",
+      "*View 1",
+      "$192-192-192,0,Times New Roman|12||0-0-0|0-0-0|0-0-255|-1--1--1|-1--1--1|96,96,100,0",
+      "10,1,Poblacion,573,407,46,26,3,3,0,0,-1,0,0,0,0,0,0,0,0,0",
+      "10,6,tasa de recomendación,204,576,63,26,8,3,0,0,-1,0,0,0,0,0,0,0,0,0",
+      "1,16,6,1,1,0,43,0,0,192,0,-1--1--1,,1|(219,534)|",
+      "///---\\\\\\",
+    ].join("\n");
+
+    const model = parseMdl(mdlText);
+    const pob = model.stocks.find((s) => s.name === "Poblacion")!;
+    const tasa = model.auxiliaries.find((a) => a.name === "tasa de recomendacion")!;
+    expect(pob).toBeDefined();
+    expect(tasa).toBeDefined();
+    // The sketch position must have actually applied (not silently skipped from a failed
+    // name match) — a fresh, auto-placed position would not land exactly on the file's own
+    // declared center-46,26-half-size box.
+    expect(tasa.pos).toEqual({ x: 204 - 63, y: 576 - 26 });
+    // And the causal connector (tasa -> Poblacion) must have resolved too.
+    expect(model.connectors.some((c) => c.from === tasa.id && c.to === pob.id)).toBe(true);
+  });
+
   test("writes R/B loop comment annotations and curved relation arrows for native Vensim", () => {
     const model = createEmptyModel("LoopExport");
     const stock = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 } });

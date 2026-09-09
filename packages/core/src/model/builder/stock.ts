@@ -1,7 +1,7 @@
 import { ModelError } from "../errors.js";
 import { nextId } from "../ids.js";
 import type { Model, Position, Size, Stock } from "../types.js";
-import { assertUniqueName, autoPlacePosition } from "./helpers.js";
+import { assertUniqueName, autoPlacePosition, stripDiacritics } from "./helpers.js";
 
 const DEFAULT_SIZE: Size = { width: 90, height: 45 };
 
@@ -15,14 +15,15 @@ export interface AddStockInput {
 }
 
 export function addStock(model: Model, input: AddStockInput): Stock {
-  assertUniqueName(model, input.name);
+  const name = stripDiacritics(input.name);
+  assertUniqueName(model, name);
   const stock: Stock = {
     kind: "stock",
     id: nextId("stock"),
-    name: input.name,
-    initialEquation: input.initialEquation ?? "0",
-    units: input.units ?? "",
-    comment: input.comment ?? "",
+    name,
+    initialEquation: stripDiacritics(input.initialEquation ?? "0"),
+    units: stripDiacritics(input.units ?? ""),
+    comment: stripDiacritics(input.comment ?? ""),
     pos: input.pos ?? autoPlacePosition(model),
     size: input.size ?? DEFAULT_SIZE,
     inflows: [],

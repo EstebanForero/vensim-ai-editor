@@ -1,6 +1,6 @@
 import { nextId } from "../ids.js";
 import type { Auxiliary, Model, Position, Size } from "../types.js";
-import { assertUniqueName, autoPlacePosition } from "./helpers.js";
+import { assertUniqueName, autoPlacePosition, stripDiacritics } from "./helpers.js";
 
 const DEFAULT_SIZE: Size = { width: 90, height: 45 };
 
@@ -14,14 +14,15 @@ export interface AddAuxiliaryInput {
 }
 
 export function addAuxiliary(model: Model, input: AddAuxiliaryInput): Auxiliary {
-  assertUniqueName(model, input.name);
+  const name = stripDiacritics(input.name);
+  assertUniqueName(model, name);
   const aux: Auxiliary = {
     kind: "auxiliary",
     id: nextId("aux"),
-    name: input.name,
-    equation: input.equation ?? "0",
-    units: input.units ?? "",
-    comment: input.comment ?? "",
+    name,
+    equation: stripDiacritics(input.equation ?? "0"),
+    units: stripDiacritics(input.units ?? ""),
+    comment: stripDiacritics(input.comment ?? ""),
     pos: input.pos ?? autoPlacePosition(model),
     size: input.size ?? DEFAULT_SIZE,
   };

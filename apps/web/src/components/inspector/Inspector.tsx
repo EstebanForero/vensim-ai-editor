@@ -8,6 +8,8 @@ import {
   setConnectorPolarity,
   setEquation,
   setFlowEndpoint,
+  setVariableComment,
+  setVariableUnits,
   variableRelationships,
   type Polarity,
 } from "@vensim-ai/core";
@@ -262,17 +264,11 @@ function VariableInspector() {
 
   const onUnitsChange = (value: string) => {
     setUnits(value);
-    mutate((m) => {
-      const v = findVariable(m, variable.id);
-      if (v) v.units = value;
-    });
+    mutate((m) => setVariableUnits(m, variable.id, value));
   };
   const onCommentChange = (value: string) => {
     setComment(value);
-    mutate((m) => {
-      const v = findVariable(m, variable.id);
-      if (v) v.comment = value;
-    });
+    mutate((m) => setVariableComment(m, variable.id, value));
   };
 
   const onDelete = () => {

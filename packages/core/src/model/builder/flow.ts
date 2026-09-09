@@ -1,7 +1,7 @@
 import { ModelError } from "../errors.js";
 import { nextId } from "../ids.js";
 import type { Flow, Model, Position, Size } from "../types.js";
-import { assertUniqueName, autoPlacePosition } from "./helpers.js";
+import { assertUniqueName, autoPlacePosition, stripDiacritics } from "./helpers.js";
 import { findStockOrThrow } from "./stock.js";
 
 /** Halfway between whichever stock(s) this flow connects to (offset to one side of a single
@@ -42,19 +42,20 @@ function resolveStockRef(model: Model, ref: string | null | undefined): string |
 }
 
 export function addFlow(model: Model, input: AddFlowInput): Flow {
-  assertUniqueName(model, input.name);
+  const name = stripDiacritics(input.name);
+  assertUniqueName(model, name);
   const fromId = resolveStockRef(model, input.from);
   const toId = resolveStockRef(model, input.to);
   if (!fromId && !toId) {
-    throw new ModelError(`Flow "${input.name}" must connect to at least one stock (from and/or to).`);
+    throw new ModelError(`Flow "${name}" must connect to at least one stock (from and/or to).`);
   }
   const flow: Flow = {
     kind: "flow",
     id: nextId("flow"),
-    name: input.name,
-    equation: input.equation ?? "0",
-    units: input.units ?? "",
-    comment: input.comment ?? "",
+    name,
+    equation: stripDiacritics(input.equation ?? "0"),
+    units: stripDiacritics(input.units ?? ""),
+    comment: stripDiacritics(input.comment ?? ""),
     pos: input.pos ?? defaultFlowPosition(model, fromId, toId),
     // Matches Vensim's own default rate/flow label box size (confirmed against a flow drawn
     // fresh in a real Vensim session, not just an example file — see writer.ts's valve-label

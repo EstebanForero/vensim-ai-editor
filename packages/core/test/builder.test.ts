@@ -135,4 +135,36 @@ describe("builder", () => {
     const unique = new Set(positions.map((p) => `${p.x},${p.y}`));
     expect(unique.size).toBe(positions.length);
   });
+
+  // Accents are stripped at the source, not just at .mdl export time, per an explicit decision:
+  // a live Vensim session showed an accented reference inside one variable's equation ending up
+  // spelled differently than that same name's own definition line elsewhere — two different
+  // strings Vensim treats as two different variables, one an undefined "shadow" silently
+  // carrying the real connection. Stripping wherever text enters the model (name, equation,
+  // units, comment — creation, rename, and edit) means every copy of a name is the same ASCII
+  // string from the moment it exists, in the app itself, not just in what gets exported.
+  test("strips accents from every text field, at creation and on later edits", () => {
+    const model = createEmptyModel();
+    const stock = addStock(model, {
+      name: "Inventario de bicicletas",
+      initialEquation: "60",
+      units: "bicicletas/día",
+      comment: "Nivel según el último conteo",
+    });
+    expect(stock.name).toBe("Inventario de bicicletas");
+    expect(stock.units).toBe("bicicletas/dia");
+    expect(stock.comment).toBe("Nivel segun el ultimo conteo");
+
+    const flow = addFlow(model, { name: "Recepción", equation: "5", to: stock.id });
+    expect(flow.name).toBe("Recepcion");
+
+    const aux = addAuxiliary(model, { name: "Tasa", equation: "Recepción * 2" });
+    expect(aux.equation).toBe("Recepcion * 2"); // a reference to an already-stripped name
+
+    renameVariable(model, aux.id, "Tasa de ajuste según año");
+    expect(aux.name).toBe("Tasa de ajuste segun ano");
+
+    setEquation(model, flow.id, "Tasa de ajuste según año / 2");
+    expect(flow.equation).toBe("Tasa de ajuste segun ano / 2");
+  });
 });
