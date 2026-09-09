@@ -1,5 +1,5 @@
 import { useReactFlow } from "@xyflow/react";
-import { Bot, KeyRound, Send, Settings2, Wrench } from "lucide-react";
+import { Bot, KeyRound, Loader2, Send, Settings2, TriangleAlert, Wrench } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,12 +66,19 @@ export function ChatPanel() {
         onAssistantText: (text) => {
           addChatMessage({ id: crypto.randomUUID(), role: "assistant", text });
         },
+        onStoppedEarly: (_reason, roundsUsed) => {
+          addChatMessage({
+            id: crypto.randomUUID(),
+            role: "warning",
+            text: `Stopped after ${roundsUsed} tool-call rounds without finishing the request — it may be only partly done. Send another message (e.g. "continue") to pick up where it left off.`,
+          });
+        },
       });
     } catch (err) {
       addChatMessage({
         id: crypto.randomUUID(),
-        role: "assistant",
-        text: `Error talking to the model: ${err instanceof Error ? err.message : String(err)}`,
+        role: "warning",
+        text: `Error talking to the model: ${err instanceof Error ? err.message : String(err)} — nothing after the last successful step was applied.`,
       });
     } finally {
       setAgentRunning(false);
@@ -119,25 +126,43 @@ export function ChatPanel() {
           </p>
         )}
         <div className="flex flex-col gap-3">
-          {messages.map((m) => (
-            <div key={m.id} className={m.role === "user" ? "text-right" : ""}>
-              <div
-                className={
-                  "inline-block max-w-[90%] rounded-lg px-3 py-1.5 text-left " +
-                  (m.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : m.role === "tool"
-                      ? "bg-muted font-mono text-[11px] text-muted-foreground"
-                      : "bg-secondary text-secondary-foreground")
-                }
-              >
-                {m.role === "tool" && <Wrench className="mr-1 inline size-3" />}
-                {m.role === "assistant" && <Bot className="mr-1 inline size-3" />}
-                <span className="whitespace-pre-wrap">{m.text}</span>
+          {messages.map((m, i) => {
+            // The indicator right below the last message is the only "did this actually
+            // finish?" signal otherwise — surfacing it right on the final assistant reply too
+            // (not just a transient banner that vanishes when isAgentRunning flips) means
+            // scrolling back through history still shows clearly which turns completed.
+            const isLastAssistant = m.role === "assistant" && i === messages.length - 1 && !isAgentRunning;
+            return (
+              <div key={m.id} className={m.role === "user" ? "text-right" : ""}>
+                <div
+                  className={
+                    "inline-block max-w-[90%] rounded-lg px-3 py-1.5 text-left " +
+                    (m.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : m.role === "tool"
+                        ? "bg-muted font-mono text-[11px] text-muted-foreground"
+                        : m.role === "warning"
+                          ? "border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                          : "bg-secondary text-secondary-foreground")
+                  }
+                >
+                  {m.role === "tool" && <Wrench className="mr-1 inline size-3" />}
+                  {m.role === "assistant" && <Bot className="mr-1 inline size-3" />}
+                  {m.role === "warning" && <TriangleAlert className="mr-1 inline size-3" />}
+                  <span className="whitespace-pre-wrap">{m.text}</span>
+                </div>
+                {isLastAssistant && (
+                  <div className="mt-0.5 text-[10px] text-muted-foreground">Finished — nothing more queued.</div>
+                )}
               </div>
+            );
+          })}
+          {isAgentRunning && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" />
+              Editing the diagram…
             </div>
-          ))}
-          {isAgentRunning && <div className="text-xs text-muted-foreground">The model is editing the diagram…</div>}
+          )}
         </div>
       </div>
 

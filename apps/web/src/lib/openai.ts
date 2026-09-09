@@ -32,6 +32,11 @@ const OPENAI_TOOLS: ChatCompletionTool[] = VENSIM_AI_TOOLS.map((t) => ({
 export interface AgentCallbacks {
   onToolCall?: (name: string, input: Record<string, unknown>, result: { ok: boolean; result?: unknown; error?: string }) => void;
   onAssistantText?: (text: string) => void;
+  /** Fired when a turn stops WITHOUT the model itself deciding it was done (still had more tool
+   * calls queued up) — currently only the tool-round cap. Without this, hitting the cap looked
+   * identical to a normal finish: the "editing…" indicator just disappeared with no explanation,
+   * which read as the assistant randomly giving up mid-edit. */
+  onStoppedEarly?: (reason: "max_tool_rounds", roundsUsed: number) => void;
 }
 
 export interface AgentSession {
@@ -60,7 +65,13 @@ export async function runAgentTurn(
   // lost — the model would look right after tool #1 and never change again.
   getModel: () => Model,
   callbacks: AgentCallbacks = {},
-  maxToolRounds = 8,
+  // Each round is one full model response, which can itself batch multiple tool calls — but a
+  // model that calls tools one at a time (common) only makes one call of progress per round, and
+  // a modest diagram (several stocks/flows plus their connectors) can easily need more than a
+  // handful of individual tool calls. 8 was too easy to hit on an ordinary request, and hitting
+  // it looked exactly like the assistant finishing normally (see onStoppedEarly below) — raised
+  // to a much less limiting default; the cap still exists purely as a runaway-loop safety net.
+  maxToolRounds = 40,
 ): Promise<void> {
   const client = new OpenAI({
     apiKey: connection.apiKey,
@@ -105,4 +116,9 @@ export async function runAgentTurn(
     }
     session.history.push(...toolMessages);
   }
+
+  // Only reachable if every one of maxToolRounds iterations still had tool calls queued up —
+  // every other path above returns from inside the loop. The model was actively mid-task, not
+  // finished, so this must be surfaced rather than left to look like a normal, silent finish.
+  callbacks.onStoppedEarly?.("max_tool_rounds", maxToolRounds);
 }

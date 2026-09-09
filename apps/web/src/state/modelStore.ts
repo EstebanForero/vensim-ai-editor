@@ -13,7 +13,7 @@ import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "@/lib/openai";
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool";
+  role: "user" | "assistant" | "tool" | "warning";
   text: string;
 }
 
