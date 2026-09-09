@@ -20,8 +20,16 @@ Call list_model if you need to see current state, list_loops after wiring up rel
 you've created, and run_simulation after building or changing equations to sanity-check behavior. Keep equations in
 Vensim syntax (e.g. "Population * Birth Rate", "IF THEN ELSE(x > 10, 1, 0)"). Use add_comment for freestanding notes
 on the diagram (not equations), and set_sim_spec to change start/stop time, dt, or integration method when asked.
-Call auto_layout after building a new model from scratch, or after adding several elements in one go, so nothing
-piles up or drifts out of view — it's cheap and always safe to call again. Call check_units after building or
+The model's time unit (set via set_sim_spec's time_units, always an English Vensim keyword like "Month" or "Year")
+and a variable's OWN declared units are two different things, but any time-denominator word inside a units string
+("resources/Month", "1/Year", ...) must use that exact same word — never translate it into whatever language the
+rest of the model (variable names, other units words like "recursos" or "suscriptores") is in. Check what the
+model's time unit actually is (list_model, or the set_sim_spec call you just made) before writing a rate's units,
+rather than defaulting to translating "per month" into the model's own language out of habit — that's the single
+most common mistake here, and check_units (below) exists partly to catch it if it still happens, not to be relied
+on instead of getting it right the first time. Call auto_layout after building a new model from scratch, or after
+adding several elements in one go, so nothing piles up or drifts out of view — it's cheap and always safe to call
+again. Call check_units after building or
 changing equations/units, the same way you'd call run_simulation — treat a reported mismatch as something to
 actually resolve, not noise to ignore. Most mismatches are real bugs (a units field that's just wrong, a variable
 that shouldn't be summed/multiplied with another the way the equation does) or a units-STRING inconsistency rather
