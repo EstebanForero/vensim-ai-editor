@@ -1,4 +1,6 @@
 import dagre from "@dagrejs/dagre";
+import { loopAnnotationPos, loopLabelOf } from "../loops/annotate.js";
+import { detectLoops } from "../loops/detect.js";
 import { allVariables, type Model } from "../model/types.js";
 
 export interface AutoLayoutOptions {
@@ -15,8 +17,11 @@ export interface AutoLayoutOptions {
  * edges used for simulation and loop detection — flow pipes (stock <-> flow) and causal
  * relations (connector from -> to) — so variables that are causally close end up visually
  * close, and the graph reads left-to-right instead of piling up wherever nodes were dropped.
- * Comments are left in place (they aren't part of the causal graph) but nudged if they now
- * overlap a repositioned node.
+ * A loop's own auto-generated annotation (see loops/annotate.ts) is re-centered on that loop's
+ * new centroid — recomputed fresh from the positions this function just assigned — so it stays
+ * in the middle of the elements it's actually describing instead of going stale wherever it
+ * happened to land before. Every other comment (anything a user wrote by hand) is left in place,
+ * only nudged if it now overlaps a repositioned node.
  */
 export function autoLayout(model: Model, options: AutoLayoutOptions = {}): void {
   const { direction = "LR", nodeSep = 60, rankSep = 120 } = options;
@@ -72,8 +77,19 @@ export function autoLayout(model: Model, options: AutoLayoutOptions = {}): void 
     v.pos = { x: gridOriginX + col * (v.size.width + nodeSep), y: gridOriginY + row * (v.size.height + nodeSep) };
   });
 
+  // Recomputed AFTER the layout above, from the positions just assigned — a loop's centroid
+  // moves along with its elements, so this must run last, not off whatever centroid detectLoops
+  // would have reported before this function touched anything.
+  const loopByLabel = new Map(detectLoops(model).map((loop) => [`${loop.polarity}${loop.number}`, loop]));
+
   for (const c of model.comments) {
-    c.pos = clearOfLayout(c.pos, model);
+    const label = loopLabelOf(c.text);
+    const loop = label ? loopByLabel.get(label) : undefined;
+    // A loop annotation whose loop still exists gets re-centered on it directly, same as a
+    // fresh annotateLoops call would place it — overlap is expected and fine here, this IS the
+    // annotation for what's underneath it. Anything else (a stale annotation for a loop that no
+    // longer exists, or a genuine user comment) falls back to the ordinary nudge-if-overlapping.
+    c.pos = loop ? loopAnnotationPos(loop.centroid) : clearOfLayout(c.pos, model);
   }
 }
 

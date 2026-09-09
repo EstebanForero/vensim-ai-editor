@@ -5,8 +5,24 @@ import type { DetectLoopsOptions } from "./types.js";
 
 // Every auto-generated loop annotation starts with this exact shape ("R1 loop: ", "B2 loop: ",
 // ...), which is what lets a second call find and replace its own earlier output instead of
-// piling up stale duplicates once the model (and therefore which loops exist) has changed.
-const LOOP_COMMENT_PREFIX_RE = /^[RB]\d+ loop: /;
+// piling up stale duplicates once the model (and therefore which loops exist) has changed. The
+// capturing group is also how autoLayout (layout/autoLayout.ts) recognizes one of these
+// annotations well enough to re-center it on its loop's current centroid after repositioning
+// everything else, instead of just nudging it out of the way like an ordinary comment.
+const LOOP_COMMENT_PREFIX_RE = /^([RB]\d+) loop: /;
+
+/** The loop label ("R1", "B2", ...) a comment's text was auto-generated for, or null if this
+ * isn't one of annotateLoops' own annotations (a user's own freeform comment never matches). */
+export function loopLabelOf(commentText: string): string | null {
+  return LOOP_COMMENT_PREFIX_RE.exec(commentText)?.[1] ?? null;
+}
+
+/** Where annotateLoops itself places a loop's own annotation, relative to the loop's centroid —
+ * shared with autoLayout so a re-centered annotation lands in the exact same spot a fresh
+ * annotateLoops call would have put it. */
+export function loopAnnotationPos(centroid: { x: number; y: number }): { x: number; y: number } {
+  return { x: centroid.x - 80, y: centroid.y + 30 };
+}
 
 /** Regenerates one freestanding text annotation per detected feedback loop — e.g.
  * "R1 loop: Inventario de bicicletas → Pedido de bicicletas → Recepción de bicicletas →
@@ -24,7 +40,7 @@ const LOOP_COMMENT_PREFIX_RE = /^[RB]\d+ loop: /;
  * removed. */
 export function annotateLoops(model: Model, options: DetectLoopsOptions = {}): Comment[] {
   for (const c of [...model.comments]) {
-    if (LOOP_COMMENT_PREFIX_RE.test(c.text)) deleteComment(model, c.id);
+    if (loopLabelOf(c.text)) deleteComment(model, c.id);
   }
 
   const loops = detectLoops(model, options);
@@ -36,7 +52,7 @@ export function annotateLoops(model: Model, options: DetectLoopsOptions = {}): C
     const label = `${loop.polarity}${loop.number}`;
     return addComment(model, {
       text: `${label} loop: ${chain}`,
-      pos: { x: loop.centroid.x - 80, y: loop.centroid.y + 30 },
+      pos: loopAnnotationPos(loop.centroid),
     });
   });
 }
