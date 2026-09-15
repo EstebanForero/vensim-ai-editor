@@ -1,11 +1,82 @@
 import { useReactFlow } from "@xyflow/react";
-import { Bot, KeyRound, Loader2, Send, Settings2, TriangleAlert, Wrench } from "lucide-react";
+import { Bot, KeyRound, Loader2, Plus, Send, Settings2, Trash2, TriangleAlert, Wrench } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createAgentSession, runAgentTurn, type AgentSession } from "@/lib/openai";
+import { PROVIDER_PRESETS } from "@/lib/providerPresets";
 import { useModelStore } from "@/state/modelStore";
+
+/** The "+ Add profile" form — a provider preset just fills in a starting base URL/model; the
+ * key is always typed here, never bundled with a preset. */
+function AddProfileForm({ onDone }: { onDone: () => void }) {
+  const addConnectionProfile = useModelStore((s) => s.addConnectionProfile);
+  const [name, setName] = useState("");
+  const [baseUrl, setBaseUrl] = useState(PROVIDER_PRESETS[0]!.baseUrl);
+  const [model, setModel] = useState(PROVIDER_PRESETS[0]!.model);
+  const [apiKey, setApiKey] = useState("");
+  const [presetNote, setPresetNote] = useState<string | undefined>(undefined);
+
+  const applyPreset = (presetName: string) => {
+    const preset = PROVIDER_PRESETS.find((p) => p.name === presetName);
+    if (!preset) return;
+    setBaseUrl(preset.baseUrl);
+    setModel(preset.model);
+    setPresetNote(preset.note);
+    if (!name) setName(preset.name);
+  };
+
+  const submit = () => {
+    if (!baseUrl.trim() || !model.trim()) return;
+    addConnectionProfile({ name: name.trim() || "New profile", apiKey, baseUrl: baseUrl.trim(), model: model.trim() });
+    onDone();
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-muted-foreground">Provider preset</span>
+        <select
+          className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+          defaultValue={PROVIDER_PRESETS[0]!.name}
+          onChange={(e) => applyPreset(e.target.value)}
+        >
+          {PROVIDER_PRESETS.map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {presetNote && <p className="text-muted-foreground">{presetNote}</p>}
+      <label className="flex flex-col gap-1">
+        <span className="text-muted-foreground">Profile name</span>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. DeepSeek" className="h-7 text-xs" />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-muted-foreground">Base URL</span>
+        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className="h-7 text-xs" />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-muted-foreground">Model</span>
+        <Input value={model} onChange={(e) => setModel(e.target.value)} className="h-7 text-xs" />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-muted-foreground">API key</span>
+        <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="h-7 text-xs" />
+      </label>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button size="sm" className="h-7 text-xs" onClick={submit}>
+          Add profile
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export function ChatPanel() {
   const apiKey = useModelStore((s) => s.apiKey);
@@ -14,6 +85,11 @@ export function ChatPanel() {
   const setBaseUrl = useModelStore((s) => s.setBaseUrl);
   const aiModel = useModelStore((s) => s.aiModel);
   const setAiModel = useModelStore((s) => s.setAiModel);
+  const connections = useModelStore((s) => s.connections);
+  const activeConnectionId = useModelStore((s) => s.activeConnectionId);
+  const selectConnectionProfile = useModelStore((s) => s.selectConnectionProfile);
+  const deleteConnectionProfile = useModelStore((s) => s.deleteConnectionProfile);
+  const renameConnectionProfile = useModelStore((s) => s.renameConnectionProfile);
   const messages = useModelStore((s) => s.chatMessages);
   const addChatMessage = useModelStore((s) => s.addChatMessage);
   const isAgentRunning = useModelStore((s) => s.isAgentRunning);
@@ -22,6 +98,7 @@ export function ChatPanel() {
 
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [addingProfile, setAddingProfile] = useState(false);
   const sessionRef = useRef<AgentSession>(createAgentSession());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { fitView } = useReactFlow();
@@ -104,17 +181,61 @@ export function ChatPanel() {
       {showSettings && (
         <div className="flex flex-col gap-2 border-b bg-muted/40 p-2 text-xs">
           <label className="flex flex-col gap-1">
-            <span className="text-muted-foreground">Base URL (any OpenAI-compatible endpoint)</span>
-            <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className="h-7 text-xs" />
+            <span className="text-muted-foreground">Connection profile</span>
+            <div className="flex items-center gap-1">
+              <select
+                className="h-7 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                value={activeConnectionId}
+                onChange={(e) => selectConnectionProfile(e.target.value)}
+              >
+                {connections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.model || "no model set"})
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0"
+                onClick={() => deleteConnectionProfile(activeConnectionId)}
+                disabled={connections.length <= 1}
+                title={connections.length <= 1 ? "Can't delete the only saved profile" : "Delete this profile"}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-muted-foreground">Model</span>
-            <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="h-7 text-xs" />
-          </label>
-          <p className="text-muted-foreground">
-            Works with OpenAI itself, or any server exposing an OpenAI-compatible{" "}
-            <code>/chat/completions</code> route (Azure OpenAI, OpenRouter, vLLM, Ollama, LM Studio, …).
-          </p>
+
+          {!addingProfile ? (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">Profile name</span>
+                <Input
+                  value={connections.find((c) => c.id === activeConnectionId)?.name ?? ""}
+                  onChange={(e) => renameConnectionProfile(activeConnectionId, e.target.value)}
+                  className="h-7 text-xs"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">Base URL (any OpenAI-compatible endpoint)</span>
+                <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className="h-7 text-xs" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">Model</span>
+                <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="h-7 text-xs" />
+              </label>
+              <p className="text-muted-foreground">
+                Works with OpenAI itself, or any server exposing an OpenAI-compatible <code>/chat/completions</code>{" "}
+                route (Azure OpenAI, DeepSeek, Gemini, OpenRouter, vLLM, Ollama, LM Studio, …).
+              </p>
+              <Button size="sm" variant="outline" className="h-7 justify-start text-xs" onClick={() => setAddingProfile(true)}>
+                <Plus className="size-3.5" /> Add another profile
+              </Button>
+            </>
+          ) : (
+            <AddProfileForm onDone={() => setAddingProfile(false)} />
+          )}
         </div>
       )}
 

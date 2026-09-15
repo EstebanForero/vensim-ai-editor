@@ -1,7 +1,8 @@
-import type { Model } from "@vensim-ai/core";
+import { allVariables, simulate, type Model } from "@vensim-ai/core";
 import { executeTool, VENSIM_AI_TOOLS } from "@vensim-ai/ai-tools";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool, ChatCompletionToolMessageParam } from "openai/resources/chat/completions";
+import { runPython } from "./pyodide.js";
 
 /** Default endpoint for OpenAI itself. Any OpenAI-compatible server (Azure OpenAI's
  * OpenAI-compatible route, a local vLLM/Ollama/LM Studio server, OpenRouter, etc.) works too —
@@ -42,13 +43,60 @@ it named for what it converts (e.g. "Factor de conversion" or similar, not a vag
 units whenever the conversion has real ones; units of "1" (dimensionless) are for when the ratio genuinely has no
 physical unit of its own, not a shortcut to silence the checker without thinking about what's actually being
 converted. Prefer the cleaner fix (correcting a units field, fixing the equation, respelling a unit consistently)
-over adding a variable whenever one exists. After you finish making changes, reply with a short plain-text summary
-of what you did.`;
+over adding a variable whenever one exists. After building or changing equations, use run_python to actually check
+the simulation behaves as intended — don't just glance at run_simulation's final values. Print whatever checks you
+run (e.g. "stock stays non-negative: True", or a computed steady-state value next to what the equations imply it
+should be) so it's visible you verified it, not just that you looked. This matters most for anything with a
+feedback loop or a nonlinear term (MIN/MAX, IF THEN ELSE, a ratio) where a sign error or misapplied rate can still
+run without any error and look plausible at a glance. After you finish making changes, reply with a short
+plain-text summary of what you did, including what you verified and how.`;
 
-const OPENAI_TOOLS: ChatCompletionTool[] = VENSIM_AI_TOOLS.map((t) => ({
+// Not part of @vensim-ai/ai-tools (packages/core's model-mutation tools, portable/synchronous
+// JS) since this one runs a real Python interpreter client-side via Pyodide — a browser-only,
+// async capability with nothing to do with the model-mutation API surface. Defined and executed
+// here instead, special-cased in the tool-dispatch loop below.
+const RUN_PYTHON_TOOL: ChatCompletionTool = {
   type: "function",
-  function: { name: t.name, description: t.description, parameters: t.parameters },
-}));
+  function: {
+    name: "run_python",
+    description:
+      "Runs Python code in a real (client-side, sandboxed, nothing leaves the browser) interpreter to numerically validate the model's behavior — e.g. checking a stock's trajectory is monotonic where it should be, staying within an expected range, converging to a sensible equilibrium, or matching a hand-computed value. Two globals are pre-populated before your code runs: `sim` (the FULL-precision simulation result — `sim['time']` is a list of every timestep, `sim['series']` maps each variable's exact name to its full list of values, not the downsampled-to-50-points version run_simulation returns for readability) and `model` (a list of every stock/flow/auxiliary as `{name, kind, equation, units}`). Print whatever you want to see — stdout is returned to you. Use this after run_simulation to actually check the result is right, not just skim the final values; system dynamics equations are easy to get subtly wrong (a sign flipped, a rate misapplied) in ways that still \"run\" without error.",
+    parameters: {
+      type: "object",
+      properties: { code: { type: "string", description: "Python source to execute." } },
+      required: ["code"],
+    },
+  },
+};
+
+const OPENAI_TOOLS: ChatCompletionTool[] = [
+  ...VENSIM_AI_TOOLS.map((t) => ({
+    type: "function" as const,
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  })),
+  RUN_PYTHON_TOOL,
+];
+
+async function runPythonTool(code: string, model: Model): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+  const run = await runPython(code, pythonGlobals(model));
+  // stdout is worth returning either way (a failing check's prints, or a traceback's context up
+  // to the point it failed), not just on success.
+  if (run.ok) return { ok: true, result: { stdout: run.stdout } };
+  return { ok: false, error: run.stdout ? `${run.error}\n\nstdout so far:\n${run.stdout}` : (run.error ?? "Unknown error") };
+}
+
+function pythonGlobals(model: Model) {
+  const sim = simulate(model);
+  return {
+    sim: { time: sim.time, series: sim.series },
+    model: allVariables(model).map((v) => ({
+      name: v.name,
+      kind: v.kind,
+      equation: "equation" in v ? v.equation : v.initialEquation,
+      units: v.units,
+    })),
+  };
+}
 
 export interface AgentCallbacks {
   onToolCall?: (name: string, input: Record<string, unknown>, result: { ok: boolean; result?: unknown; error?: string }) => void;
@@ -127,7 +175,10 @@ export async function runAgentTurn(
       } catch {
         // malformed JSON from the model — executeTool will reject missing/invalid fields below
       }
-      const result = executeTool(getModel(), call.function.name, args);
+      const result =
+        call.function.name === "run_python"
+          ? await runPythonTool(typeof args.code === "string" ? args.code : "", getModel())
+          : executeTool(getModel(), call.function.name, args);
       callbacks.onToolCall?.(call.function.name, args, result);
       toolMessages.push({
         role: "tool",

@@ -25,6 +25,62 @@ function writeLocalStorage(key: string, value: string): void {
   if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
 }
 
+export interface ConnectionProfile {
+  id: string;
+  name: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+const CONNECTIONS_KEY = "vensim-ai:connections";
+const ACTIVE_CONNECTION_KEY = "vensim-ai:activeConnectionId";
+
+/** Loads every saved connection profile, migrating the old single apiKey/baseUrl/model keys
+ * into a first "Default" profile the very first time this runs. Deliberately additive only:
+ * the legacy `vensim-ai:apiKey`/`vensim-ai:baseUrl`/`vensim-ai:model` keys are read but never
+ * cleared, so a user's already-saved key is never at risk of being wiped by this migration or
+ * by anything that follows it. */
+function loadConnections(): { connections: ConnectionProfile[]; activeId: string } {
+  const raw = readLocalStorage(CONNECTIONS_KEY, "");
+  let connections: ConnectionProfile[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) connections = parsed;
+    } catch {
+      connections = [];
+    }
+  }
+  if (connections.length === 0) {
+    connections = [
+      {
+        id: "default",
+        name: "Default",
+        apiKey: readLocalStorage("vensim-ai:apiKey", ""),
+        baseUrl: readLocalStorage("vensim-ai:baseUrl", DEFAULT_BASE_URL),
+        model: readLocalStorage("vensim-ai:model", DEFAULT_MODEL),
+      },
+    ];
+  }
+  const savedActiveId = readLocalStorage(ACTIVE_CONNECTION_KEY, connections[0]!.id);
+  const activeId = connections.some((c) => c.id === savedActiveId) ? savedActiveId : connections[0]!.id;
+  return { connections, activeId };
+}
+
+function saveConnections(connections: ConnectionProfile[]): void {
+  writeLocalStorage(CONNECTIONS_KEY, JSON.stringify(connections));
+}
+
+/** Patches the currently active profile within `state.connections` and persists the result —
+ * shared by setApiKey/setBaseUrl/setAiModel, which edit the active profile in place rather than
+ * create a new one. */
+function updateActive(state: { connections: ConnectionProfile[]; activeConnectionId: string }, patch: Partial<ConnectionProfile>): ConnectionProfile[] {
+  const connections = state.connections.map((c) => (c.id === state.activeConnectionId ? { ...c, ...patch } : c));
+  saveConnections(connections);
+  return connections;
+}
+
 interface ModelStoreState {
   model: Model;
   selectedId: string | null;
@@ -39,10 +95,15 @@ interface ModelStoreState {
   chatMessages: ChatMessage[];
   isAgentRunning: boolean;
 
-  /** OpenAI-compatible connection settings (all stored only in this browser's localStorage). */
+  /** OpenAI-compatible connection settings (all stored only in this browser's localStorage).
+   * `apiKey`/`baseUrl`/`aiModel` always mirror the currently active profile in `connections` —
+   * kept as top-level fields (rather than always reading through `connections`) so existing
+   * consumers (the chat send path, in particular) don't need to know profiles exist at all. */
   apiKey: string;
   baseUrl: string;
   aiModel: string;
+  connections: ConnectionProfile[];
+  activeConnectionId: string;
 
   showLoops: boolean;
   /** When true, clicking two nodes in sequence on the canvas adds a relation between them. */
@@ -69,6 +130,15 @@ interface ModelStoreState {
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
   setAiModel: (name: string) => void;
+  /** Adds a new profile (from a blank form or a provider preset) and switches to it. Never
+   * touches any existing profile. */
+  addConnectionProfile: (profile: Omit<ConnectionProfile, "id">) => void;
+  /** Switches the active profile — apiKey/baseUrl/aiModel immediately mirror it. */
+  selectConnectionProfile: (id: string) => void;
+  /** Removes a profile (never the last remaining one — there must always be something to
+   * select). Switches to the first remaining profile if the deleted one was active. */
+  deleteConnectionProfile: (id: string) => void;
+  renameConnectionProfile: (id: string, name: string) => void;
   addChatMessage: (msg: ChatMessage) => void;
   setAgentRunning: (running: boolean) => void;
   clearChat: () => void;
@@ -94,9 +164,11 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   chatMessages: [],
   isAgentRunning: false,
 
-  apiKey: readLocalStorage("vensim-ai:apiKey", ""),
-  baseUrl: readLocalStorage("vensim-ai:baseUrl", DEFAULT_BASE_URL),
-  aiModel: readLocalStorage("vensim-ai:model", DEFAULT_MODEL),
+  ...(() => {
+    const { connections, activeId } = loadConnections();
+    const active = connections.find((c) => c.id === activeId)!;
+    return { connections, activeConnectionId: activeId, apiKey: active.apiKey, baseUrl: active.baseUrl, aiModel: active.model };
+  })(),
 
   showLoops: true,
   relationMode: false,
@@ -131,17 +203,58 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   },
   setUnitsDialogOpen: (open) => set({ unitsDialogOpen: open }),
 
+  // Legacy single-value keys are kept written too — never the only copy, but harmless, and it
+  // means a downgrade (or anything else still reading them directly) keeps working.
   setApiKey: (key) => {
     writeLocalStorage("vensim-ai:apiKey", key);
-    set({ apiKey: key });
+    set((s) => ({ apiKey: key, connections: updateActive(s, { apiKey: key }) }));
   },
   setBaseUrl: (url) => {
     writeLocalStorage("vensim-ai:baseUrl", url);
-    set({ baseUrl: url });
+    set((s) => ({ baseUrl: url, connections: updateActive(s, { baseUrl: url }) }));
   },
   setAiModel: (name) => {
     writeLocalStorage("vensim-ai:model", name);
-    set({ aiModel: name });
+    set((s) => ({ aiModel: name, connections: updateActive(s, { model: name }) }));
+  },
+
+  addConnectionProfile: (profile) => {
+    const created: ConnectionProfile = { ...profile, id: crypto.randomUUID() };
+    set((s) => {
+      const connections = [...s.connections, created];
+      saveConnections(connections);
+      writeLocalStorage(ACTIVE_CONNECTION_KEY, created.id);
+      return { connections, activeConnectionId: created.id, apiKey: created.apiKey, baseUrl: created.baseUrl, aiModel: created.model };
+    });
+  },
+
+  selectConnectionProfile: (id) => {
+    set((s) => {
+      const profile = s.connections.find((c) => c.id === id);
+      if (!profile) return s;
+      writeLocalStorage(ACTIVE_CONNECTION_KEY, id);
+      return { activeConnectionId: id, apiKey: profile.apiKey, baseUrl: profile.baseUrl, aiModel: profile.model };
+    });
+  },
+
+  deleteConnectionProfile: (id) => {
+    set((s) => {
+      if (s.connections.length <= 1) return s; // always keep at least one profile to select
+      const connections = s.connections.filter((c) => c.id !== id);
+      saveConnections(connections);
+      if (s.activeConnectionId !== id) return { connections };
+      const next = connections[0]!;
+      writeLocalStorage(ACTIVE_CONNECTION_KEY, next.id);
+      return { connections, activeConnectionId: next.id, apiKey: next.apiKey, baseUrl: next.baseUrl, aiModel: next.model };
+    });
+  },
+
+  renameConnectionProfile: (id, name) => {
+    set((s) => {
+      const connections = s.connections.map((c) => (c.id === id ? { ...c, name } : c));
+      saveConnections(connections);
+      return { connections };
+    });
   },
 
   addChatMessage: (msg) => set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
