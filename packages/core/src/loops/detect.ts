@@ -60,8 +60,8 @@ function loopDirection(points: { x: number; y: number }[]): LoopDirection {
  * to a nearby clear spot, spread deterministically by loop index so badges sharing a
  * collision point don't stack on each other either. */
 function clearOfNodes(centroid: { x: number; y: number }, points: { x: number; y: number }[], index: number): { x: number; y: number } {
-  // `points` are node top-left corners (React Flow's convention), not centers, and labels can
-  // be visually wide — use a generous clearance radius so the badge doesn't sit under a label.
+  // `points` are node centers — still use a generous clearance radius, since labels can be
+  // visually wide enough that even a center-to-center distance leaves the badge under one.
   const minDist = Math.min(...points.map((p) => Math.hypot(p.x - centroid.x, p.y - centroid.y)));
   if (minDist > 70) return centroid;
   const angle = ((index * 47) % 360) * (Math.PI / 180);
@@ -71,13 +71,18 @@ function clearOfNodes(centroid: { x: number; y: number }, points: { x: number; y
 export function detectLoops(model: Model, options: DetectLoopsOptions = {}): Loop[] {
   const { maxLength = 8, maxCycles = 60, limit = 24 } = options;
   const adjacency = buildSignedGraph(model);
-  const posById = new Map(allVariables(model).map((v) => [v.id, v.pos]));
+  // The loop's visual center must be the average of each node's actual CENTER, not its top-left
+  // corner (`v.pos`, React Flow's convention) — averaging corners systematically biases the
+  // centroid up-and-left of where the shapes (and the relation lines connecting them) visually
+  // sit, by roughly half a node's width/height. This was the actual cause of the badge/
+  // annotation landing visibly off-center from the loop it's labeling.
+  const centerById = new Map(allVariables(model).map((v) => [v.id, { x: v.pos.x + v.size.width / 2, y: v.pos.y + v.size.height / 2 }]));
 
   const raw = findElementaryCycles(adjacency, maxLength, maxCycles);
 
   const loops: Loop[] = raw.map((cycle, i) => {
     const negativeCount = cycle.signs.filter((s) => s === -1).length;
-    const points = cycle.nodeIds.map((id) => posById.get(id) ?? { x: 0, y: 0 });
+    const points = cycle.nodeIds.map((id) => centerById.get(id) ?? { x: 0, y: 0 });
     const rawCentroid = {
       x: points.reduce((s, p) => s + p.x, 0) / points.length,
       y: points.reduce((s, p) => s + p.y, 0) / points.length,

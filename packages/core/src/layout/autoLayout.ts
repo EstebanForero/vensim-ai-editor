@@ -63,6 +63,34 @@ export function autoLayout(model: Model, options: AutoLayoutOptions = {}): void 
       if (!n) continue;
       // dagre positions are node centers; the model (and React Flow) use top-left corners.
       v.pos = { x: n.x - v.size.width / 2, y: n.y - v.size.height / 2 };
+    }
+
+    // dagre optimizes the WHOLE graph's crossing/barycenter, blending flow-pipe edges and causal-
+    // relation edges together — a flow pulled on by an unrelated causal relation can land off the
+    // straight line to its own stock(s) even though nothing else required that, reading as an
+    // unnecessarily kinked pipe. Only the flow (never the stock, which stays a more stable anchor
+    // other things are laid out relative to) is nudged onto the perpendicular axis its stock(s)
+    // already sit on: the shared value when both ends are real stocks on the same line already
+    // (the common case), or straight onto the one real stock when the other end is an open cloud.
+    // Two DIFFERENT stocks on two different lines can't both be satisfied by moving the flow
+    // alone — that's a real layout tradeoff dagre already made, not something to fight here.
+    const perpAxis = direction === "LR" ? "y" : "x";
+    const perpSize = direction === "LR" ? "height" : "width";
+    for (const flow of model.flows) {
+      const fromStock = flow.from ? model.stocks.find((s) => s.id === flow.from) : undefined;
+      const toStock = flow.to ? model.stocks.find((s) => s.id === flow.to) : undefined;
+      const centers = [fromStock, toStock]
+        .filter((s): s is NonNullable<typeof s> => !!s)
+        .map((s) => s.pos[perpAxis] + s.size[perpSize] / 2);
+      if (centers.length === 0) continue;
+      // Both ends real stocks but on visibly different lines: leave the flow where dagre put it
+      // rather than force a line that matches neither.
+      if (centers.length === 2 && Math.abs(centers[0]! - centers[1]!) > 4) continue;
+      const target = centers.reduce((s, c) => s + c, 0) / centers.length;
+      flow.pos = { ...flow.pos, [perpAxis]: target - flow.size[perpSize] / 2 };
+    }
+
+    for (const v of connected) {
       clusterBottom = Math.max(clusterBottom, v.pos.y + v.size.height);
       clusterLeft = Math.min(clusterLeft, v.pos.x);
     }
@@ -82,23 +110,29 @@ export function autoLayout(model: Model, options: AutoLayoutOptions = {}): void 
   // would have reported before this function touched anything.
   const loopByLabel = new Map(detectLoops(model).map((loop) => [`${loop.polarity}${loop.number}`, loop]));
 
+  // A genuine (non-loop-annotation) comment previously only got nudged if it happened to already
+  // overlap a node — anywhere clear of the diagram was left alone, including a spot the just-
+  // relaid-out diagram was about to expand into, or simply scattered among the nodes rather than
+  // set apart from them. Now every such comment is packed into its own column to the right of the
+  // whole laid-out cluster, guaranteed clear of every stock/flow/auxiliary, not just wherever it
+  // used to be.
+  const clusterRight = connected.length > 0 || isolated.length > 0 ? Math.max(0, ...allVariables(model).map((v) => v.pos.x + v.size.width)) : 0;
+  let commentColumnY = 0;
+  const commentColumnX = clusterRight + rankSep;
+
   for (const c of model.comments) {
     const label = loopLabelOf(c.text);
     const loop = label ? loopByLabel.get(label) : undefined;
-    // A loop annotation whose loop still exists gets re-centered on it directly, same as a
-    // fresh annotateLoops call would place it — overlap is expected and fine here, this IS the
-    // annotation for what's underneath it. Anything else (a stale annotation for a loop that no
-    // longer exists, or a genuine user comment) falls back to the ordinary nudge-if-overlapping.
-    c.pos = loop ? loopAnnotationPos(loop.centroid) : clearOfLayout(c.pos, model);
+    if (loop) {
+      // A loop annotation whose loop still exists gets re-centered on it directly, same as a
+      // fresh annotateLoops call would place it — overlap with the loop's own elements is
+      // expected and fine here, this IS the annotation for what's underneath it.
+      c.pos = loopAnnotationPos(loop.centroid);
+      continue;
+    }
+    // A stale loop annotation (its loop no longer exists) or a genuine user comment: set apart
+    // in the dedicated column, stacked top-to-bottom.
+    c.pos = { x: commentColumnX, y: commentColumnY };
+    commentColumnY += c.size.height + nodeSep;
   }
-}
-
-function clearOfLayout(pos: { x: number; y: number }, model: Model): { x: number; y: number } {
-  const overlapping = allVariables(model).some(
-    (v) =>
-      pos.x < v.pos.x + v.size.width && pos.x + 160 > v.pos.x && pos.y < v.pos.y + v.size.height && pos.y + 60 > v.pos.y,
-  );
-  if (!overlapping) return pos;
-  const maxY = Math.max(0, ...allVariables(model).map((v) => v.pos.y + v.size.height));
-  return { x: pos.x, y: maxY + 60 };
 }

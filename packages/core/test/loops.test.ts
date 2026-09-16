@@ -19,6 +19,29 @@ describe("detectLoops", () => {
     expect(loops[0]!.nodeIds.sort()).toEqual([pop.id, births.id].sort());
   });
 
+  // Regression: the centroid averaged each node's top-left corner (React Flow's Position
+  // convention) instead of its actual center, biasing the loop badge/annotation up-and-left of
+  // where the nodes (and the relation lines between them) visually sit — by roughly half a
+  // node's width/height, clearly off-center rather than a rounding-scale difference.
+  test("centroid is based on each node's actual center, not its top-left corner", () => {
+    const model = createEmptyModel();
+    const pop = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 }, size: { width: 90, height: 45 } });
+    const births = addFlow(model, {
+      name: "Births",
+      equation: "Population * 0.02",
+      to: pop.id,
+      pos: { x: 200, y: 0 },
+      size: { width: 90, height: 45 },
+    });
+    addConnector(model, { from: "Population", to: "Births" });
+
+    const loops = detectLoops(model);
+    expect(loops).toHaveLength(1);
+    // Both nodes are on the same y with equal size, so the correct centroid's y sits at each
+    // node's vertical center (22.5), not at the top edge (0) a corner-based average would give.
+    expect(loops[0]!.centroid.y).toBeCloseTo(22.5, 5);
+  });
+
   test("finds a balancing loop when an outflow closes the cycle", () => {
     const model = createEmptyModel();
     const stock = addStock(model, { name: "Inventory", initialEquation: "50", pos: { x: 0, y: 0 } });
