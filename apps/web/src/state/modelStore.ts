@@ -9,7 +9,7 @@ import {
   type ValidationIssue,
 } from "@vensim-ai/core";
 import { create } from "zustand";
-import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "@/lib/openai";
+import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "@/lib/agent";
 
 export interface ChatMessage {
   id: string;

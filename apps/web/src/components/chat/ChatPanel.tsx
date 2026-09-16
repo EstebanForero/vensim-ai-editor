@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { createAgentSession, runAgentTurn, type AgentSession } from "@/lib/openai";
+import { createAgentSession, runAgentTurn, type AgentSession } from "@/lib/agent";
 import { PROVIDER_PRESETS } from "@/lib/providerPresets";
 import { useModelStore, type ReasoningEffort } from "@/state/modelStore";
 

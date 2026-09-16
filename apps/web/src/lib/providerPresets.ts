@@ -18,9 +18,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   },
   {
     name: "Google Gemini",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    baseUrl: "https://generativelanguage.googleapis.com",
     model: "gemini-3.8-flash",
-    note: "Gemini's own OpenAI-compatibility endpoint. Use whatever model id your account currently has access to.",
+    note: "Uses Gemini's native SDK (not the OpenAI-compatibility endpoint) — needed for correct tool-calling with thinking-enabled models. Use whatever model id your account currently has access to.",
   },
   { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openai/gpt-4o" },
   {
