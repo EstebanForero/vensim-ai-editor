@@ -119,6 +119,9 @@ export interface AgentCallbacks {
   /** Fired when `signal` aborts the turn (the user pressed Stop) — distinct from onStoppedEarly,
    * which is specifically about running out of tool-round budget, not a deliberate cancel. */
   onAborted?: () => void;
+  /** Fired when the session's history was compacted before this turn — `messagesSummarized` is
+   * how many old messages got folded into the summary that replaced them. */
+  onHistorySummarized?: (messagesSummarized: number) => void;
 }
 
 export interface AgentSession {
@@ -146,6 +149,74 @@ interface AccumulatingToolCall {
   id: string;
   name: string;
   arguments: string;
+}
+
+// Character-count heuristic, not an actual token count (no tokenizer bundled client-side for
+// arbitrary providers) — conservative enough that even a dense-token language stays well under
+// most models' context windows before this trips. Once history exceeds this, everything except
+// the most recent SUMMARIZE_KEEP_RECENT messages gets folded into one summary message.
+const SUMMARIZE_THRESHOLD_CHARS = 60_000;
+const SUMMARIZE_KEEP_RECENT = 12;
+
+/** Finds the latest "user" message at or before `beforeIndex` — a genuine conversation-turn
+ * boundary, since a user message never appears mid-tool-call-sequence. Splitting anywhere else
+ * (e.g. between an assistant's tool_calls and its matching tool results) would leave the older
+ * half ending on a dangling tool_call with no result, or the newer half starting on an orphaned
+ * tool result with no preceding tool_calls — either fails the next request outright with most
+ * providers' strict validation. Returns -1 if there's no such boundary (nothing safe to split). */
+function safeSplitIndex(history: ChatCompletionMessageParam[], beforeIndex: number): number {
+  for (let i = Math.min(beforeIndex, history.length - 1); i >= 0; i--) {
+    if (history[i]!.role === "user") return i;
+  }
+  return -1;
+}
+
+/** Compacts `session.history` in place when it's grown large enough to matter, replacing
+ * everything before a safe split point with one summary message (an extra, non-streamed,
+ * tool-free completion call asking the model to recap what happened) while leaving the most
+ * recent exchanges verbatim — keeps a long-running conversation from re-sending its entire
+ * history, and therefore paying for it, on every single turn. */
+async function summarizeHistoryIfNeeded(
+  client: OpenAI,
+  connection: AgentConnection,
+  session: AgentSession,
+  callbacks: AgentCallbacks,
+): Promise<void> {
+  const size = session.history.reduce((n, m) => n + JSON.stringify(m).length, 0);
+  if (size < SUMMARIZE_THRESHOLD_CHARS) return;
+
+  const splitIndex = safeSplitIndex(session.history, session.history.length - SUMMARIZE_KEEP_RECENT);
+  if (splitIndex <= 0) return; // nothing old enough (or no safe boundary) to fold away yet
+
+  const older = session.history.slice(0, splitIndex);
+  const recent = session.history.slice(splitIndex);
+
+  let summaryText: string;
+  try {
+    const response = await client.chat.completions.create({
+      model: connection.model || DEFAULT_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Summarize this conversation between a user and an AI assistant building a system-dynamics (Vensim-style) model. Preserve: what the model currently contains (stocks/flows/auxiliaries/relations and their equations, at least by name), what decisions were made and why, and anything the user asked for that isn't done yet. Be concise — this replaces the full history to save tokens, not a transcript.",
+        },
+        ...older,
+      ],
+    });
+    summaryText = response.choices[0]?.message?.content || "(no summary content returned)";
+  } catch {
+    // A failed summarization call must not break the actual turn the user is waiting on —
+    // just skip compacting this time and try again once history has grown further.
+    return;
+  }
+
+  session.history = [
+    { role: "user", content: `[Summary of earlier conversation, to save tokens]\n${summaryText}` },
+    { role: "assistant", content: "Understood — continuing from that context." },
+    ...recent,
+  ];
+  callbacks.onHistorySummarized?.(older.length);
 }
 
 export async function runAgentTurn(
@@ -177,6 +248,8 @@ export async function runAgentTurn(
     baseURL: connection.baseUrl || DEFAULT_BASE_URL,
     dangerouslyAllowBrowser: true,
   });
+
+  await summarizeHistoryIfNeeded(client, connection, session, callbacks);
   session.history.push({ role: "user", content: userText });
 
   for (let round = 0; round < maxToolRounds; round++) {

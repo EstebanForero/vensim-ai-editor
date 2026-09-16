@@ -207,6 +207,13 @@ export function ChatPanel() {
               text: "Stopped. Whatever was already applied stays — send another message to continue or redirect it.",
             });
           },
+          onHistorySummarized: (messagesSummarized) => {
+            addChatMessage({
+              id: crypto.randomUUID(),
+              role: "tool",
+              text: `Compacted ${messagesSummarized} earlier messages into a summary to save tokens — nothing you did was lost, just condensed.`,
+            });
+          },
         },
         undefined,
         controller.signal,
