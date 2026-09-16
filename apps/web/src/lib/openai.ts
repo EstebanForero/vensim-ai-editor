@@ -100,12 +100,25 @@ function pythonGlobals(model: Model) {
 
 export interface AgentCallbacks {
   onToolCall?: (name: string, input: Record<string, unknown>, result: { ok: boolean; result?: unknown; error?: string }) => void;
+  /** Fired as soon as a tool call's NAME is known (streamed in before its arguments finish, and
+   * well before it actually runs) — lets the UI show "calling add_stock…" immediately instead of
+   * going silent for however long that round's completion + execution takes. */
+  onToolCallStart?: (name: string) => void;
+  /** Fired once, with the complete text, when an assistant message finishes. */
   onAssistantText?: (text: string) => void;
+  /** Fired as each chunk of an assistant message's text streams in, `id` stable for the whole
+   * message so the UI can grow one live bubble instead of appending separate messages per
+   * chunk. Always followed by exactly one onAssistantText call with the full text once the
+   * message completes (unless the turn is aborted first). */
+  onAssistantTextDelta?: (id: string, delta: string) => void;
   /** Fired when a turn stops WITHOUT the model itself deciding it was done (still had more tool
    * calls queued up) — currently only the tool-round cap. Without this, hitting the cap looked
    * identical to a normal finish: the "editing…" indicator just disappeared with no explanation,
    * which read as the assistant randomly giving up mid-edit. */
   onStoppedEarly?: (reason: "max_tool_rounds", roundsUsed: number) => void;
+  /** Fired when `signal` aborts the turn (the user pressed Stop) — distinct from onStoppedEarly,
+   * which is specifically about running out of tool-round budget, not a deliberate cancel. */
+  onAborted?: () => void;
 }
 
 export interface AgentSession {
@@ -120,6 +133,15 @@ export interface AgentConnection {
   apiKey: string;
   baseUrl: string;
   model: string;
+}
+
+/** Accumulates streamed tool-call deltas by their index within the response (the SDK/protocol's
+ * own way of identifying which partial-call a given chunk belongs to, since `id`/`function.name`
+ * each only arrive once, in the first chunk for that call). */
+interface AccumulatingToolCall {
+  id: string;
+  name: string;
+  arguments: string;
 }
 
 export async function runAgentTurn(
@@ -141,6 +163,10 @@ export async function runAgentTurn(
   // it looked exactly like the assistant finishing normally (see onStoppedEarly below) — raised
   // to a much less limiting default; the cap still exists purely as a runaway-loop safety net.
   maxToolRounds = 40,
+  // Checked between rounds and between individual tool executions (not just passed to the
+  // network call) — a long tool loop with no in-flight network request at all still needs to be
+  // interruptible mid-round, not just while actually waiting on the model.
+  signal?: AbortSignal,
 ): Promise<void> {
   const client = new OpenAI({
     apiKey: connection.apiKey,
@@ -150,36 +176,106 @@ export async function runAgentTurn(
   session.history.push({ role: "user", content: userText });
 
   for (let round = 0; round < maxToolRounds; round++) {
-    const response = await client.chat.completions.create({
-      model: connection.model || DEFAULT_MODEL,
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...session.history],
-      tools: OPENAI_TOOLS,
-      tool_choice: "auto",
-    });
+    if (signal?.aborted) {
+      callbacks.onAborted?.();
+      return;
+    }
 
-    const message = response.choices[0]?.message;
-    if (!message) return;
+    const stream = await client.chat.completions.create(
+      {
+        model: connection.model || DEFAULT_MODEL,
+        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...session.history],
+        tools: OPENAI_TOOLS,
+        tool_choice: "auto",
+        stream: true,
+      },
+      { signal },
+    );
+
+    let content = "";
+    const toolCallsByIndex = new Map<number, AccumulatingToolCall>();
+    const streamId = crypto.randomUUID();
+    const knownToolNames = new Set<string>();
+
+    try {
+      for await (const chunk of stream) {
+        const choice = chunk.choices[0];
+        if (!choice) continue;
+
+        const delta = choice.delta;
+        if (delta?.content) {
+          content += delta.content;
+          callbacks.onAssistantTextDelta?.(streamId, delta.content);
+        }
+        for (const tc of delta?.tool_calls ?? []) {
+          const existing = toolCallsByIndex.get(tc.index) ?? { id: "", name: "", arguments: "" };
+          if (tc.id) existing.id = tc.id;
+          if (tc.function?.name) existing.name += tc.function.name;
+          if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+          toolCallsByIndex.set(tc.index, existing);
+          // Fire once, as soon as the name is first complete enough to be non-empty and hasn't
+          // been announced yet — arguments keep streaming in after this.
+          if (existing.name && !knownToolNames.has(existing.id || String(tc.index))) {
+            knownToolNames.add(existing.id || String(tc.index));
+            callbacks.onToolCallStart?.(existing.name);
+          }
+        }
+      }
+    } catch (err) {
+      // AbortError (fetch's own name for a cancelled request) means the user pressed Stop —
+      // nothing was pushed to history yet this round, so the session is left in a clean state
+      // to resume from on the next message.
+      if (err instanceof Error && err.name === "AbortError") {
+        callbacks.onAborted?.();
+        return;
+      }
+      throw err;
+    }
+    // Aborting the underlying fetch doesn't necessarily THROW inside `for await` — depending on
+    // exactly when the cancellation lands, iteration can just end silently instead, leaving
+    // `content`/`toolCallsByIndex` holding a partial response with nothing to signal it was cut
+    // short. Checked explicitly here (not just relying on the catch above) so an abort is never
+    // mistaken for the model naturally finishing early.
+    if (signal?.aborted) {
+      callbacks.onAborted?.();
+      return;
+    }
+
+    if (content) callbacks.onAssistantText?.(content);
+
+    const toolCalls = [...toolCallsByIndex.values()].filter((tc) => tc.id && tc.name);
+    const message: ChatCompletionMessageParam = {
+      role: "assistant",
+      content: content || null,
+      ...(toolCalls.length > 0
+        ? { tool_calls: toolCalls.map((tc) => ({ id: tc.id, type: "function" as const, function: { name: tc.name, arguments: tc.arguments } })) }
+        : {}),
+    };
     session.history.push(message);
 
-    if (message.content) callbacks.onAssistantText?.(message.content);
-
-    const toolCalls = message.tool_calls ?? [];
-    if (toolCalls.length === 0) return;
+    if (toolCalls.length === 0) return; // nothing left to execute — the model is done this turn
 
     const toolMessages: ChatCompletionToolMessageParam[] = [];
     for (const call of toolCalls) {
-      if (call.type !== "function") continue;
+      if (signal?.aborted) {
+        // Every tool_call in the message just pushed to history MUST get a matching tool result
+        // message, or the next request (this turn's retry, or a future one reusing this
+        // session) fails outright with a protocol error — so a call skipped by an abort still
+        // gets a placeholder result rather than being left dangling.
+        toolMessages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: "Cancelled by user." }) });
+        continue;
+      }
       let args: Record<string, unknown> = {};
       try {
-        args = JSON.parse(call.function.arguments || "{}");
+        args = JSON.parse(call.arguments || "{}");
       } catch {
         // malformed JSON from the model — executeTool will reject missing/invalid fields below
       }
       const result =
-        call.function.name === "run_python"
+        call.name === "run_python"
           ? await runPythonTool(typeof args.code === "string" ? args.code : "", getModel())
-          : executeTool(getModel(), call.function.name, args);
-      callbacks.onToolCall?.(call.function.name, args, result);
+          : executeTool(getModel(), call.name, args);
+      callbacks.onToolCall?.(call.name, args, result);
       toolMessages.push({
         role: "tool",
         tool_call_id: call.id,
@@ -187,6 +283,11 @@ export async function runAgentTurn(
       });
     }
     session.history.push(...toolMessages);
+
+    if (signal?.aborted) {
+      callbacks.onAborted?.();
+      return;
+    }
   }
 
   // Only reachable if every one of maxToolRounds iterations still had tool calls queued up —

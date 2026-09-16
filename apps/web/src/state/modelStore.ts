@@ -15,6 +15,9 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool" | "warning";
   text: string;
+  /** True while an assistant message is still being streamed in — lets the UI show a "still
+   * typing" indicator on this specific bubble, cleared once the message completes. */
+  streaming?: boolean;
 }
 
 function readLocalStorage(key: string, fallback: string): string {
@@ -140,6 +143,12 @@ interface ModelStoreState {
   deleteConnectionProfile: (id: string) => void;
   renameConnectionProfile: (id: string, name: string) => void;
   addChatMessage: (msg: ChatMessage) => void;
+  /** Appends `delta` to the message with `id`, creating it (as a streaming assistant message)
+   * if it doesn't exist yet — the first chunk of a streamed reply and every chunk after it go
+   * through this same call. */
+  appendToChatMessage: (id: string, delta: string) => void;
+  /** Marks a streamed message as complete (clears its `streaming` flag). */
+  finalizeChatMessage: (id: string) => void;
   setAgentRunning: (running: boolean) => void;
   clearChat: () => void;
   toggleShowLoops: () => void;
@@ -258,6 +267,20 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   },
 
   addChatMessage: (msg) => set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
+
+  appendToChatMessage: (id, delta) =>
+    set((s) => {
+      const idx = s.chatMessages.findIndex((m) => m.id === id);
+      if (idx === -1) {
+        return { chatMessages: [...s.chatMessages, { id, role: "assistant", text: delta, streaming: true }] };
+      }
+      const chatMessages = [...s.chatMessages];
+      chatMessages[idx] = { ...chatMessages[idx]!, text: chatMessages[idx]!.text + delta };
+      return { chatMessages };
+    }),
+
+  finalizeChatMessage: (id) =>
+    set((s) => ({ chatMessages: s.chatMessages.map((m) => (m.id === id ? { ...m, streaming: false } : m)) })),
   setAgentRunning: (running) => set({ isAgentRunning: running }),
   clearChat: () => set({ chatMessages: [] }),
 

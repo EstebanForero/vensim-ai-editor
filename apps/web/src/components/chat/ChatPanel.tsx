@@ -1,5 +1,5 @@
 import { useReactFlow } from "@xyflow/react";
-import { Bot, KeyRound, Loader2, Plus, Send, Settings2, Trash2, TriangleAlert, Wrench } from "lucide-react";
+import { Bot, KeyRound, Loader2, Plus, Send, Settings2, Square, Trash2, TriangleAlert, Wrench } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,6 +92,8 @@ export function ChatPanel() {
   const renameConnectionProfile = useModelStore((s) => s.renameConnectionProfile);
   const messages = useModelStore((s) => s.chatMessages);
   const addChatMessage = useModelStore((s) => s.addChatMessage);
+  const appendToChatMessage = useModelStore((s) => s.appendToChatMessage);
+  const finalizeChatMessage = useModelStore((s) => s.finalizeChatMessage);
   const isAgentRunning = useModelStore((s) => s.isAgentRunning);
   const setAgentRunning = useModelStore((s) => s.setAgentRunning);
   const mutate = useModelStore((s) => s.mutate);
@@ -99,7 +101,9 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [addingProfile, setAddingProfile] = useState(false);
+  const [pendingToolName, setPendingToolName] = useState<string | null>(null);
   const sessionRef = useRef<AgentSession>(createAgentSession());
+  const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { fitView } = useReactFlow();
 
@@ -124,33 +128,65 @@ export function ChatPanel() {
     setInput("");
     addChatMessage({ id: crypto.randomUUID(), role: "user", text });
     setAgentRunning(true);
+    setPendingToolName(null);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const streamedIds = new Set<string>();
 
     // Each tool call must mutate whatever is *currently* the store's live model object, not a
     // snapshot captured once up front — mutate() below replaces that object with a fresh clone
     // after every single tool call (so the canvas updates live), which would orphan a fixed
     // reference after the very first tool ran and silently drop every mutation after it.
     try {
-      await runAgentTurn({ apiKey, baseUrl, model: aiModel }, sessionRef.current, text, () => useModelStore.getState().model, {
-        onToolCall: (name, toolInput, result) => {
-          mutate(() => {}); // re-commit a snapshot of the mutated draft
-          addChatMessage({
-            id: crypto.randomUUID(),
-            role: "tool",
-            text: `${result.ok ? "✓" : "✗"} ${name}(${JSON.stringify(toolInput)})${result.ok ? "" : ` — ${result.error}`}`,
-          });
-          if (name === "auto_layout" && result.ok) requestAnimationFrame(() => fitView({ duration: 300, padding: 0.2 }));
+      await runAgentTurn(
+        { apiKey, baseUrl, model: aiModel },
+        sessionRef.current,
+        text,
+        () => useModelStore.getState().model,
+        {
+          onAssistantTextDelta: (id, delta) => {
+            setPendingToolName(null);
+            streamedIds.add(id);
+            appendToChatMessage(id, delta);
+          },
+          // The full text already arrived incrementally via onAssistantTextDelta above — this
+          // fires alongside it with the same text once the message completes, so all that's
+          // left to do here is close out whichever message id was actively streaming.
+          onAssistantText: () => {
+            for (const id of streamedIds) finalizeChatMessage(id);
+            streamedIds.clear();
+          },
+          onToolCallStart: (name) => setPendingToolName(name),
+          onToolCall: (name, toolInput, result) => {
+            setPendingToolName(null);
+            mutate(() => {}); // re-commit a snapshot of the mutated draft
+            addChatMessage({
+              id: crypto.randomUUID(),
+              role: "tool",
+              text: `${result.ok ? "✓" : "✗"} ${name}(${JSON.stringify(toolInput)})${result.ok ? "" : ` — ${result.error}`}`,
+            });
+            if (name === "auto_layout" && result.ok) requestAnimationFrame(() => fitView({ duration: 300, padding: 0.2 }));
+          },
+          onStoppedEarly: (_reason, roundsUsed) => {
+            addChatMessage({
+              id: crypto.randomUUID(),
+              role: "warning",
+              text: `Stopped after ${roundsUsed} tool-call rounds without finishing the request — it may be only partly done. Send another message (e.g. "continue") to pick up where it left off.`,
+            });
+          },
+          onAborted: () => {
+            for (const id of streamedIds) finalizeChatMessage(id);
+            addChatMessage({
+              id: crypto.randomUUID(),
+              role: "warning",
+              text: "Stopped. Whatever was already applied stays — send another message to continue or redirect it.",
+            });
+          },
         },
-        onAssistantText: (text) => {
-          addChatMessage({ id: crypto.randomUUID(), role: "assistant", text });
-        },
-        onStoppedEarly: (_reason, roundsUsed) => {
-          addChatMessage({
-            id: crypto.randomUUID(),
-            role: "warning",
-            text: `Stopped after ${roundsUsed} tool-call rounds without finishing the request — it may be only partly done. Send another message (e.g. "continue") to pick up where it left off.`,
-          });
-        },
-      });
+        undefined,
+        controller.signal,
+      );
     } catch (err) {
       addChatMessage({
         id: crypto.randomUUID(),
@@ -159,8 +195,12 @@ export function ChatPanel() {
       });
     } finally {
       setAgentRunning(false);
+      setPendingToolName(null);
+      abortControllerRef.current = null;
     }
   };
+
+  const stop = () => abortControllerRef.current?.abort();
 
   return (
     <div className="flex h-full flex-col">
@@ -271,6 +311,7 @@ export function ChatPanel() {
                   {m.role === "assistant" && <Bot className="mr-1 inline size-3" />}
                   {m.role === "warning" && <TriangleAlert className="mr-1 inline size-3" />}
                   <span className="whitespace-pre-wrap">{m.text}</span>
+                  {m.streaming && <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current align-text-bottom" />}
                 </div>
                 {isLastAssistant && (
                   <div className="mt-0.5 text-[10px] text-muted-foreground">Finished — nothing more queued.</div>
@@ -281,7 +322,11 @@ export function ChatPanel() {
           {isAgentRunning && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
-              Editing the diagram…
+              {pendingToolName
+                ? `Calling ${pendingToolName}…`
+                : messages.some((m) => m.streaming)
+                  ? "Editing the diagram…"
+                  : "Thinking…"}
             </div>
           )}
         </div>
@@ -303,9 +348,15 @@ export function ChatPanel() {
           rows={1}
           className="max-h-40 min-h-[2.25rem] resize-none overflow-y-auto text-sm"
         />
-        <Button size="icon" onClick={send} disabled={isAgentRunning} className="shrink-0">
-          <Send className="size-4" />
-        </Button>
+        {isAgentRunning ? (
+          <Button size="icon" variant="destructive" onClick={stop} className="shrink-0" title="Stop">
+            <Square className="size-3.5" />
+          </Button>
+        ) : (
+          <Button size="icon" onClick={send} disabled={isAgentRunning} className="shrink-0">
+            <Send className="size-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
