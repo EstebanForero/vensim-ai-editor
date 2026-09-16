@@ -80,6 +80,37 @@ describe("checkUnits", () => {
     expect(checkUnits(model)).toEqual([]);
   });
 
+  // Regression: real Vensim lets an inline, untyped numeric constant blend into any expression
+  // without complaint (e.g. `Cost + 5` where Cost is in dollars raises no error in Vensim
+  // itself) — extremely common in practice (MAX(0, X), Rate * 0.5, X + 1, ...). The checker
+  // previously treated every bare number as strictly dimensionless with no way to tell that
+  // apart from a variable or sub-expression that genuinely computes to Dmnl, so any equation
+  // combining a real variable with an inline constant via +/- (or MIN/MAX/IF THEN ELSE) false-
+  // positived as a unit mismatch purely because of the literal, unrelated to the equation's
+  // actual correctness.
+  test("an inline numeric literal added to a dimensioned variable is not flagged", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "Cost", equation: "10", units: "dollars" });
+    addAuxiliary(model, { name: "Total", equation: "Cost + 5", units: "dollars" });
+    addAuxiliary(model, { name: "Adjusted", equation: "MAX(0, Cost)", units: "dollars" });
+    addAuxiliary(model, { name: "Scaled", equation: "Cost * 0.5", units: "dollars" });
+
+    expect(checkUnits(model)).toEqual([]);
+  });
+
+  test("but two REAL dimensioned variables that don't match are still flagged, literal or not", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "A", equation: "5", units: "widgets" });
+    addAuxiliary(model, { name: "B", equation: "2", units: "day" });
+    // A ratio that cancels to Dmnl is NOT a literal — it's a real computed dimensionless
+    // quantity, and adding it to something dimensioned is still a genuine mismatch.
+    addAuxiliary(model, { name: "Ratio", equation: "A / A", units: "Dmnl" });
+    addAuxiliary(model, { name: "Bad", equation: "Ratio + B", units: "day" });
+
+    const issues = checkUnits(model);
+    expect(issues.some((i) => i.variableName === "Bad" && i.message.includes("sum of mismatched units"))).toBe(true);
+  });
+
   test("a variable with no declared units is never flagged, and doesn't poison downstream checks", () => {
     const model = createEmptyModel();
     addAuxiliary(model, { name: "Mystery", equation: "5" }); // no units

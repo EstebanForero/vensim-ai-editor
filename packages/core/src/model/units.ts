@@ -128,11 +128,23 @@ export interface UnitMismatch {
 interface DimResult {
   dim: UnitDim;
   mismatches: UnitMismatch[];
+  /** True only for a bare numeric literal (or a unary +/- of one) — real Vensim lets an
+   * inline, untyped constant blend into any expression without complaint (e.g. `Cost + 5` where
+   * Cost is in dollars raises no error in Vensim itself), unlike a variable or a sub-expression
+   * that genuinely computes to Dmnl (e.g. a ratio that cancels out), which SHOULD still be
+   * flagged if summed with something dimensioned. Both look identical as a plain `{}` dimension,
+   * so this flag is what lets `combine` tell them apart — without it, every equation with an
+   * inline constant term (extremely common: `MAX(0, X)`, `Rate * 0.5`, ...) would false-positive
+   * as a unit mismatch the moment that constant is added/subtracted against a real variable. */
+  literal: boolean;
 }
 
 function combine(dims: DimResult[], context: string): DimResult {
   const mismatches = dims.flatMap((d) => d.mismatches);
-  const known = dims.map((d) => d.dim).filter((d): d is Record<string, number> => d !== "unknown");
+  // A bare literal is never required to match anything — it's Vensim's own convention for an
+  // untyped inline constant, not a claim about its dimension. Only non-literal, resolved
+  // dimensions need to agree with each other.
+  const known = dims.filter((d) => !d.literal && d.dim !== "unknown").map((d) => d.dim as Record<string, number>);
   if (known.length > 1) {
     for (let i = 1; i < known.length; i++) {
       if (!sameDim(known[0]!, known[i]!)) {
@@ -141,23 +153,23 @@ function combine(dims: DimResult[], context: string): DimResult {
       }
     }
   }
-  const dim = dims.some((d) => d.dim === "unknown") ? "unknown" : known[0] ?? DIMENSIONLESS;
-  return { dim, mismatches };
+  const dim = dims.some((d) => d.dim === "unknown") ? "unknown" : (known[0] ?? DIMENSIONLESS);
+  return { dim, mismatches, literal: dims.every((d) => d.literal) };
 }
 
 function analyzeDim(e: Expr, unitsByName: Map<string, UnitDim>): DimResult {
   switch (e.type) {
     case "num":
-      return { dim: { ...DIMENSIONLESS }, mismatches: [] };
+      return { dim: { ...DIMENSIONLESS }, mismatches: [], literal: true };
 
     case "var": {
       const dim = unitsByName.get(e.name) ?? "unknown";
-      return { dim, mismatches: [] };
+      return { dim, mismatches: [], literal: false };
     }
 
     case "unary": {
       const a = analyzeDim(e.arg, unitsByName);
-      return e.op === "NOT" ? { dim: { ...DIMENSIONLESS }, mismatches: a.mismatches } : a;
+      return e.op === "NOT" ? { dim: { ...DIMENSIONLESS }, mismatches: a.mismatches, literal: false } : a;
     }
 
     case "binary": {
@@ -168,22 +180,22 @@ function analyzeDim(e: Expr, unitsByName: Map<string, UnitDim>): DimResult {
         case "-":
           return combine([l, r], `${e.op === "+" ? "sum" : "difference"} of mismatched units`);
         case "*":
-          return { dim: mulDim(l.dim, r.dim), mismatches: [...l.mismatches, ...r.mismatches] };
+          return { dim: mulDim(l.dim, r.dim), mismatches: [...l.mismatches, ...r.mismatches], literal: l.literal && r.literal };
         case "/":
-          return { dim: mulDim(l.dim, r.dim, -1), mismatches: [...l.mismatches, ...r.mismatches] };
+          return { dim: mulDim(l.dim, r.dim, -1), mismatches: [...l.mismatches, ...r.mismatches], literal: l.literal && r.literal };
         case "^": {
           const exp = literalExponent(e.right);
           if (exp === null || l.dim === "unknown") {
-            return { dim: "unknown", mismatches: [...l.mismatches, ...r.mismatches] };
+            return { dim: "unknown", mismatches: [...l.mismatches, ...r.mismatches], literal: false };
           }
           const out: Record<string, number> = {};
           for (const [k, v] of Object.entries(l.dim)) out[k] = v * exp;
-          return { dim: out, mismatches: [...l.mismatches, ...r.mismatches] };
+          return { dim: out, mismatches: [...l.mismatches, ...r.mismatches], literal: l.literal };
         }
         default:
           // Comparisons/AND/OR: boolean-valued, dimensionless result. Still surface internal
           // mismatches from the operands even though the comparison itself isn't checked.
-          return { dim: { ...DIMENSIONLESS }, mismatches: [...l.mismatches, ...r.mismatches] };
+          return { dim: { ...DIMENSIONLESS }, mismatches: [...l.mismatches, ...r.mismatches], literal: false };
       }
     }
 
@@ -214,14 +226,14 @@ function analyzeCallDim(name: string, args: Expr[], unitsByName: Map<string, Uni
 
     case "ABS":
     case "INTEGER":
-      return parts[0] ?? { dim: "unknown", mismatches: [] };
+      return parts[0] ?? { dim: "unknown", mismatches: [], literal: false };
 
     case "SQRT": {
       const a = parts[0];
-      if (!a || a.dim === "unknown") return { dim: "unknown", mismatches: allMismatches() };
+      if (!a || a.dim === "unknown") return { dim: "unknown", mismatches: allMismatches(), literal: false };
       const out: Record<string, number> = {};
       for (const [k, v] of Object.entries(a.dim)) out[k] = v / 2;
-      return { dim: out, mismatches: a.mismatches };
+      return { dim: out, mismatches: a.mismatches, literal: a.literal };
     }
 
     // Transcendental functions are only dimensionally valid on a dimensionless argument — real
@@ -240,36 +252,36 @@ function analyzeCallDim(name: string, args: Expr[], unitsByName: Map<string, Uni
       if (a && a.dim !== "unknown" && !isDimensionless(a.dim)) {
         mismatches.push({ context: `${name}(...) argument must be dimensionless`, left: a.dim, right: DIMENSIONLESS });
       }
-      return { dim: { ...DIMENSIONLESS }, mismatches };
+      return { dim: { ...DIMENSIONLESS }, mismatches, literal: false };
     }
 
     case "ZIDZ":
     case "XIDZ": {
-      const a = parts[0] ?? { dim: "unknown" as UnitDim, mismatches: [] };
-      const b = parts[1] ?? { dim: "unknown" as UnitDim, mismatches: [] };
-      return { dim: mulDim(a.dim, b.dim, -1), mismatches: [...a.mismatches, ...b.mismatches] };
+      const a = parts[0] ?? { dim: "unknown" as UnitDim, mismatches: [], literal: false };
+      const b = parts[1] ?? { dim: "unknown" as UnitDim, mismatches: [], literal: false };
+      return { dim: mulDim(a.dim, b.dim, -1), mismatches: [...a.mismatches, ...b.mismatches], literal: a.literal && b.literal };
     }
 
     case "POWER": {
       const base = parts[0];
       const exp = args[1] ? literalExponent(args[1]) : null;
-      if (!base || exp === null || base.dim === "unknown") return { dim: "unknown", mismatches: allMismatches() };
+      if (!base || exp === null || base.dim === "unknown") return { dim: "unknown", mismatches: allMismatches(), literal: false };
       const out: Record<string, number> = {};
       for (const [k, v] of Object.entries(base.dim)) out[k] = v * exp;
-      return { dim: out, mismatches: base.mismatches };
+      return { dim: out, mismatches: base.mismatches, literal: base.literal };
     }
 
     case "STEP":
       // STEP(height, time): result takes on `height`'s units.
-      return { dim: parts[0]?.dim ?? "unknown", mismatches: allMismatches() };
+      return { dim: parts[0]?.dim ?? "unknown", mismatches: allMismatches(), literal: parts[0]?.literal ?? false };
 
     case "PULSE":
       // PULSE(start, duration): a 0/1 dimensionless switch.
-      return { dim: { ...DIMENSIONLESS }, mismatches: allMismatches() };
+      return { dim: { ...DIMENSIONLESS }, mismatches: allMismatches(), literal: false };
 
     default:
       // An unrecognized function's unit contract isn't known — don't guess.
-      return { dim: "unknown", mismatches: allMismatches() };
+      return { dim: "unknown", mismatches: allMismatches(), literal: false };
   }
 }
 
