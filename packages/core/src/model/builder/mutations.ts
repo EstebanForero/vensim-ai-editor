@@ -9,6 +9,21 @@ export function setSimSpec(model: Model, patch: Partial<SimSpec>): SimSpec {
   return model.simSpec;
 }
 
+/** Removes every stock/flow/auxiliary/connector/comment, leaving the model's own name and
+ * simSpec (start/stop time, dt, integration method, time units) untouched — "start the diagram
+ * over" without also discarding simulation settings the user may have deliberately set. Mutates
+ * the arrays in place (rather than assigning fresh empty ones) since callers may hold onto a
+ * reference to e.g. `model.stocks` across the call. */
+export function clearModel(model: Model): void {
+  model.stocks.length = 0;
+  model.flows.length = 0;
+  model.auxiliaries.length = 0;
+  model.connectors.length = 0;
+  model.comments.length = 0;
+  model.pinnedGraphs.length = 0;
+  model.unsupportedRaw.length = 0;
+}
+
 export function setEquation(
   model: Model,
   id: string,

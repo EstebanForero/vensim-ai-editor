@@ -9,6 +9,7 @@ import {
   annotateLoops,
   autoLayout,
   checkUnits,
+  clearModel,
   deleteElement,
   detectLoops,
   findVariable,
@@ -148,6 +149,17 @@ export function executeTool(model: Model, toolName: string, input: Record<string
         const id = v?.id ?? str(input.id_or_name);
         deleteElement(model, id);
         return { ok: true, result: { deleted: id } };
+      }
+      case "clear_model": {
+        const counts = {
+          stocks: model.stocks.length,
+          flows: model.flows.length,
+          auxiliaries: model.auxiliaries.length,
+          connectors: model.connectors.length,
+          comments: model.comments.length,
+        };
+        clearModel(model);
+        return { ok: true, result: { cleared: counts } };
       }
       case "add_comment": {
         const c = addComment(model, { text: str(input.text), pos: posFrom(input) });

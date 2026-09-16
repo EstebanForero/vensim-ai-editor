@@ -1,5 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { addAuxiliary, addConnector, addFlow, addStock, deleteElement, renameVariable, setEquation, setFlowEndpoint } from "../src/model/builder/index.js";
+import {
+  addAuxiliary,
+  addComment,
+  addConnector,
+  addFlow,
+  addStock,
+  clearModel,
+  deleteElement,
+  renameVariable,
+  setEquation,
+  setFlowEndpoint,
+  setSimSpec,
+} from "../src/model/builder/index.js";
 import { createEmptyModel } from "../src/model/types.js";
 import { validateModel } from "../src/model/validate.js";
 
@@ -166,5 +178,30 @@ describe("builder", () => {
 
     setEquation(model, flow.id, "Tasa de ajuste según año / 2");
     expect(flow.equation).toBe("Tasa de ajuste segun ano / 2");
+  });
+
+  test("clearModel deletes every element but keeps the model's own name and sim spec", () => {
+    const model = createEmptyModel("My Model");
+    setSimSpec(model, { stopTime: 200, timeUnits: "Year" });
+    const stock = addStock(model, { name: "S", initialEquation: "10" });
+    addFlow(model, { name: "F", equation: "1", to: stock.id });
+    addAuxiliary(model, { name: "A", equation: "1" });
+    addConnector(model, { from: "A", to: "F" });
+    addComment(model, { text: "note" });
+
+    clearModel(model);
+
+    expect(model.stocks).toHaveLength(0);
+    expect(model.flows).toHaveLength(0);
+    expect(model.auxiliaries).toHaveLength(0);
+    expect(model.connectors).toHaveLength(0);
+    expect(model.comments).toHaveLength(0);
+    expect(model.name).toBe("My Model");
+    expect(model.simSpec.stopTime).toBe(200);
+    expect(model.simSpec.timeUnits).toBe("Year");
+
+    // The model must still be usable afterward — adding a fresh element shouldn't collide with
+    // anything left dangling internally by the clear.
+    expect(() => addStock(model, { name: "S" })).not.toThrow();
   });
 });

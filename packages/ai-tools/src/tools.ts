@@ -170,6 +170,12 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
     },
   },
   {
+    name: "clear_model",
+    description:
+      "Deletes every stock, flow, auxiliary, relation, and comment — a full reset of the diagram in one call, instead of calling delete_element once per element. The model's own name and simulation settings (start/stop time, dt, integration method, time units) are left untouched. Only call this when explicitly asked to clear/reset/start over the model, or to delete everything — never as a shortcut to remove just some elements (use delete_element for that), and never without being sure that's actually what was asked, since it can't be undone through the tool API.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
     name: "add_comment",
     description:
       "Add a freestanding text annotation to the diagram — Vensim's own \"Comment\" sketch tool. Not a variable: carries no equation and never participates in simulation or loop detection. Use it to label sections of the diagram or explain a design decision to a human reader.",
