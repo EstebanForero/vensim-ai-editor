@@ -6,7 +6,27 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createAgentSession, runAgentTurn, type AgentSession } from "@/lib/openai";
 import { PROVIDER_PRESETS } from "@/lib/providerPresets";
-import { useModelStore } from "@/state/modelStore";
+import { useModelStore, type ReasoningEffort } from "@/state/modelStore";
+
+/** Shared by the active-profile settings panel and the add-profile form — most models ignore or
+ * reject an unrecognized field, so "Default" deliberately means "send nothing," never a guess. */
+function ReasoningEffortSelect({ value, onChange }: { value: ReasoningEffort; onChange: (v: ReasoningEffort) => void }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-muted-foreground">Reasoning effort</span>
+      <select
+        className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+        value={value}
+        onChange={(e) => onChange(e.target.value as ReasoningEffort)}
+      >
+        <option value="">Default (don't send reasoning_effort)</option>
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+      </select>
+    </label>
+  );
+}
 
 /** The "+ Add profile" form — a provider preset just fills in a starting base URL/model; the
  * key is always typed here, never bundled with a preset. */
@@ -16,6 +36,7 @@ function AddProfileForm({ onDone }: { onDone: () => void }) {
   const [baseUrl, setBaseUrl] = useState(PROVIDER_PRESETS[0]!.baseUrl);
   const [model, setModel] = useState(PROVIDER_PRESETS[0]!.model);
   const [apiKey, setApiKey] = useState("");
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>("");
   const [presetNote, setPresetNote] = useState<string | undefined>(undefined);
 
   const applyPreset = (presetName: string) => {
@@ -29,7 +50,7 @@ function AddProfileForm({ onDone }: { onDone: () => void }) {
 
   const submit = () => {
     if (!baseUrl.trim() || !model.trim()) return;
-    addConnectionProfile({ name: name.trim() || "New profile", apiKey, baseUrl: baseUrl.trim(), model: model.trim() });
+    addConnectionProfile({ name: name.trim() || "New profile", apiKey, baseUrl: baseUrl.trim(), model: model.trim(), reasoningEffort });
     onDone();
   };
 
@@ -66,6 +87,7 @@ function AddProfileForm({ onDone }: { onDone: () => void }) {
         <span className="text-muted-foreground">API key</span>
         <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="h-7 text-xs" />
       </label>
+      <ReasoningEffortSelect value={reasoningEffort} onChange={setReasoningEffort} />
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onDone}>
           Cancel
@@ -85,6 +107,8 @@ export function ChatPanel() {
   const setBaseUrl = useModelStore((s) => s.setBaseUrl);
   const aiModel = useModelStore((s) => s.aiModel);
   const setAiModel = useModelStore((s) => s.setAiModel);
+  const aiReasoningEffort = useModelStore((s) => s.aiReasoningEffort);
+  const setAiReasoningEffort = useModelStore((s) => s.setAiReasoningEffort);
   const connections = useModelStore((s) => s.connections);
   const activeConnectionId = useModelStore((s) => s.activeConnectionId);
   const selectConnectionProfile = useModelStore((s) => s.selectConnectionProfile);
@@ -140,7 +164,7 @@ export function ChatPanel() {
     // reference after the very first tool ran and silently drop every mutation after it.
     try {
       await runAgentTurn(
-        { apiKey, baseUrl, model: aiModel },
+        { apiKey, baseUrl, model: aiModel, reasoningEffort: aiReasoningEffort || undefined },
         sessionRef.current,
         text,
         () => useModelStore.getState().model,
@@ -265,6 +289,7 @@ export function ChatPanel() {
                 <span className="text-muted-foreground">Model</span>
                 <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="h-7 text-xs" />
               </label>
+              <ReasoningEffortSelect value={aiReasoningEffort} onChange={setAiReasoningEffort} />
               <p className="text-muted-foreground">
                 Works with OpenAI itself, or any server exposing an OpenAI-compatible <code>/chat/completions</code>{" "}
                 route (Azure OpenAI, DeepSeek, Gemini, OpenRouter, vLLM, Ollama, LM Studio, …).

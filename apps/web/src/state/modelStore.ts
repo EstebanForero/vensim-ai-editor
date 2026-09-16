@@ -28,12 +28,18 @@ function writeLocalStorage(key: string, value: string): void {
   if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
 }
 
+/** "" (the default) means "don't send a reasoning_effort field at all" — most models don't
+ * support it, and some OpenAI-compatible servers reject an unrecognized field outright rather
+ * than ignoring it, so this must be opt-in per profile rather than always sent. */
+export type ReasoningEffort = "" | "low" | "medium" | "high";
+
 export interface ConnectionProfile {
   id: string;
   name: string;
   apiKey: string;
   baseUrl: string;
   model: string;
+  reasoningEffort: ReasoningEffort;
 }
 
 const CONNECTIONS_KEY = "vensim-ai:connections";
@@ -63,9 +69,13 @@ function loadConnections(): { connections: ConnectionProfile[]; activeId: string
         apiKey: readLocalStorage("vensim-ai:apiKey", ""),
         baseUrl: readLocalStorage("vensim-ai:baseUrl", DEFAULT_BASE_URL),
         model: readLocalStorage("vensim-ai:model", DEFAULT_MODEL),
+        reasoningEffort: "",
       },
     ];
   }
+  // A profile saved before reasoningEffort existed won't have the field at all — default it
+  // rather than leave it undefined, so every consumer can treat it as always present.
+  connections = connections.map((c) => ({ ...c, reasoningEffort: c.reasoningEffort ?? "" }));
   const savedActiveId = readLocalStorage(ACTIVE_CONNECTION_KEY, connections[0]!.id);
   const activeId = connections.some((c) => c.id === savedActiveId) ? savedActiveId : connections[0]!.id;
   return { connections, activeId };
@@ -105,6 +115,7 @@ interface ModelStoreState {
   apiKey: string;
   baseUrl: string;
   aiModel: string;
+  aiReasoningEffort: ReasoningEffort;
   connections: ConnectionProfile[];
   activeConnectionId: string;
 
@@ -133,6 +144,7 @@ interface ModelStoreState {
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
   setAiModel: (name: string) => void;
+  setAiReasoningEffort: (effort: ReasoningEffort) => void;
   /** Adds a new profile (from a blank form or a provider preset) and switches to it. Never
    * touches any existing profile. */
   addConnectionProfile: (profile: Omit<ConnectionProfile, "id">) => void;
@@ -176,7 +188,14 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   ...(() => {
     const { connections, activeId } = loadConnections();
     const active = connections.find((c) => c.id === activeId)!;
-    return { connections, activeConnectionId: activeId, apiKey: active.apiKey, baseUrl: active.baseUrl, aiModel: active.model };
+    return {
+      connections,
+      activeConnectionId: activeId,
+      apiKey: active.apiKey,
+      baseUrl: active.baseUrl,
+      aiModel: active.model,
+      aiReasoningEffort: active.reasoningEffort,
+    };
   })(),
 
   showLoops: true,
@@ -226,6 +245,9 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
     writeLocalStorage("vensim-ai:model", name);
     set((s) => ({ aiModel: name, connections: updateActive(s, { model: name }) }));
   },
+  setAiReasoningEffort: (effort) => {
+    set((s) => ({ aiReasoningEffort: effort, connections: updateActive(s, { reasoningEffort: effort }) }));
+  },
 
   addConnectionProfile: (profile) => {
     const created: ConnectionProfile = { ...profile, id: crypto.randomUUID() };
@@ -233,7 +255,14 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
       const connections = [...s.connections, created];
       saveConnections(connections);
       writeLocalStorage(ACTIVE_CONNECTION_KEY, created.id);
-      return { connections, activeConnectionId: created.id, apiKey: created.apiKey, baseUrl: created.baseUrl, aiModel: created.model };
+      return {
+        connections,
+        activeConnectionId: created.id,
+        apiKey: created.apiKey,
+        baseUrl: created.baseUrl,
+        aiModel: created.model,
+        aiReasoningEffort: created.reasoningEffort,
+      };
     });
   },
 
@@ -242,7 +271,13 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
       const profile = s.connections.find((c) => c.id === id);
       if (!profile) return s;
       writeLocalStorage(ACTIVE_CONNECTION_KEY, id);
-      return { activeConnectionId: id, apiKey: profile.apiKey, baseUrl: profile.baseUrl, aiModel: profile.model };
+      return {
+        activeConnectionId: id,
+        apiKey: profile.apiKey,
+        baseUrl: profile.baseUrl,
+        aiModel: profile.model,
+        aiReasoningEffort: profile.reasoningEffort,
+      };
     });
   },
 
@@ -254,7 +289,14 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
       if (s.activeConnectionId !== id) return { connections };
       const next = connections[0]!;
       writeLocalStorage(ACTIVE_CONNECTION_KEY, next.id);
-      return { connections, activeConnectionId: next.id, apiKey: next.apiKey, baseUrl: next.baseUrl, aiModel: next.model };
+      return {
+        connections,
+        activeConnectionId: next.id,
+        apiKey: next.apiKey,
+        baseUrl: next.baseUrl,
+        aiModel: next.model,
+        aiReasoningEffort: next.reasoningEffort,
+      };
     });
   },
 

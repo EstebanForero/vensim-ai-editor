@@ -133,6 +133,10 @@ export interface AgentConnection {
   apiKey: string;
   baseUrl: string;
   model: string;
+  /** Omitted (not just falsy) means "don't send a reasoning_effort field at all" — most models
+   * don't support it, and some OpenAI-compatible servers reject an unrecognized field outright
+   * rather than ignoring it. */
+  reasoningEffort?: "low" | "medium" | "high";
 }
 
 /** Accumulates streamed tool-call deltas by their index within the response (the SDK/protocol's
@@ -188,6 +192,10 @@ export async function runAgentTurn(
         tools: OPENAI_TOOLS,
         tool_choice: "auto",
         stream: true,
+        // Not in every provider's request schema (it's an OpenAI reasoning-model concept,
+        // increasingly adopted elsewhere) — only sent when a profile actually opts in, since a
+        // stricter server can reject an unrecognized field outright rather than ignore it.
+        ...(connection.reasoningEffort ? { reasoning_effort: connection.reasoningEffort } : {}),
       },
       { signal },
     );
