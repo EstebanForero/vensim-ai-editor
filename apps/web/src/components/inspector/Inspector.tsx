@@ -310,9 +310,15 @@ function VariableInspector() {
           id="var-eq"
           value={equation}
           onChange={onEquationChange}
-          variables={allVariables(model)
-            .filter((v) => v.id !== variable.id)
-            .map((v) => ({ name: v.name, units: v.units }))}
+          variables={[
+            // Vensim's built-in clock, offered alongside the model's own variables so it's
+            // discoverable — it's usable in any equation but isn't a variable, so nothing else
+            // would ever suggest it.
+            { name: "Time", units: model.simSpec.timeUnits },
+            ...allVariables(model)
+              .filter((v) => v.id !== variable.id)
+              .map((v) => ({ name: v.name, units: v.units })),
+          ]}
           rows={lookup ? 5 : 3}
         />
         {variable.kind === "stock" && (

@@ -3,6 +3,30 @@
 
 export type ElementKind = "stock" | "flow" | "auxiliary" | "connector";
 
+/**
+ * Names that already mean something in a Vensim model and so can never be a variable's own name.
+ *
+ * `Time` is Vensim's built-in clock — the one a rate can be written against (`5 + 0.15 * Time`),
+ * and the one STEP/PULSE read. It is NOT a variable, and defining one is not a harmless shadow:
+ * this editor's simulator seeds the clock into the same environment every variable is evaluated
+ * in, so a variable named `Time` replaces it, and from then on every equation that reads the
+ * clock gets that variable's value instead. The symptom is silent and total — a model whose
+ * demand should grow over time produces a flat line, with no error, no validation issue, and no
+ * units complaint.
+ *
+ * The four control parameters are reserved for a different reason: a variable of that name would
+ * be written alongside the control record for the same name, and on re-import the file's own
+ * `.Control` section wins, so the variable you drew simply disappears.
+ *
+ * Matched case-insensitively, matching how Vensim itself resolves names.
+ */
+export const RESERVED_NAMES: readonly string[] = ["Time", "FINAL TIME", "INITIAL TIME", "TIME STEP", "SAVEPER"];
+
+export function isReservedName(name: string): boolean {
+  const lower = name.trim().toLowerCase();
+  return RESERVED_NAMES.some((r) => r.toLowerCase() === lower);
+}
+
 export interface Position {
   x: number;
   y: number;

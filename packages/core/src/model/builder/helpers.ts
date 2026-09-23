@@ -1,5 +1,14 @@
 import { ModelError } from "../errors.js";
-import { allVariables, findVariable, findVariableByName, type Model, type Position, type Variable } from "../types.js";
+import {
+  allVariables,
+  findVariable,
+  findVariableByName,
+  isReservedName,
+  RESERVED_NAMES,
+  type Model,
+  type Position,
+  type Variable,
+} from "../types.js";
 
 /**
  * A non-overlapping spot for a new element when no explicit position is given — which is the
@@ -37,6 +46,19 @@ export function stripDiacritics(text: string): string {
 }
 
 export function assertUniqueName(model: Model, name: string, ignoreId?: string): void {
+  // Checked here rather than at each call site because every creation and rename path routes
+  // through this one function — that's the whole point of it. See RESERVED_NAMES for why these
+  // particular names can't be taken (a variable called "Time" silently replaces the clock every
+  // equation is evaluated against).
+  if (isReservedName(name)) {
+    const reserved = RESERVED_NAMES.find((r) => r.toLowerCase() === name.trim().toLowerCase())!;
+    throw new ModelError(
+      `"${reserved}" is reserved by Vensim and can't be used as a variable name.` +
+        (reserved === "Time"
+          ? " Time is the model's built-in clock — you can already use it in any equation."
+          : " It's one of the simulation control parameters."),
+    );
+  }
   const existing = findVariableByName(model, name);
   if (existing && existing.id !== ignoreId) {
     throw new ModelError(`A variable named "${name}" already exists.`);

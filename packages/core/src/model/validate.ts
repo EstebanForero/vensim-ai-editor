@@ -1,4 +1,4 @@
-import { allVariables, type Model } from "./types.js";
+import { allVariables, isReservedName, RESERVED_NAMES, type Model } from "./types.js";
 
 export interface ValidationIssue {
   severity: "error" | "warning";
@@ -34,6 +34,20 @@ export function validateModel(model: Model): ValidationIssue[] {
   for (const c of model.connectors) {
     if (!ids.has(c.from)) issues.push({ severity: "error", message: `Connector references missing source ${c.from}.`, elementId: c.id });
     if (!ids.has(c.to)) issues.push({ severity: "error", message: `Connector references missing target ${c.to}.`, elementId: c.id });
+  }
+
+  // A reserved name can't be created through the builder, but an imported .mdl can still contain
+  // one — and that's exactly the case worth surfacing, since the model will run and look fine
+  // while quietly meaning something else (a variable named `Time` shadows the clock).
+  for (const v of allVariables(model)) {
+    if (isReservedName(v.name)) {
+      const reserved = RESERVED_NAMES.find((r) => r.toLowerCase() === v.name.trim().toLowerCase())!;
+      issues.push({
+        severity: "error",
+        message: `"${v.name}" is a reserved Vensim name (${reserved}) — it will be ignored, and any equation using it reads the built-in instead.`,
+        elementId: v.id,
+      });
+    }
   }
 
   const names = new Map<string, number>();

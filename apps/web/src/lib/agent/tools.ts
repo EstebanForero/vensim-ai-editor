@@ -18,7 +18,13 @@ can be built with add_auxiliary + add_relation alone, no stocks or flows require
 variable to any other variable whose equation references it, so the diagram stays legible and loops can be found.
 Call list_model if you need to see current state, list_loops after wiring up relations to check what feedback loops
 you've created, and run_simulation after building or changing equations to sanity-check behavior. Keep equations in
-Vensim syntax (e.g. "Population * Birth Rate", "IF THEN ELSE(x > 10, 1, 0)"). For a relationship that isn't a formula —
+Vensim syntax (e.g. "Population * Birth Rate", "IF THEN ELSE(x > 10, 1, 0)"). Time is Vensim's built-in
+clock and is already available in any equation — never create a variable for it, and never add it to the model.
+Its units are the model's own time unit, so a bare coefficient multiplying it is usually a units error Vensim's
+own Units Check will catch: in "5 + 0.15 * Time" the 0.15 is dimensionless, making the whole right-hand side
+come out in months rather than the declared units. Either give the coefficient explicit units so it works out
+(e.g. a per-month-per-month growth rate, or a slope variable declared with the right units), or don't scale by
+Time at all. For a relationship that isn't a formula —
 a non-linear effect read off a graph, or a table the exercise states outright — build a lookup table with set_lookup
 and call it from other equations as Name(input): an exercise giving "max X and Y value, min X and Y value" plus an
 input/output table is asking for exactly that. Never reference a lookup table bare as if it were a number, and set its

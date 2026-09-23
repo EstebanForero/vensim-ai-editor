@@ -379,6 +379,14 @@ export function checkUnits(model: Model): UnitIssue[] {
   const vars = allVariables(model);
   const unitsByName = new Map<string, UnitDim>();
   for (const v of vars) unitsByName.set(v.name, parseUnits(v.units));
+  // `Time` is a built-in, not a variable, so it has no declaration to read — its units are the
+  // model's own time unit. Omitting it made every equation mentioning the clock unresolvable,
+  // and this check skips what it can't resolve, so it said NOTHING about equations that are
+  // dimensionally wrong. That's not a theoretical gap: an equation like `5 + 0.15 * Time`
+  // declared in m3/Month is wrong (0.15 carries no units, so the right-hand side works out to
+  // Month), real Vensim's own Units Check flags it, and this check used to pass it silently —
+  // which meant the AI, told to run check_units and fix what it reports, shipped it.
+  unitsByName.set("Time", parseUnits(model.simSpec.timeUnits));
 
   const issues: UnitIssue[] = [];
   const check = (v: Variable, equation: string) => {

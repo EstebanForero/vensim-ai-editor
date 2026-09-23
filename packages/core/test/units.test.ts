@@ -178,3 +178,26 @@ describe("checkUnits", () => {
     expect(checkUnits(model)).toEqual([]);
   });
 });
+
+describe("Time is a built-in, not a variable", () => {
+  // Vensim's own Units Check flags `5 + 0.15 * Time` declared in m3/Month: 0.15 is dimensionless
+  // and Time is in months, so the right-hand side comes out in months. This check used to say
+  // NOTHING about it, because Time wasn't in the units map — every equation mentioning the clock
+  // was unresolvable, and unresolvable equations are skipped. That silence is what let the AI,
+  // which is told to run check_units and fix what it reports, ship the equation.
+  test("a coefficient applied to Time without units is flagged", () => {
+    const m = createEmptyModel("demand");
+    m.simSpec = { startTime: 0, stopTime: 80, dt: 0.25, integrationMethod: "euler", timeUnits: "Month" };
+    const a = addAuxiliary(m, { name: "Demanda A", equation: "5 + 0.15 * Time", units: "m3/Month" });
+    const issues = checkUnits(m);
+    expect(issues.some((i) => i.variableId === a.id)).toBe(true);
+  });
+
+  test("Time used with a correctly-unit'd coefficient is not flagged", () => {
+    const m = createEmptyModel("demand");
+    m.simSpec = { startTime: 0, stopTime: 80, dt: 0.25, integrationMethod: "euler", timeUnits: "Month" };
+    // Both terms in m3/Month: the literal is untyped and blends, the scaled Time works out.
+    const a = addAuxiliary(m, { name: "Ramp", equation: "0.15 * Time * 1", units: "Month" });
+    expect(checkUnits(m).some((i) => i.variableId === a.id)).toBe(false);
+  });
+});

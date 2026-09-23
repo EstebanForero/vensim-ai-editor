@@ -205,3 +205,44 @@ describe("builder", () => {
     expect(() => addStock(model, { name: "S" })).not.toThrow();
   });
 });
+
+describe("reserved names", () => {
+  // "Time" is Vensim's built-in clock. Defining a variable with that name doesn't shadow it in a
+  // harmless way — this simulator seeds the clock into the same environment every variable is
+  // evaluated in, so the variable replaces it and every equation reading the clock silently gets
+  // that variable's value instead. Rejected at creation, on every path (all of them route through
+  // assertUniqueName), so it can't be reached from the UI or from an AI tool call.
+  test("a variable can't be named Time", () => {
+    const m = createEmptyModel();
+    expect(() => addAuxiliary(m, { name: "Time", equation: "7" })).toThrow(/reserved/i);
+    expect(() => addStock(m, { name: "Time", initialEquation: "0" })).toThrow(/reserved/i);
+    expect(() => addFlow(m, { name: "Time" })).toThrow(/reserved/i);
+    expect(m.auxiliaries.length + m.stocks.length + m.flows.length).toBe(0);
+  });
+
+  test("reserved matches case-insensitively", () => {
+    const m = createEmptyModel();
+    expect(() => addAuxiliary(m, { name: "time", equation: "7" })).toThrow(/reserved/i);
+    expect(() => addAuxiliary(m, { name: "TIME", equation: "7" })).toThrow(/reserved/i);
+  });
+
+  test("the control parameters are reserved too", () => {
+    const m = createEmptyModel();
+    expect(() => addAuxiliary(m, { name: "TIME STEP", equation: "3" })).toThrow(/reserved/i);
+    expect(() => addAuxiliary(m, { name: "FINAL TIME", equation: "3" })).toThrow(/reserved/i);
+  });
+
+  test("renaming onto a reserved name is rejected", () => {
+    const m = createEmptyModel();
+    const a = addAuxiliary(m, { name: "Demand", equation: "5" });
+    expect(() => renameVariable(m, a.id, "Time")).toThrow(/reserved/i);
+    expect(a.name).toBe("Demand");
+  });
+
+  test("a model imported with one is flagged, not silently wrong", () => {
+    const m = createEmptyModel();
+    const a = addAuxiliary(m, { name: "Placeholder", equation: "7" });
+    a.name = "Time"; // as an imported .mdl could carry it
+    expect(validateModel(m).some((i) => i.elementId === a.id)).toBe(true);
+  });
+});

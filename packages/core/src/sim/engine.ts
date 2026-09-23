@@ -84,6 +84,14 @@ function computeEnv(model: Model, compiled: Compiled, stockValues: Map<string, n
     env.set(v.name, value);
     envObj[v.name] = value;
   }
+  // The clock wins, whatever the model contains. A variable named `Time` can't be created
+  // through the builder (it's in RESERVED_NAMES), but one can still arrive in an imported .mdl —
+  // and if it did, the loop above would have overwritten the clock and every equation reading it
+  // would silently get the wrong value for the rest of the run. Re-asserting it here means the
+  // worst case is a variable that's ignored (and flagged by validateModel) rather than a model
+  // that quietly computes the wrong answer.
+  env.set("Time", time);
+  envObj["Time"] = time;
   return env;
 }
 
