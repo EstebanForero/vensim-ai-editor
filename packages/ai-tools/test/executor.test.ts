@@ -1,6 +1,7 @@
 import { createEmptyModel } from "@vensim-ai/core";
 import { describe, expect, test } from "bun:test";
 import { executeTool } from "../src/executor.js";
+import { VENSIM_AI_TOOLS } from "../src/tools.js";
 
 describe("executeTool", () => {
   test("builds a model end-to-end via tool calls", () => {
@@ -92,5 +93,85 @@ describe("executeTool", () => {
     // The reference file's own dynamics settle Poblacion near ~13.4 by t=200 (births/deaths
     // rates favor decline from the initial 100) — this is the same system, not just the same shape.
     expect((simRes.result as { finalValues: Record<string, number> }).finalValues.Poblacion).toBeCloseTo(13.4, 0);
+  });
+});
+
+describe("set_lookup tool", () => {
+  test("creates a lookup and drives a flow through it", () => {
+    const model = createEmptyModel("Lookups");
+    expect(executeTool(model, "set_sim_spec", { start_time: 0, stop_time: 3, dt: 1 }).ok).toBe(true);
+    expect(executeTool(model, "add_stock", { name: "Stock", initial_equation: "100" }).ok).toBe(true);
+    expect(executeTool(model, "add_flow", { name: "Drain", equation: "Effect(Stock) * Stock", from: "Stock" }).ok).toBe(true);
+
+    const res = executeTool(model, "set_lookup", {
+      name: "Effect",
+      points: [
+        [0, 0],
+        [100, 1],
+      ],
+      x_min: 0,
+      x_max: 100,
+      y_min: 0,
+      y_max: 1,
+      units: "Dmnl",
+    });
+    expect(res.ok).toBe(true);
+
+    const sim = executeTool(model, "run_simulation", {});
+    expect(sim.ok).toBe(true);
+    // t=0: Stock 100 -> Effect(100)=1 -> drain 100; t=1: Stock 0 -> 0.
+    const series = (sim.result as { series: Record<string, number[]> }).series;
+    expect(series.Stock![0]).toBe(100);
+    expect(series.Stock![1]).toBe(0);
+  });
+
+  test("re-specifying an existing lookup replaces its curve without duplicating it", () => {
+    const model = createEmptyModel();
+    executeTool(model, "set_lookup", { name: "Effect", points: [[0, 0], [10, 1]] });
+    executeTool(model, "set_lookup", { name: "Effect", points: [[0, 0], [10, 5]], y_max: 9 });
+
+    const auxes = model.auxiliaries.filter((a) => a.name === "Effect");
+    expect(auxes.length).toBe(1);
+    const listed = executeTool(model, "list_model", {});
+    const aux = (listed.result as { auxiliaries: { name: string; lookup?: { points: unknown; yMax: number } }[] }).auxiliaries.find(
+      (a) => a.name === "Effect",
+    );
+    expect(aux?.lookup?.points).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 5 },
+    ]);
+    expect(aux?.lookup?.yMax).toBe(9);
+  });
+
+  test("accepts {x, y} objects as well as pairs", () => {
+    const model = createEmptyModel();
+    const res = executeTool(model, "set_lookup", {
+      name: "Effect",
+      points: [
+        { x: 0, y: 0 },
+        { x: 2, y: 4 },
+      ],
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  test("rejects malformed points and empty lists", () => {
+    const model = createEmptyModel();
+    expect(executeTool(model, "set_lookup", { name: "A", points: [[0]] }).ok).toBe(false);
+    expect(executeTool(model, "set_lookup", { name: "A", points: [] }).ok).toBe(false);
+    expect(executeTool(model, "set_lookup", { name: "A", points: [[0, "x"]] }).ok).toBe(false);
+  });
+});
+
+describe("tool surface consistency", () => {
+  // A tool declared in the schema but with no executor case fails only at runtime, as an
+  // "Unknown tool" error the model then has to recover from — a declared-but-undispatchable
+  // tool is always a bug, so it's worth asserting the two lists agree.
+  test("every declared tool is dispatchable", () => {
+    const model = createEmptyModel();
+    for (const tool of VENSIM_AI_TOOLS) {
+      const res = executeTool(model, tool.name, {});
+      expect(`${tool.name}: ${res.error ?? ""}`).not.toContain(`Unknown tool "${tool.name}"`);
+    }
   });
 });

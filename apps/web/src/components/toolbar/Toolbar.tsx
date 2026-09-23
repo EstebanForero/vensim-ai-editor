@@ -1,4 +1,4 @@
-import { addAuxiliary, addComment, addStock, annotateLoops, autoLayout } from "@vensim-ai/core";
+import { addAuxiliary, addComment, addLookup, addStock, annotateLoops, autoLayout } from "@vensim-ai/core";
 import { useReactFlow } from "@xyflow/react";
 import {
   Droplet,
@@ -11,6 +11,7 @@ import {
   RotateCw,
   Save,
   Square,
+  Table2,
   Waves,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -71,6 +72,17 @@ export function Toolbar() {
       const v = addAuxiliary(m, { name: uniqueName(m, "Variable"), equation: "1" });
       select(v.id);
     });
+  const onAddLookup = () =>
+    addNamed((m) => {
+      const v = addLookup(m, {
+        name: uniqueName(m, "Lookup"),
+        points: [
+          { x: 0, y: 0 },
+          { x: 10, y: 1 },
+        ],
+      });
+      select(v.id);
+    });
   const onAddComment = () =>
     addNamed((m) => {
       const c = addComment(m, { text: "Comment" });
@@ -104,6 +116,14 @@ export function Toolbar() {
         title="Add a variable — a plain number reads as a constant, an equation referencing others makes it computed, just like Vensim"
       >
         <Waves className="size-4" /> Variable
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onAddLookup}
+        title="Add a lookup table (Vensim's graphical function) — a curve entered as an Input/Output table, used by other equations as Name(input). Select it to edit the table."
+      >
+        <Table2 className="size-4" /> Lookup
       </Button>
       <Button size="sm" variant="outline" onClick={onAddComment} title="Add a freestanding text comment/annotation">
         <MessageSquarePlus className="size-4" /> Comment

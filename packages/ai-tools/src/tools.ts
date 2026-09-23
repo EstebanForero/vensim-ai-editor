@@ -76,6 +76,30 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
     },
   },
   {
+    name: "set_lookup",
+    description:
+      'Create or replace a lookup table (Vensim\'s "graphical function" / table function): a piecewise-linear curve from an input to an output, for a relationship that isn\'t a formula — a non-linear effect, a table read off a graph, a lookup given directly in the exercise. The curve is stored as a lookup variable and CALLED from other equations with an input, e.g. "Effect of Coverage on Rate(Coverage)"; never reference a lookup table bare as if it were a number. `points` are (input, output) pairs with strictly increasing inputs; the curve interpolates linearly between them and holds the first/last output beyond either end (it does not extrapolate). Give the x/y axis limits when the exercise states them (a common ask: "max X and Y value, min X and Y value") — otherwise they default to the data\'s own bounds. Set `units` to the units the curve RETURNS, not what it takes.',
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Lookup variable name (created if new; replaced if it already exists)." },
+        points: {
+          type: "array",
+          description: 'The curve, as [input, output] pairs in Vensim\'s own order, e.g. [[0,0],[10,0.2],[100,1]].',
+          items: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 },
+        },
+        x_min: { type: "number", description: "Left end of the x axis scale." },
+        x_max: { type: "number", description: "Right end of the x axis scale." },
+        y_min: { type: "number", description: "Bottom of the y axis scale." },
+        y_max: { type: "number", description: "Top of the y axis scale." },
+        units: { type: "string", description: "Units this lookup RETURNS." },
+        comment: { type: "string" },
+        ...position,
+      },
+      required: ["name", "points"],
+    },
+  },
+  {
     name: "add_constant",
     description: "Add a Constant — a named parameter with a fixed numeric value (a special case of Auxiliary).",
     parameters: {

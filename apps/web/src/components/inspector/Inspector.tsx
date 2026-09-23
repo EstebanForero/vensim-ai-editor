@@ -3,17 +3,19 @@ import {
   deleteComment,
   deleteElement,
   findVariable,
+  lookupTableOf,
   renameVariable,
   setCommentText,
   setConnectorPolarity,
   setEquation,
   setFlowEndpoint,
+  setLookupTable,
   setVariableComment,
   setVariableUnits,
   variableRelationships,
   type Polarity,
 } from "@vensim-ai/core";
-import { Trash2 } from "lucide-react";
+import { Table2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useModelStore } from "@/state/modelStore";
 import { EquationInput } from "./EquationInput";
+import { LookupEditorDialog } from "./LookupEditorDialog";
 
 export function Inspector() {
   const model = useModelStore((s) => s.model);
@@ -209,6 +212,7 @@ function VariableInspector() {
   const [equation, setEquationText] = useState("");
   const [units, setUnits] = useState("");
   const [comment, setComment] = useState("");
+  const [lookupOpen, setLookupOpen] = useState(false);
 
   useEffect(() => {
     if (!variable) return;
@@ -217,6 +221,8 @@ function VariableInspector() {
     setComment(variable.comment);
     setEquationText(variable.kind === "stock" ? variable.initialEquation : variable.equation);
   }, [variable]);
+
+  const lookup = variable && variable.kind === "auxiliary" ? lookupTableOf(variable, model) : null;
 
   if (!variable) {
     return (
@@ -291,7 +297,15 @@ function VariableInspector() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="var-eq">{variable.kind === "stock" ? "Initial value" : "Equation"}</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="var-eq">{variable.kind === "stock" ? "Initial value" : "Equation"}</Label>
+          {variable.kind === "auxiliary" && (
+            <Button size="sm" variant="outline" onClick={() => setLookupOpen(true)}>
+              <Table2 className="size-3.5" />
+              {lookup ? "Edit lookup table" : "Make lookup table"}
+            </Button>
+          )}
+        </div>
         <EquationInput
           id="var-eq"
           value={equation}
@@ -299,7 +313,7 @@ function VariableInspector() {
           variables={allVariables(model)
             .filter((v) => v.id !== variable.id)
             .map((v) => ({ name: v.name, units: v.units }))}
-          rows={3}
+          rows={lookup ? 5 : 3}
         />
         {variable.kind === "stock" && (
           <p className="text-xs text-muted-foreground">
@@ -307,10 +321,28 @@ function VariableInspector() {
             {variable.outflows.map((id) => model.flows.find((f) => f.id === id)?.name ?? id).join(", ") || "none"}
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
-          Start typing a name for suggestions — variables show their units, functions show a description.
-        </p>
+        {lookup ? (
+          <p className="text-xs text-muted-foreground">
+            A lookup table: {lookup.points.length} point{lookup.points.length === 1 ? "" : "s"}, inputs{" "}
+            {lookup.xMin}–{lookup.xMax}. Called from another equation as{" "}
+            <code className="font-mono">{variable.name}(input)</code> — the equation above is the table itself.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Start typing a name for suggestions — variables show their units, functions show a description.
+          </p>
+        )}
       </div>
+
+      {variable.kind === "auxiliary" && (
+        <LookupEditorDialog
+          open={lookupOpen}
+          onOpenChange={setLookupOpen}
+          variableName={variable.name}
+          table={lookup}
+          onApply={(table) => mutate((m) => setLookupTable(m, variable.id, table))}
+        />
+      )}
 
       {variable.kind === "flow" && <FlowEndpoints flowId={variable.id} />}
 

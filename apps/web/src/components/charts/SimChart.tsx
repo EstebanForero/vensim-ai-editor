@@ -1,4 +1,4 @@
-import { allVariables } from "@vensim-ai/core";
+import { isLookupVariable } from "@vensim-ai/core";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,12 @@ export function SimChart() {
   const simResult = useModelStore((s) => s.simResult);
   const runSimulation = useModelStore((s) => s.runSimulation);
 
-  const allNames = useMemo(() => allVariables(model).map((v) => v.name), [model]);
+  // Lookup definitions are curves, not time series — they have no values to plot, so offering
+  // them as a series would just produce an empty line.
+  const allNames = useMemo(
+    () => [...model.stocks, ...model.flows, ...model.auxiliaries].filter((v) => !isLookupVariable(v, model)).map((v) => v.name),
+    [model],
+  );
   const [selected, setSelected] = useState<Set<string>>(() => new Set(model.stocks.map((s) => s.name)));
 
   const data = useMemo(() => {

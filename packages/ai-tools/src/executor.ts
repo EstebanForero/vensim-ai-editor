@@ -4,6 +4,7 @@ import {
   addConnector,
   addConstant,
   addFlow,
+  addLookup,
   addStock,
   allVariables,
   annotateLoops,
@@ -15,6 +16,7 @@ import {
   findVariable,
   findVariableByName,
   isConstantAuxiliary,
+  lookupTableOf,
   ModelError,
   moveComment,
   moveElement,
@@ -23,6 +25,7 @@ import {
   setCommentText,
   setConnectorPolarity,
   setEquation,
+  setLookupPoints,
   setSimSpec,
   simulate,
   type IntegrationMethod,
@@ -53,6 +56,9 @@ function summarizeModel(model: Model) {
       equation: a.equation,
       isConstant: isConstantAuxiliary(a, model),
       units: a.units,
+      // A lookup's equation text is the raw tuple list, which is readable but not convenient to
+      // reason about numerically — the parsed curve is included alongside it for that.
+      ...(lookupTableOf(a, model) ? { lookup: lookupTableOf(a, model) } : {}),
     })),
     relations: model.connectors.map((c) => ({ id: c.id, from: c.from, to: c.to, polarity: c.polarity })),
     comments: model.comments.map((c) => ({ id: c.id, text: c.text })),
@@ -108,6 +114,36 @@ export function executeTool(model: Model, toolName: string, input: Record<string
           pos: posFrom(input),
         });
         return { ok: true, result: { id: a.id, name: a.name } };
+      }
+      case "set_lookup": {
+        const points = lookupPoints(input.points);
+        const name = str(input.name);
+        const existing = resolveVar(model, name);
+        if (existing) {
+          // An existing variable keeps its identity (id, position, units, comment) and just gets
+          // a new curve — so a lookup the user already placed and wired up isn't duplicated or
+          // disconnected by re-specifying it.
+          const aux = setLookupPoints(model, existing.id, {
+            points,
+            xMin: optNum(input.x_min),
+            xMax: optNum(input.x_max),
+            yMin: optNum(input.y_min),
+            yMax: optNum(input.y_max),
+          });
+          return { ok: true, result: { id: aux.id, name: aux.name, updated: true } };
+        }
+        const aux = addLookup(model, {
+          name,
+          points,
+          xMin: optNum(input.x_min),
+          xMax: optNum(input.x_max),
+          yMin: optNum(input.y_min),
+          yMax: optNum(input.y_max),
+          units: optStr(input.units),
+          comment: optStr(input.comment),
+          pos: posFrom(input),
+        });
+        return { ok: true, result: { id: aux.id, name: aux.name, equation: aux.equation } };
       }
       case "add_constant": {
         const a = addConstant(model, {
@@ -241,6 +277,28 @@ function num(v: unknown): number {
 function posFrom(input: Record<string, unknown>): { x: number; y: number } | undefined {
   if (typeof input.x === "number" && typeof input.y === "number") return { x: input.x, y: input.y };
   return undefined;
+}
+function optNum(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+/** Accepts a lookup's points as `[x, y]` pairs (the documented shape, mirroring Vensim's own
+ * `(x,y),(x,y)` notation) OR as `{x, y}` objects, since a model that reaches for the latter is
+ * expressing the same thing unambiguously — rejecting it would just cost a retry. */
+function lookupPoints(v: unknown): { x: number; y: number }[] {
+  if (!Array.isArray(v)) throw new ModelError("`points` must be an array of [input, output] pairs.");
+  const points = v.map((p, i) => {
+    if (Array.isArray(p) && p.length >= 2 && typeof p[0] === "number" && typeof p[1] === "number") {
+      return { x: p[0], y: p[1] };
+    }
+    if (p && typeof p === "object" && "x" in p && "y" in p) {
+      const o = p as { x: unknown; y: unknown };
+      if (typeof o.x === "number" && typeof o.y === "number") return { x: o.x, y: o.y };
+    }
+    throw new ModelError(`Lookup point ${i} must be a [input, output] pair of numbers.`);
+  });
+  if (points.length === 0) throw new ModelError("`points` needs at least one [input, output] pair.");
+  return points;
 }
 function polarity(v: unknown): Polarity {
   if (v !== "+" && v !== "-") throw new ModelError(`Expected polarity "+" or "-", got ${JSON.stringify(v)}.`);
