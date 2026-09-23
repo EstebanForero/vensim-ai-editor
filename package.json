@@ -12,6 +12,7 @@
     "typecheck": "bun run --cwd packages/core typecheck && bun run --cwd packages/ai-tools typecheck && bun run --cwd apps/web typecheck"
   },
   "devDependencies": {
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "xmutil": "^1.0.1"
   }
 }
