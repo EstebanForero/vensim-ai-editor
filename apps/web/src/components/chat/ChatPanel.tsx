@@ -1,5 +1,5 @@
 import { useReactFlow } from "@xyflow/react";
-import { Bot, KeyRound, Loader2, Plus, Send, Settings2, Square, Trash2, TriangleAlert, Wrench } from "lucide-react";
+import { Bot, KeyRound, Loader2, MessageSquareX, Plus, Send, Settings2, Square, Trash2, TriangleAlert, Wrench } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,6 +122,8 @@ export function ChatPanel() {
   const setAgentRunning = useModelStore((s) => s.setAgentRunning);
   const mutate = useModelStore((s) => s.mutate);
 
+  const clearChat = useModelStore((s) => s.clearChat);
+
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [addingProfile, setAddingProfile] = useState(false);
@@ -233,6 +235,28 @@ export function ChatPanel() {
 
   const stop = () => abortControllerRef.current?.abort();
 
+  /**
+   * Clears the transcript AND the agent's conversation memory.
+   *
+   * Both, because they're separate things: `chatMessages` is what's drawn, while the actual
+   * context the model sees on the next turn lives in `sessionRef` and is never shown. Clearing
+   * only the messages would wipe the panel and leave the assistant still remembering every model
+   * edit discussed — so a follow-up like "now add an outflow to that stock" would work as if
+   * nothing had been cleared, which is worse than not offering the button at all.
+   *
+   * The model itself is untouched: this is a conversation, not the diagram. Nothing you built
+   * is lost — and the assistant can always re-read the diagram with list_model.
+   */
+  const clearConversation = () => {
+    if (isAgentRunning || messages.length === 0) return;
+    if (!confirm("Clear this conversation? The diagram is not affected — only the chat history and the assistant's memory of it.")) {
+      return;
+    }
+    sessionRef.current = createAgentSession();
+    setPendingToolName(null);
+    clearChat();
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b p-2">
@@ -246,6 +270,16 @@ export function ChatPanel() {
         />
         <Button size="icon" variant="ghost" className="size-7 shrink-0" onClick={() => setShowSettings((s) => !s)} title="Connection settings">
           <Settings2 className="size-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          onClick={clearConversation}
+          disabled={isAgentRunning || messages.length === 0}
+          title="Clear chat — removes the transcript and what the assistant remembers of it. The diagram is not affected."
+        >
+          <MessageSquareX className="size-4" />
         </Button>
       </div>
 
