@@ -1,0 +1,91 @@
+{UTF-8}
+Inventory= INTEG (
+	Restock -Shipping,
+		200)
+	~	widgets
+	~	
+	|
+
+Restock= 50
+	~	widgets/Month
+	~	
+	|
+
+Shipping= Nominal Shipping Rate * Effect of Coverage on Shipping(Inventory Coverage)
+	~	widgets/Month
+	~	
+	|
+
+Nominal Shipping Rate= 60
+	~	widgets/Month
+	~	
+	|
+
+Target Inventory= 200
+	~	widgets
+	~	
+	|
+
+Inventory Coverage= Inventory / Target Inventory
+	~	Dmnl
+	~	
+	|
+
+Effect of Coverage on Shipping(
+	[(0,0)-(2,1)],
+	(0,0),(0.5,0.4),(1,0.8),(1.5,0.95),(2,1))
+	~	Dmnl
+	~	How full the warehouse is, as a fraction of the nominal shipping rate.
+	|
+
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+
+FINAL TIME= 24
+	~	Month
+	~	The final time for the simulation.
+	|
+
+INITIAL TIME= 0
+	~	Month
+	~	The initial time for the simulation.
+	|
+
+SAVEPER= TIME STEP
+	~	Month
+	~	The frequency with which output is stored.
+	|
+
+TIME STEP= 0.25
+	~	Month
+	~	The time step for the simulation.
+	|
+
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*View 1
+$192-192-192,0,Times New Roman|12||0-0-0|0-0-0|0-0-255|-1--1--1|-1--1--1|96,96,100,0
+10,1,Inventory,165,223,45,23,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,2,Nominal Shipping Rate,345,403,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,3,Target Inventory,165,403,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,4,Inventory Coverage,165,313,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,5,Effect of Coverage on Shipping,345,313,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+11,6,0,6,192,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,7,Restock,6,226,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,8,48,-92,173,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,9,6,8,100,0,0,22,0,192,0,-1--1--1,,1|(-43,183)|
+1,10,6,1,4,0,0,22,0,192,0,-1--1--1,,1|(86,207)|
+11,11,0,346,192,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,12,Shipping,346,226,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,13,11,1,100,0,0,22,0,192,0,-1--1--1,,1|(256,207)|
+12,14,48,445,175,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,15,11,14,4,0,0,22,0,192,0,-1--1--1,,1|(395,184)|
+1,16,4,11,1,0,43,0,0,192,0,-1--1--1,,1|(277,315)|
+1,17,1,4,1,0,43,0,0,192,0,-1--1--1,,1|(188,268)|
+1,18,2,11,1,0,43,0,0,192,0,-1--1--1,,1|(390,315)|
+12,19,0,285,214,27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B1
+///---\\\
