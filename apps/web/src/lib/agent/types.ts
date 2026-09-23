@@ -53,6 +53,12 @@ export interface AgentCallbacks {
   /** Fired when `signal` aborts the turn (the user pressed Stop) — distinct from onStoppedEarly,
    * which is specifically about running out of tool-round budget, not a deliberate cancel. */
   onAborted?: () => void;
+  /** Fired when a round failed with a transient connection error and is about to be retried.
+   * `attempt` is the attempt that just failed (1-based), so the next one is `attempt + 1`.
+   * The failed round wrote nothing at all — neither to session.history nor to the model — so the
+   * UI should discard whatever partial reply it streamed for it before the retry re-renders the
+   * same message from scratch. */
+  onRoundRetry?: (attempt: number, maxAttempts: number, error: unknown, delayMs: number) => void;
   /** Fired when the session's history was compacted before this turn — `messagesSummarized` is
    * how many old entries got folded into the summary that replaced them. */
   onHistorySummarized?: (messagesSummarized: number) => void;
@@ -86,7 +92,13 @@ export interface AgentBackend {
 
   /** Streams one assistant turn for the CURRENT session.history, appending the assistant's own
    * turn (text and/or tool calls, in this backend's native shape) as it completes. Returns
-   * "aborted" if `signal` fired during the round (nothing left half-appended in that case). */
+   * "aborted" if `signal` fired during the round (nothing left half-appended in that case).
+   *
+   * A round is ALL-OR-NOTHING with respect to `session.history`: if this throws, history must be
+   * left exactly as it was — never a partial assistant turn, never a turn whose tool_calls have
+   * no matching results. The shared loop relies on this to retry a failed round (see agent.ts),
+   * which is only safe because a throw means literally nothing was recorded. Both backends
+   * satisfy it by pushing their turn only after the stream has finished. */
   streamRound(
     connection: AgentConnection,
     session: AgentSession,

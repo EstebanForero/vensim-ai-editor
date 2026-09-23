@@ -1,10 +1,10 @@
 import { useReactFlow } from "@xyflow/react";
-import { Bot, KeyRound, Loader2, MessageSquareX, Plus, Send, Settings2, Square, Trash2, TriangleAlert, Wrench } from "lucide-react";
+import { Bot, KeyRound, Loader2, MessageSquareX, Plus, RotateCcw, Send, Settings2, Square, Trash2, TriangleAlert, Wrench } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { createAgentSession, runAgentTurn, type AgentSession } from "@/lib/agent";
+import { createAgentSession, isRetriableConnectionError, runAgentTurn, type AgentSession } from "@/lib/agent";
 import { PROVIDER_PRESETS } from "@/lib/providerPresets";
 import { useModelStore, type ReasoningEffort } from "@/state/modelStore";
 
@@ -100,6 +100,28 @@ function AddProfileForm({ onDone }: { onDone: () => void }) {
   );
 }
 
+/**
+ * Wording for a turn that ended in an error.
+ *
+ * The reassurance is the point. A failed round is atomic — nothing was appended to the assistant's
+ * history and no tool ever ran — so the diagram is exactly as the last completed step left it, and
+ * re-sending the message replays that step rather than duplicating it. That is true of every
+ * failure, not just connection ones, which is why it's said either way; saying it only for network
+ * errors would leave the user guessing about the rest.
+ *
+ * Only the diagnosis differs: a network/temporary-provider failure is worth naming as such
+ * (especially after the retries were spent on it), while a rejected request — a bad key, an
+ * unknown model — is not a connection problem and shouldn't be described as one.
+ */
+export function describeTurnFailure(err: unknown, attemptsMade: number): string {
+  const detail = err instanceof Error ? err.message : String(err);
+  const reassurance =
+    "Nothing was half-applied — the diagram is exactly as it was after the last completed step, and the assistant has no memory of the interrupted reply — so re-sending your message is safe.";
+  return isRetriableConnectionError(err)
+    ? `Lost the connection to the model${attemptsMade > 1 ? ` (${attemptsMade} attempts)` : ""}: ${detail}. ${reassurance}`
+    : `Error talking to the model: ${detail}. ${reassurance}`;
+}
+
 export function ChatPanel() {
   const apiKey = useModelStore((s) => s.apiKey);
   const setApiKey = useModelStore((s) => s.setApiKey);
@@ -118,6 +140,7 @@ export function ChatPanel() {
   const addChatMessage = useModelStore((s) => s.addChatMessage);
   const appendToChatMessage = useModelStore((s) => s.appendToChatMessage);
   const finalizeChatMessage = useModelStore((s) => s.finalizeChatMessage);
+  const removeChatMessage = useModelStore((s) => s.removeChatMessage);
   const isAgentRunning = useModelStore((s) => s.isAgentRunning);
   const setAgentRunning = useModelStore((s) => s.setAgentRunning);
   const mutate = useModelStore((s) => s.mutate);
@@ -128,6 +151,10 @@ export function ChatPanel() {
   const [showSettings, setShowSettings] = useState(false);
   const [addingProfile, setAddingProfile] = useState(false);
   const [pendingToolName, setPendingToolName] = useState<string | null>(null);
+  // A dropped connection mid-turn is a transient blip, not a conversation event — it belongs in
+  // the live status line (which disappears on its own), not as a permanent message in the
+  // transcript that the user has to scroll past on every future turn.
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const sessionRef = useRef<AgentSession>(createAgentSession());
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -155,10 +182,23 @@ export function ChatPanel() {
     addChatMessage({ id: crypto.randomUUID(), role: "user", text });
     setAgentRunning(true);
     setPendingToolName(null);
+    setRetryNotice(null);
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
     const streamedIds = new Set<string>();
+    // 1 for the first try, bumped by each onRoundRetry — only used to word the failure message
+    // ("1 attempt" reads as "it just failed", which understates a retried connection).
+    let attemptsMade = 1;
+
+    // Whatever streamed in from a round that then failed must stop looking like it's still
+    // typing. Without this the bubble keeps its pulsing cursor forever — the "it just stops"
+    // symptom of a dropped connection — because the only things that clear that flag are a
+    // completed message or an explicit abort, and a network failure is neither.
+    const settleStreamed = () => {
+      for (const id of streamedIds) finalizeChatMessage(id);
+      streamedIds.clear();
+    };
 
     // Each tool call must mutate whatever is *currently* the store's live model object, not a
     // snapshot captured once up front — mutate() below replaces that object with a fresh clone
@@ -173,16 +213,14 @@ export function ChatPanel() {
         {
           onAssistantTextDelta: (id, delta) => {
             setPendingToolName(null);
+            setRetryNotice(null);
             streamedIds.add(id);
             appendToChatMessage(id, delta);
           },
           // The full text already arrived incrementally via onAssistantTextDelta above — this
           // fires alongside it with the same text once the message completes, so all that's
           // left to do here is close out whichever message id was actively streaming.
-          onAssistantText: () => {
-            for (const id of streamedIds) finalizeChatMessage(id);
-            streamedIds.clear();
-          },
+          onAssistantText: settleStreamed,
           onToolCallStart: (name) => setPendingToolName(name),
           onToolCall: (name, toolInput, result) => {
             setPendingToolName(null);
@@ -201,8 +239,21 @@ export function ChatPanel() {
               text: `Stopped after ${roundsUsed} tool-call rounds without finishing the request — it may be only partly done. Send another message (e.g. "continue") to pick up where it left off.`,
             });
           },
+          onRoundRetry: (attempt, maxAttempts, err, delayMs) => {
+            attemptsMade = attempt + 1;
+            // Drop, don't just settle: the retry re-produces this message from scratch, and the
+            // model never recorded this half of it anywhere — leaving it on screen would show a
+            // truncated sentence immediately followed by the full one, as if it had said both.
+            for (const id of streamedIds) removeChatMessage(id);
+            streamedIds.clear();
+            setPendingToolName(null);
+            setRetryNotice(
+              `Connection dropped (${err instanceof Error ? err.message : String(err)}) — ` +
+                `retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt + 1} of ${maxAttempts})…`,
+            );
+          },
           onAborted: () => {
-            for (const id of streamedIds) finalizeChatMessage(id);
+            settleStreamed();
             addChatMessage({
               id: crypto.randomUUID(),
               role: "warning",
@@ -221,14 +272,15 @@ export function ChatPanel() {
         controller.signal,
       );
     } catch (err) {
-      addChatMessage({
-        id: crypto.randomUUID(),
-        role: "warning",
-        text: `Error talking to the model: ${err instanceof Error ? err.message : String(err)} — nothing after the last successful step was applied.`,
-      });
+      // The partial reply is kept (it may be all the model managed to say about what it was
+      // doing), but it must be settled first — an unterminated streaming bubble is the
+      // "it just stops" symptom this whole path exists to avoid.
+      settleStreamed();
+      addChatMessage({ id: crypto.randomUUID(), role: "warning", text: describeTurnFailure(err, attemptsMade) });
     } finally {
       setAgentRunning(false);
       setPendingToolName(null);
+      setRetryNotice(null);
       abortControllerRef.current = null;
     }
   };
@@ -387,12 +439,13 @@ export function ChatPanel() {
           })}
           {isAgentRunning && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
-              {pendingToolName
-                ? `Calling ${pendingToolName}…`
-                : messages.some((m) => m.streaming)
-                  ? "Editing the diagram…"
-                  : "Thinking…"}
+              {retryNotice ? <RotateCcw className="size-3.5 animate-spin" /> : <Loader2 className="size-3.5 animate-spin" />}
+              {retryNotice ??
+                (pendingToolName
+                  ? `Calling ${pendingToolName}…`
+                  : messages.some((m) => m.streaming)
+                    ? "Editing the diagram…"
+                    : "Thinking…")}
             </div>
           )}
         </div>

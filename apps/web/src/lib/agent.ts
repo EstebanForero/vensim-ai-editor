@@ -8,7 +8,7 @@ import type { Model } from "@vensim-ai/core";
 import { openaiBackend, DEFAULT_BASE_URL, DEFAULT_MODEL } from "./agent/openaiBackend.js";
 import { geminiBackend, GEMINI_DEFAULT_MODEL } from "./agent/geminiBackend.js";
 import { executeToolCall } from "./agent/tools.js";
-import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession } from "./agent/types.js";
+import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, StreamedRound } from "./agent/types.js";
 
 export { createAgentSession } from "./agent/types.js";
 export type { AgentSession, AgentConnection, AgentCallbacks } from "./agent/types.js";
@@ -28,6 +28,124 @@ function backendFor(connection: AgentConnection): AgentBackend {
  * since "gpt-4o" means nothing to Gemini's endpoint and vice versa. */
 export function defaultModelFor(baseUrl: string): string {
   return baseUrl.includes("generativelanguage.googleapis.com") ? GEMINI_DEFAULT_MODEL : DEFAULT_MODEL;
+}
+
+/**
+ * A connection that fails partway through a turn is the single most common way a long agent run
+ * dies, and it is always worth another attempt: the round is atomic (see AgentBackend.streamRound),
+ * so a failed one wrote nothing anywhere, and re-sending the same request is exactly what the user
+ * would otherwise do by hand.
+ *
+ * Classification has to be message-based rather than class-based, because the openai SDK rethrows
+ * whatever `fetch` threw, unwrapped — there is no shared error class to match on. The browser's
+ * word for it depends on where the connection died: "Failed to fetch" when it never got
+ * established at all (DNS, refused, CORS preflight), "network error" when the response body's
+ * stream errored mid-flight (which is what a provider dropping a long streamed reply looks like),
+ * "Load failed" on WebKit, "fetch failed"/"terminated"/"other side closed" under undici.
+ */
+const NETWORK_FAILURE_MESSAGES = new Set([
+  "failed to fetch",
+  "network error",
+  "load failed",
+  "fetch failed",
+  "terminated",
+  "other side closed",
+  "socket hang up",
+  "connection error.",
+  "request timed out.",
+]);
+/** Checked against `code`, `cause.code` AND the message text, because the same failure reports it
+ * in different places depending on runtime: Bun's fetch raises a TypeError whose message is prose
+ * ("The socket connection was closed unexpectedly…") with `code: "ECONNRESET"` on the side, while
+ * undici puts "other side closed" in the message and `UND_ERR_SOCKET` in the cause. */
+const NETWORK_FAILURE_CODES = /ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|ENOTFOUND|EAI_AGAIN|UND_ERR/i;
+/** HTTP statuses the provider itself is telling us are temporary — rate limits and lock/timeout
+ * conditions. The SDK retries these twice on its own before giving up; these are the attempts
+ * after that, with a longer backoff, since a rate limit that survived two retries needs real time
+ * rather than a few hundred milliseconds. */
+const RETRIABLE_STATUSES = new Set([408, 409, 425, 429]);
+
+/** `signal` is the CALLER's abort signal (the Stop button), not the SDK's internal request
+ * timeout — the two both surface as an AbortError but mean opposite things. A caller abort is
+ * already returned as "aborted" by each backend before it can reach here, so an AbortError that
+ * does arrive is the SDK's own timeout and is worth retrying. */
+export function isRetriableConnectionError(err: unknown, signal?: AbortSignal): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === "AbortError") return !signal?.aborted;
+  // Whatever HTTP status the provider returned is authoritative when there is one — a 401 or a
+  // 400 with a malformed-request body fails identically forever, and retrying it just delays the
+  // error the user needs to see.
+  const status = (err as { status?: unknown }).status;
+  if (typeof status === "number") return RETRIABLE_STATUSES.has(status) || status >= 500;
+
+  const message = err.message.toLowerCase();
+  if (NETWORK_FAILURE_MESSAGES.has(message)) return true;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === "string" && NETWORK_FAILURE_CODES.test(code)) return true;
+  if (NETWORK_FAILURE_CODES.test(err.message)) return true;
+
+  // The wrapper's own text is often just "Connection error." while the detail that identifies the
+  // failure sits on the cause — check it too, one level down, which is as deep as these go.
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    if (NETWORK_FAILURE_MESSAGES.has(cause.message.toLowerCase())) return true;
+    const causeCode = (cause as { code?: unknown }).code;
+    if (typeof causeCode === "string" && NETWORK_FAILURE_CODES.test(causeCode)) return true;
+    if (NETWORK_FAILURE_CODES.test(cause.message)) return true;
+  }
+  // Last resort: the SDK's own connection-error classes, matched by name since they're the only
+  // signal left if a future version words the message differently. (Note `err.name` on these is
+  // plain "Error" in some runtimes — the constructor name is the reliable one.)
+  return err.constructor?.name === "APIConnectionError" || err.constructor?.name === "APIConnectionTimeoutError";
+}
+
+/** How many times one round is attempted in total, and how long to wait before each retry after
+ * the first failure. Deliberately short: this is an interactive editor, and a user watching a
+ * spinner would rather see a clear error than wait out a long exponential ramp. */
+export const ROUND_RETRY_ATTEMPTS = 3;
+export const ROUND_RETRY_DELAYS_MS = [1000, 3000];
+
+/** A sleep that a Stop button can cut short — without this, aborting during a retry delay would
+ * leave the UI frozen for the rest of the backoff with no way to cancel. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
+}
+
+/** One round, retried on transient connection failures. Each attempt gets its OWN stream id: the
+ * failed attempt's partial text must never be appended to (that would splice two half-replies
+ * together into a message the model never produced) — the UI is told to discard it instead, and
+ * the retry renders a fresh bubble in its place. */
+async function streamRoundWithRetry(
+  backend: AgentBackend,
+  connection: AgentConnection,
+  session: AgentSession,
+  callbacks: AgentCallbacks,
+  signal: AbortSignal | undefined,
+  { maxAttempts, delaysMs }: { maxAttempts: number; delaysMs: number[] },
+): Promise<StreamedRound | "aborted"> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await backend.streamRound(connection, session, callbacks, signal, crypto.randomUUID());
+    } catch (err) {
+      // A user-initiated Stop can surface as a thrown error too (rather than the backends' own
+      // "aborted" return) — that's never something to retry.
+      if (signal?.aborted) return "aborted";
+      if (attempt >= maxAttempts || !isRetriableConnectionError(err, signal)) throw err;
+      const delayMs = delaysMs[attempt - 1] ?? delaysMs[delaysMs.length - 1] ?? 0;
+      callbacks.onRoundRetry?.(attempt, maxAttempts, err, delayMs);
+      await sleep(delayMs, signal);
+      if (signal?.aborted) return "aborted";
+    }
+  }
 }
 
 export async function runAgentTurn(
@@ -50,6 +168,9 @@ export async function runAgentTurn(
   // call) — a long tool loop with no in-flight network request at all still needs to be
   // interruptible mid-round, not just while actually waiting on the model.
   signal?: AbortSignal,
+  // Overridable so tests don't have to sit through real backoff; production callers use the
+  // defaults. See ROUND_RETRY_ATTEMPTS/DELAYS_MS for why these are as short as they are.
+  retry = { maxAttempts: ROUND_RETRY_ATTEMPTS, delaysMs: ROUND_RETRY_DELAYS_MS },
 ): Promise<void> {
   const backend = backendFor(connection);
 
@@ -64,8 +185,7 @@ export async function runAgentTurn(
       return;
     }
 
-    const streamId = crypto.randomUUID();
-    const result = await backend.streamRound(connection, session, callbacks, signal, streamId);
+    const result = await streamRoundWithRetry(backend, connection, session, callbacks, signal, retry);
     if (result === "aborted") {
       callbacks.onAborted?.();
       return;

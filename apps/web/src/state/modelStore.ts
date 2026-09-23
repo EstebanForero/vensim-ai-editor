@@ -165,6 +165,10 @@ interface ModelStoreState {
   appendToChatMessage: (id: string, delta: string) => void;
   /** Marks a streamed message as complete (clears its `streaming` flag). */
   finalizeChatMessage: (id: string) => void;
+  /** Drops a message entirely — used for a streamed reply whose round failed and is being
+   * retried, since the model will produce that message again from scratch and the half-reply was
+   * never recorded anywhere (not in the transcript's history, not in the assistant's memory). */
+  removeChatMessage: (id: string) => void;
   setAgentRunning: (running: boolean) => void;
   clearChat: () => void;
   toggleShowLoops: () => void;
@@ -330,6 +334,7 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
 
   finalizeChatMessage: (id) =>
     set((s) => ({ chatMessages: s.chatMessages.map((m) => (m.id === id ? { ...m, streaming: false } : m)) })),
+  removeChatMessage: (id) => set((s) => ({ chatMessages: s.chatMessages.filter((m) => m.id !== id) })),
   setAgentRunning: (running) => set({ isAgentRunning: running }),
   clearChat: () => set({ chatMessages: [] }),
 
