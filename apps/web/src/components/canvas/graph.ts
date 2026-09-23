@@ -1,4 +1,4 @@
-import { allVariables, findVariable, type Loop, type Model, type Position as ModelPosition, type Size } from "@vensim-ai/core";
+import { allVariables, findVariable, lookupTableOf, type Loop, type Model, type Position as ModelPosition, type Size } from "@vensim-ai/core";
 import type { Edge, Node } from "@xyflow/react";
 import { closestSides, sourceHandleId, targetHandleId } from "./edgeRouting";
 
@@ -61,11 +61,16 @@ export function buildGraph(
     }
   }
   for (const a of model.auxiliaries) {
+    // A lookup gets its own node type so the canvas can draw its curve — it's still an
+    // auxiliary in the model (see core's model/lookup.ts), just one worth showing the shape of.
+    const table = lookupTableOf(a, model);
     nodes.push({
       id: a.id,
-      type: "aux",
+      type: table ? "lookup" : "aux",
       position: a.pos,
-      data: { variable: a, selected: a.id === selectedId, editing: a.id === editingId },
+      data: table
+        ? { variable: a, table, selected: a.id === selectedId, editing: a.id === editingId }
+        : { variable: a, selected: a.id === selectedId, editing: a.id === editingId },
     });
   }
   for (const c of model.connectors) {

@@ -133,6 +133,10 @@ interface ModelStoreState {
    * on the canvas (via React Flow's own onNodeDoubleClick, not a raw DOM dblclick — that
    * reliably coexists with node dragging, where a plain DOM listener would not). */
   editingId: string | null;
+  /** id of the lookup variable whose curve editor is open, or null. Held here rather than inside
+   * the Inspector because the canvas opens it too (double-clicking a lookup node) — and it has
+   * to be openable for a variable that isn't the selected one. */
+  lookupEditorId: string | null;
 
   setModel: (model: Model) => void;
   /** Applies an in-place mutation (a @vensim-ai/core builder call) and commits a fresh snapshot. */
@@ -169,6 +173,8 @@ interface ModelStoreState {
   toggleFlowMode: () => void;
   setPendingFlowFrom: (v: { stockId: string | null; pos: { x: number; y: number } } | null) => void;
   setEditingId: (id: string | null) => void;
+  openLookupEditor: (id: string) => void;
+  closeLookupEditor: () => void;
 }
 
 function commit(model: Model) {
@@ -204,6 +210,7 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   flowMode: false,
   pendingFlowFrom: null,
   editingId: null,
+  lookupEditorId: null,
 
   setModel: (model) => set({ ...commit(model), selectedId: null, simResult: null }),
 
@@ -333,4 +340,6 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   toggleFlowMode: () => set((s) => ({ flowMode: !s.flowMode, pendingFlowFrom: null, relationMode: false, pendingRelationFrom: null })),
   setPendingFlowFrom: (v) => set({ pendingFlowFrom: v }),
   setEditingId: (id) => set({ editingId: id }),
+  openLookupEditor: (id) => set({ lookupEditorId: id }),
+  closeLookupEditor: () => set({ lookupEditorId: null }),
 }));

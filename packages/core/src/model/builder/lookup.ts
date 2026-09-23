@@ -5,6 +5,12 @@ import type { Auxiliary, Model, Position, Size } from "../types.js";
 import { addAuxiliary } from "./auxiliary.js";
 import { resolveVariableRef } from "./helpers.js";
 
+/** Roomier than a plain auxiliary's box: a lookup is drawn on the canvas with its curve inside
+ * it (see the web app's LookupNode), and this size is what auto-layout spaces against and what
+ * the exported sketch declares — so it has to match what actually gets rendered, or laid-out
+ * diagrams overlap. */
+const DEFAULT_LOOKUP_SIZE: Size = { width: 150, height: 68 };
+
 export interface AddLookupInput {
   name: string;
   /** (input, output) pairs, at least one. */
@@ -32,7 +38,7 @@ export function addLookup(model: Model, input: AddLookupInput): Auxiliary {
     units: input.units,
     comment: input.comment,
     pos: input.pos,
-    size: input.size,
+    size: input.size ?? DEFAULT_LOOKUP_SIZE,
   });
 }
 

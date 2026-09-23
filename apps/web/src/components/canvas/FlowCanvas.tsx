@@ -19,10 +19,10 @@ import { useEffect, useMemo } from "react";
 import { uniqueName } from "@/lib/naming";
 import { useModelStore } from "@/state/modelStore";
 import { buildGraph } from "./graph";
-import { AuxNode, CommentNode, FlowNode, LoopNode, StockNode } from "./nodes";
+import { AuxNode, CommentNode, FlowNode, LookupNode, LoopNode, StockNode } from "./nodes";
 import { RelationEdge } from "./RelationEdge";
 
-const nodeTypes = { stock: StockNode, flow: FlowNode, aux: AuxNode, loop: LoopNode, comment: CommentNode };
+const nodeTypes = { stock: StockNode, flow: FlowNode, aux: AuxNode, lookup: LookupNode, loop: LoopNode, comment: CommentNode };
 const edgeTypes = { relation: RelationEdge };
 
 export function FlowCanvas() {
@@ -39,6 +39,7 @@ export function FlowCanvas() {
   const setPendingFlowFrom = useModelStore((s) => s.setPendingFlowFrom);
   const editingId = useModelStore((s) => s.editingId);
   const setEditingId = useModelStore((s) => s.setEditingId);
+  const openLookupEditor = useModelStore((s) => s.openLookupEditor);
 
   const { screenToFlowPosition } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -54,6 +55,13 @@ export function FlowCanvas() {
   }, [model, selectedId, loops, editingId]);
 
   const onNodeDoubleClick: NodeMouseHandler = (_evt, node) => {
+    // A lookup opens its curve editor instead of the inline rename — see LookupNode, which also
+    // handles this itself so the double-click registers before React Flow's drag handling does;
+    // this is the fallback for whatever the node's own handler doesn't catch.
+    if (node.type === "lookup") {
+      openLookupEditor(node.id);
+      return;
+    }
     if (node.type === "stock" || node.type === "flow" || node.type === "aux" || node.type === "comment") {
       setEditingId(node.id);
     }

@@ -34,6 +34,12 @@
   --loop-b-color: oklch(0.5 0.15 240);
   --comment-bg: oklch(0.96 0.05 95);
   --comment-border: oklch(0.7 0.1 95);
+  /* Lookup tables. A teal, deliberately clear of every other element hue already in use here
+     (250 stock/aux, 265 flow, 40 connector, 25 loop-R, 240 loop-B, 95 comment) so a lookup reads
+     as its own kind of thing at a glance rather than as a recolored auxiliary. */
+  --lookup-color: oklch(0.48 0.11 195);
+  --lookup-fill: oklch(0.97 0.025 195);
+  --lookup-border: oklch(0.62 0.1 195);
 }
 
 .dark {
@@ -66,6 +72,11 @@
   --loop-b-color: oklch(0.72 0.14 240);
   --comment-bg: oklch(0.32 0.05 95);
   --comment-border: oklch(0.55 0.1 95);
+  /* Lookup colors are re-picked for the dark surface, not flipped — the light mode's 0.48
+     lightness would be illegible here. */
+  --lookup-color: oklch(0.78 0.11 195);
+  --lookup-fill: oklch(0.24 0.03 195);
+  --lookup-border: oklch(0.5 0.08 195);
 }
 
 @theme inline {

@@ -1,7 +1,8 @@
-import { renameVariable, setCommentText, type Auxiliary, type Comment, type Flow, type Loop, type Stock } from "@vensim-ai/core";
+import { renameVariable, setCommentText, type Auxiliary, type Comment, type Flow, type LookupTable, type Loop, type Stock } from "@vensim-ai/core";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Droplet, RotateCcw, RotateCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { LookupSparkline } from "@/components/charts/LookupSparkline";
 import { cn } from "@/lib/utils";
 import { useModelStore } from "@/state/modelStore";
 
@@ -211,6 +212,52 @@ export function AuxNode({ data }: NodeProps & { data: AuxNodeData }) {
     >
       <AllSideHandles />
       <EditableLabel id={variable.id} name={variable.name} editing={editing} />
+    </div>
+  );
+}
+
+export interface LookupNodeData extends Record<string, unknown> {
+  variable: Auxiliary;
+  table: LookupTable;
+  selected: boolean;
+  editing: boolean;
+}
+
+const SPARKLINE_W = 126;
+const SPARKLINE_H = 30;
+
+/**
+ * A lookup table on the canvas: the same box-like shape a Vensim lookup gets, but showing its
+ * curve rather than just its name — the whole point of a graphical function is its shape, and a
+ * diagram where lookups look identical to every other auxiliary hides the one thing worth seeing
+ * at a glance. Double-clicking opens the table editor (see FlowCanvas), matching Vensim, where
+ * double-clicking a lookup opens its graph.
+ */
+export function LookupNode({ data }: NodeProps & { data: LookupNodeData }) {
+  const { variable, table, selected, editing } = data;
+  const openLookupEditor = useModelStore((s) => s.openLookupEditor);
+  return (
+    <div
+      className={cn(
+        "flex flex-col items-center gap-1 rounded-lg border-2 bg-[var(--lookup-fill)] px-2 py-1.5",
+        selected ? "border-primary ring-2 ring-primary/40" : "border-[var(--lookup-border)]",
+      )}
+      style={{ minWidth: 90, minHeight: 45 }}
+      onDoubleClick={(e) => {
+        // Double-click opens the curve editor here rather than the inline rename every other
+        // node uses — renaming is still available in the Inspector's Name field.
+        e.stopPropagation();
+        openLookupEditor(variable.id);
+      }}
+    >
+      <AllSideHandles />
+      <EditableLabel
+        id={variable.id}
+        name={variable.name}
+        editing={editing}
+        className="max-w-[150px] text-[11px] font-medium text-[var(--lookup-color)]"
+      />
+      <LookupSparkline table={table} width={SPARKLINE_W} height={SPARKLINE_H} className="shrink-0" />
     </div>
   );
 }

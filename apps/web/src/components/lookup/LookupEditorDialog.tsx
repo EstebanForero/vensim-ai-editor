@@ -2,15 +2,15 @@ import { lookupEquation, normalizeLookupTable, tableFromPoints, type LookupTable
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { lookupCurvePoints } from "@/components/charts/LookupSparkline";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-// The app's own first chart hue (see charts/SimChart.tsx) — this preview is a single series, so
-// there's no categorical set to keep separated; it just has to read as the same chart family as
-// the rest of the app.
-const CURVE_COLOR = "#6d28d9";
+// The lookup's own identity color, matching the canvas node and the inspector's curve card — the
+// same curve should look like the same thing everywhere it appears.
+const CURVE_COLOR = "var(--lookup-color)";
 
 /** Rows are held as strings, not numbers, so a half-typed entry ("-", "0.", "") doesn't get
  * clobbered mid-keystroke — the numbers are derived on every render and validated on Apply. */
@@ -105,19 +105,9 @@ export function LookupEditorDialog({
   const removeRow = (i: number) => setDraft((d) => ({ ...d, rows: d.rows.filter((_, j) => j !== i) }));
 
   // The curve is piecewise linear, so the plotted points ARE the curve — no sampling, and the
-  // dots land exactly on the values in the table. The two extra points extend it flat to the
-  // axis edges, which is how the curve actually behaves outside the data (it holds its ends).
-  const chartData = useMemo(() => {
-    const t = parsed.table;
-    if (!t) return [];
-    const first = t.points[0]!;
-    const last = t.points[t.points.length - 1]!;
-    const out: { x: number; y: number }[] = [];
-    if (t.xMin < first.x) out.push({ x: t.xMin, y: first.y });
-    out.push(...t.points);
-    if (t.xMax > last.x) out.push({ x: t.xMax, y: last.y });
-    return out;
-  }, [parsed.table]);
+  // dots land exactly on the values in the table. lookupCurvePoints extends it flat to the axis
+  // edges, which is how the curve actually behaves outside the data (it holds its ends).
+  const chartData = useMemo(() => (parsed.table ? lookupCurvePoints(parsed.table) : []), [parsed.table]);
 
   const rows = draft.rows;
   const axisField = (key: "xMin" | "xMax" | "yMin" | "yMax", label: string) => (

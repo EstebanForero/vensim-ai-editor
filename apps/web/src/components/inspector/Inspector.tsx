@@ -9,10 +9,10 @@ import {
   setConnectorPolarity,
   setEquation,
   setFlowEndpoint,
-  setLookupTable,
   setVariableComment,
   setVariableUnits,
   variableRelationships,
+  type LookupTable,
   type Polarity,
 } from "@vensim-ai/core";
 import { Table2, Trash2 } from "lucide-react";
@@ -21,10 +21,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { LookupSparkline } from "@/components/charts/LookupSparkline";
 import { cn } from "@/lib/utils";
 import { useModelStore } from "@/state/modelStore";
 import { EquationInput } from "./EquationInput";
-import { LookupEditorDialog } from "./LookupEditorDialog";
 
 export function Inspector() {
   const model = useModelStore((s) => s.model);
@@ -212,7 +212,7 @@ function VariableInspector() {
   const [equation, setEquationText] = useState("");
   const [units, setUnits] = useState("");
   const [comment, setComment] = useState("");
-  const [lookupOpen, setLookupOpen] = useState(false);
+  const openLookupEditor = useModelStore((s) => s.openLookupEditor);
 
   useEffect(() => {
     if (!variable) return;
@@ -300,7 +300,7 @@ function VariableInspector() {
         <div className="flex items-center justify-between">
           <Label htmlFor="var-eq">{variable.kind === "stock" ? "Initial value" : "Equation"}</Label>
           {variable.kind === "auxiliary" && (
-            <Button size="sm" variant="outline" onClick={() => setLookupOpen(true)}>
+            <Button size="sm" variant="outline" onClick={() => openLookupEditor(variable.id)}>
               <Table2 className="size-3.5" />
               {lookup ? "Edit lookup table" : "Make lookup table"}
             </Button>
@@ -334,15 +334,7 @@ function VariableInspector() {
         )}
       </div>
 
-      {variable.kind === "auxiliary" && (
-        <LookupEditorDialog
-          open={lookupOpen}
-          onOpenChange={setLookupOpen}
-          variableName={variable.name}
-          table={lookup}
-          onApply={(table) => mutate((m) => setLookupTable(m, variable.id, table))}
-        />
-      )}
+      {lookup && <LookupCurveCard table={lookup} />}
 
       {variable.kind === "flow" && <FlowEndpoints flowId={variable.id} />}
 
@@ -357,6 +349,25 @@ function VariableInspector() {
       </div>
 
       <DependencyPanel variableId={variable.id} />
+    </div>
+  );
+}
+
+/** The selected lookup's curve at inspector scale — big enough to actually read the shape, with
+ * the data points marked so it's clear which samples are given and which are interpolated. The
+ * full table and its exact numbers live in the editor dialog; this is the "what does it look
+ * like" view that makes a lookup legible without opening anything. */
+function LookupCurveCard({ table }: { table: LookupTable }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Curve</Label>
+      <div className="rounded-md border bg-[var(--lookup-fill)] p-2">
+        <LookupSparkline table={table} width={312} height={110} strokeWidth={2} showPoints fluid />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Inputs {table.xMin}–{table.xMax}, outputs {table.yMin}–{table.yMax}. Interpolated between the points, held at
+        the ends beyond them.
+      </p>
     </div>
   );
 }

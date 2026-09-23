@@ -3,6 +3,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { FlowCanvas } from "@/components/canvas/FlowCanvas";
 import { SimChart } from "@/components/charts/SimChart";
 import { Inspector } from "@/components/inspector/Inspector";
+import { LookupEditorHost } from "@/components/lookup/LookupEditorHost";
 import { TextView } from "@/components/textview/TextView";
 import { Toolbar } from "@/components/toolbar/Toolbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,6 +44,8 @@ function App() {
             </Tabs>
           </aside>
         </div>
+
+        <LookupEditorHost />
 
         {issues.length > 0 && (
           <div className="border-t bg-destructive/10 px-3 py-1 text-xs text-destructive">
