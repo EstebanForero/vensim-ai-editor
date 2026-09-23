@@ -1,4 +1,4 @@
-import { normalizeLookupTable, type Expr, type LookupPoint, type LookupTable } from "./ast.js";
+import { normalizeLookupTable, type Expr, type LookupPoint } from "./ast.js";
 import { tokenize, type Token, type TokenType } from "./lexer.js";
 
 // Pratt parser over the token stream, precedence lowest-to-highest:

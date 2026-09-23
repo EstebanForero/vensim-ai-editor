@@ -42,9 +42,9 @@ export function normalizeLookupTable(table: LookupTable): LookupTable {
 
   if (points.length === 0) return { points: [], xMin: table.xMin, xMax: table.xMax, yMin: table.yMin, yMax: table.yMax };
 
-  const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
-  const [first, last] = [points[0]!, points[points.length - 1]!];
+  const first = points[0]!;
+  const last = points[points.length - 1]!;
   return {
     points,
     xMin: Math.min(table.xMin, first.x),
