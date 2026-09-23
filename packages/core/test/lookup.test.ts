@@ -216,6 +216,51 @@ describe("lookup units checking", () => {
     const aux = addLookup(m, { name: "Effect", points: [{ x: 0, y: 0 }, { x: 10, y: 1 }], units: "widgets" });
     expect(checkUnits(m).some((i) => i.variableId === aux.id)).toBe(false);
   });
+
+  // Real Vensim's Units Check reports "Lookup -X- used with dimensioned argument". Its own
+  // documentation is explicit that lookups are meant to take a dimensionless input, because the
+  // curve's x-axis is bare numbers — passing something dimensioned means the curve silently
+  // rescales if that argument's units are ever changed. Reporting nothing here would be the same
+  // class of gap as the `Time` blind spot: Vensim complains, we stay quiet, and the AI (told to
+  // fix whatever check_units reports) never learns there was anything to fix.
+  test("a lookup used with a dimensioned argument is flagged, as Vensim warns", () => {
+    const m = createEmptyModel();
+    addLookup(m, { name: "Demanda por agricultor", points: [{ x: 0, y: 40 }, { x: 1000, y: 150 }], units: "m3/Month" });
+    const stock = addStock(m, { name: "Deposito", initialEquation: "1000", units: "m3" });
+    const aux = addAuxiliary(m, { name: "Consumo", equation: `Demanda por agricultor(${stock.name})`, units: "m3/Month" });
+
+    const issue = checkUnits(m).find((i) => i.variableId === aux.id);
+    expect(issue).toBeDefined();
+    expect(issue!.message).toContain("dimensioned argument");
+    // The message has to carry the remedy, not just the complaint — otherwise the only way to act
+    // on it is to already know the idiom.
+    expect(issue!.message).toContain("constant equal to 1");
+  });
+
+  test("Time is the same case in Vensim's eyes, and is flagged too", () => {
+    const m = createEmptyModel();
+    m.simSpec = { startTime: 0, stopTime: 80, dt: 1, integrationMethod: "euler", timeUnits: "Month" };
+    addLookup(m, { name: "Demanda", points: [{ x: 0, y: 40 }, { x: 80, y: 150 }], units: "m3/Month" });
+    const aux = addAuxiliary(m, { name: "Consumo", equation: "Demanda(Time)", units: "m3/Month" });
+    expect(checkUnits(m).some((i) => i.variableId === aux.id && i.message.includes("dimensioned argument"))).toBe(true);
+  });
+
+  // The Vensim-documented remedy: divide the dimensioned argument by a constant equal to 1 that
+  // carries those units. The division is dimensionally a no-op, so the value reaching the curve is
+  // unchanged — only the units check's view of it is, which is the entire point.
+  test("dividing the argument by a unit-sized constant clears it", () => {
+    const m = createEmptyModel();
+    m.simSpec = { startTime: 0, stopTime: 80, dt: 1, integrationMethod: "euler", timeUnits: "Month" };
+    addLookup(m, { name: "Demanda", points: [{ x: 0, y: 40 }, { x: 80, y: 150 }], units: "m3/Month" });
+    addAuxiliary(m, { name: "Unidad de tiempo", equation: "1", units: "Month" });
+    const aux = addAuxiliary(m, { name: "Consumo", equation: "Demanda(Time / Unidad de tiempo)", units: "m3/Month" });
+
+    expect(checkUnits(m).some((i) => i.variableId === aux.id)).toBe(false);
+    // ...and the value is genuinely unchanged: at t=40 the curve reads 95 either way, since the
+    // divisor is 1. (This is the part that makes it a fix rather than a suppression.)
+    const sim = simulate(m);
+    expect(sim.series["Consumo"]![40]).toBeCloseTo(95, 6);
+  });
 });
 
 describe("lookup polarity", () => {

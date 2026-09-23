@@ -299,7 +299,26 @@ function analyzeCallDim(rawName: string, args: Expr[], unitsByName: Map<string, 
       // hardest to notice.
       const asLookup = unitsByName.get(rawName);
       if (asLookup !== undefined && asLookup !== "unknown") {
-        return { dim: asLookup, mismatches: allMismatches(), literal: false };
+        // Real Vensim's Units Check warns here: "Lookup -name- used with dimensioned argument".
+        // A lookup's x-axis carries no units of its own — the numbers are bare — so the curve is
+        // only meaningful against a bare number. Feeding it a dimensioned value means the curve
+        // silently rescales if that argument's units are ever changed, which is the failure the
+        // warning exists to surface. The fix Vensim's own documentation gives is to divide the
+        // argument by a constant equal to 1 carrying the argument's units, so the division is
+        // dimensionally a no-op and the value reaching the lookup is dimensionless.
+        const arg = parts[0];
+        const mismatches = allMismatches();
+        if (arg && arg.dim !== "unknown" && !isDimensionless(arg.dim)) {
+          mismatches.push({
+            context:
+              `lookup "${rawName}" is used with a dimensioned argument, which Vensim warns about ` +
+              `(the curve's x-axis has no units, so changing the argument's units silently rescales ` +
+              `it) — divide the argument by a constant equal to 1 carrying its units to make it dimensionless`,
+            left: arg.dim,
+            right: DIMENSIONLESS,
+          });
+        }
+        return { dim: asLookup, mismatches, literal: false };
       }
       // An unrecognized function's unit contract isn't known — don't guess.
       return { dim: "unknown", mismatches: allMismatches(), literal: false };

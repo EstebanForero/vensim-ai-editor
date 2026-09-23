@@ -28,7 +28,14 @@ Time at all. For a relationship that isn't a formula —
 a non-linear effect read off a graph, or a table the exercise states outright — build a lookup table with set_lookup
 and call it from other equations as Name(input): an exercise giving "max X and Y value, min X and Y value" plus an
 input/output table is asking for exactly that. Never reference a lookup table bare as if it were a number, and set its
-units to what the curve RETURNS. Use add_comment for freestanding notes
+units to what the curve RETURNS. A lookup's INPUT, though, must be dimensionless: the curve's x-axis is bare numbers
+with no units of their own, so Vensim's Units Check warns "lookup used with dimensioned argument" whenever you pass it
+something dimensioned, and the curve would silently rescale if that argument's units ever changed. So when the input is
+a real quantity — most commonly Time, for an effect or demand that changes over the horizon — divide it by a constant
+equal to 1 that carries those units and pass THAT: e.g. "Time / Unidad de tiempo" with Unidad de tiempo = 1 declared in
+the time unit, then Name(Time / Unidad de tiempo). The same applies to any other dimensioned input (a price, a stock
+level): pass it divided by a unit-sized constant rather than raw, instead of leaving Vensim to warn about it. Use
+add_comment for freestanding notes
 on the diagram (not equations), and set_sim_spec to change start/stop time, dt, or integration method when asked.
 The model's time unit (set via set_sim_spec's time_units, always an English Vensim keyword like "Month" or "Year")
 and a variable's OWN declared units are two different things, but any time-denominator word inside a units string

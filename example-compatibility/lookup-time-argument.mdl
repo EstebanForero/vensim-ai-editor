@@ -1,0 +1,202 @@
+{UTF-8}
+Deposito A= INTEG (
+	"Entrada A" -"Salida A",
+		1000)
+	~	m3
+	~	
+	|
+
+Deposito B= INTEG (
+	"Entrada B" -"Salida B",
+		1000)
+	~	m3
+	~	
+	|
+
+Deposito C= INTEG (
+	"Entrada C" -"Salida C",
+		1000)
+	~	m3
+	~	
+	|
+
+Deposito D= INTEG (
+	"Entrada D" -"Salida D",
+		1000)
+	~	m3
+	~	
+	|
+
+Entrada A= Regeneracion
+	~	m3/Month
+	~	
+	|
+
+Salida A= Consumo A
+	~	m3/Month
+	~	
+	|
+
+Entrada B= Regeneracion
+	~	m3/Month
+	~	
+	|
+
+Salida B= Consumo B
+	~	m3/Month
+	~	
+	|
+
+Entrada C= Regeneracion
+	~	m3/Month
+	~	
+	|
+
+Salida C= Consumo C
+	~	m3/Month
+	~	
+	|
+
+Entrada D= Regeneracion
+	~	m3/Month
+	~	
+	|
+
+Salida D= Consumo D
+	~	m3/Month
+	~	
+	|
+
+Regeneracion= 100
+	~	m3/Month
+	~	
+	|
+
+Unidad de tiempo= 1
+	~	Month
+	~	Constante de valor 1 con unidades de tiempo: hace adimensional el argumento del lookup sin cambiar su valor.
+	|
+
+Unidad de volumen= 1
+	~	m3
+	~	La misma idea para un nivel de stock (o cualquier otra entrada dimensionada).
+	|
+
+Demanda en el tiempo(
+	[(0,40)-(80,150)],
+	(0,40),(40,95),(80,150))
+	~	m3/Month
+	~	Demanda individual creciente en el tiempo (eje X = meses).
+	|
+
+Demanda segun nivel(
+	[(0,40)-(1000,150)],
+	(0,40),(500,95),(1000,150))
+	~	m3/Month
+	~	Demanda individual creciente con el nivel del deposito (eje X = m3).
+	|
+
+Consumo A= Demanda en el tiempo(Time)
+	~	m3/Month
+	~	AVISO ESPERADO: argumento dimensionado (Time, en Month).
+	|
+
+Consumo B= Demanda en el tiempo(Time / Unidad de tiempo)
+	~	m3/Month
+	~	LIMPIO: adimensional, y vale lo mismo porque el divisor es 1.
+	|
+
+Consumo C= Demanda segun nivel(Deposito C)
+	~	m3/Month
+	~	AVISO ESPERADO: argumento dimensionado (un nivel, en m3).
+	|
+
+Consumo D= Demanda segun nivel(Deposito D / Unidad de volumen)
+	~	m3/Month
+	~	LIMPIO: adimensional, mismo valor.
+	|
+
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+
+FINAL TIME= 80
+	~	Month
+	~	The final time for the simulation.
+	|
+
+INITIAL TIME= 0
+	~	Month
+	~	The initial time for the simulation.
+	|
+
+SAVEPER= TIME STEP
+	~	Month
+	~	The frequency with which output is stored.
+	|
+
+TIME STEP= 0.25
+	~	Month
+	~	The time step for the simulation.
+	|
+
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*View 1
+$192-192-192,0,Times New Roman|12||0-0-0|0-0-0|0-0-255|-1--1--1|-1--1--1|96,96,100,0
+10,1,Deposito A,965,143,45,23,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,2,Deposito B,645,253,45,23,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,3,Deposito C,325,363,45,23,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,4,Deposito D,965,363,45,23,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,5,Regeneracion,165,143,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,6,Unidad de tiempo,325,143,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,7,Unidad de volumen,485,143,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,8,Demanda en el tiempo,675,154,75,34,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,9,Demanda segun nivel,835,154,75,34,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,10,Consumo A,325,253,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,11,Consumo B,965,253,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,12,Consumo C,645,363,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,13,Consumo D,325,473,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+11,14,0,866,112,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,15,Entrada A,866,146,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,16,48,770,83,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,17,14,16,100,0,0,22,0,192,0,-1--1--1,,1|(818,97)|
+1,18,14,1,4,0,0,22,0,192,0,-1--1--1,,1|(916,127)|
+11,19,0,1126,112,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,20,Salida A,1126,146,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,21,19,1,100,0,0,22,0,192,0,-1--1--1,,1|(1046,127)|
+12,22,48,1224,93,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,23,19,22,4,0,0,22,0,192,0,-1--1--1,,1|(1175,103)|
+11,24,0,546,222,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,25,Entrada B,546,256,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,26,48,450,193,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,27,24,26,100,0,0,22,0,192,0,-1--1--1,,1|(498,207)|
+1,28,24,2,4,0,0,22,0,192,0,-1--1--1,,1|(596,237)|
+11,29,0,806,222,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,30,Salida B,806,256,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,31,29,2,100,0,0,22,0,192,0,-1--1--1,,1|(726,237)|
+12,32,48,904,203,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,33,29,32,4,0,0,22,0,192,0,-1--1--1,,1|(855,213)|
+11,34,0,226,332,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,35,Entrada C,226,366,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,36,48,130,303,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,37,34,36,100,0,0,22,0,192,0,-1--1--1,,1|(178,317)|
+1,38,34,3,4,0,0,22,0,192,0,-1--1--1,,1|(276,347)|
+11,39,0,486,332,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,40,Salida C,486,366,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,41,39,3,100,0,0,22,0,192,0,-1--1--1,,1|(406,347)|
+12,42,48,584,313,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,43,39,42,4,0,0,22,0,192,0,-1--1--1,,1|(535,323)|
+11,44,0,866,332,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,45,Entrada D,866,366,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,46,48,770,303,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,47,44,46,100,0,0,22,0,192,0,-1--1--1,,1|(818,317)|
+1,48,44,4,4,0,0,22,0,192,0,-1--1--1,,1|(916,347)|
+11,49,0,1126,332,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,50,Salida D,1126,366,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,51,49,4,100,0,0,22,0,192,0,-1--1--1,,1|(1046,347)|
+12,52,48,1224,313,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,53,49,52,4,0,0,22,0,192,0,-1--1--1,,1|(1175,323)|
+///---\\\
