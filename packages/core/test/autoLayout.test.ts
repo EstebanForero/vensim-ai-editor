@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { addComment, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
+import { addAuxiliary, addComment, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
 import { autoLayout } from "../src/layout/autoLayout.js";
 import { annotateLoops, loopAnnotationPos } from "../src/loops/annotate.js";
 import { detectLoops } from "../src/loops/detect.js";
@@ -115,5 +115,76 @@ describe("autoLayout", () => {
     }
     // The two annotations must not have collapsed onto the same spot.
     expect(model.comments[0]!.pos).not.toEqual(model.comments[1]!.pos);
+  });
+});
+
+describe("autoLayout: the flow-straightening pass must not stack flows", () => {
+  function overlapPairs(model: ReturnType<typeof createEmptyModel>): string[] {
+    const vs = [...model.stocks, ...model.flows, ...model.auxiliaries];
+    const hits: string[] = [];
+    for (let i = 0; i < vs.length; i++) {
+      for (let j = i + 1; j < vs.length; j++) {
+        const a = vs[i]!;
+        const b = vs[j]!;
+        const hit =
+          a.pos.x < b.pos.x + b.size.width &&
+          b.pos.x < a.pos.x + a.size.width &&
+          a.pos.y < b.pos.y + b.size.height &&
+          b.pos.y < a.pos.y + a.size.height;
+        if (hit) hits.push(`${a.name} <> ${b.name}`);
+      }
+    }
+    return hits;
+  }
+
+  // Regression: two flows between the SAME pair of stocks both snap onto that pair's shared
+  // center line, and dagre gives same-rank nodes the same coordinate along the flow axis too —
+  // so both landed at exactly the same point, one flow rendered invisibly underneath the other.
+  test("two flows between the same two stocks do not land on top of each other", () => {
+    const model = createEmptyModel();
+    const a = addStock(model, { name: "Source", initialEquation: "100" });
+    const b = addStock(model, { name: "Sink", initialEquation: "0" });
+    addFlow(model, { name: "Flow One", equation: "1", from: a.id, to: b.id });
+    addFlow(model, { name: "Flow Two", equation: "1", from: a.id, to: b.id });
+
+    autoLayout(model);
+    expect(overlapPairs(model)).toEqual([]);
+  });
+
+  test("no node overlaps any other after layout, across a mixed model", () => {
+    const model = createEmptyModel();
+    const a = addStock(model, { name: "A", initialEquation: "100" });
+    const b = addStock(model, { name: "B", initialEquation: "0" });
+    const c = addStock(model, { name: "C", initialEquation: "0" });
+    addFlow(model, { name: "AB", equation: "1", from: a.id, to: b.id });
+    addFlow(model, { name: "AC", equation: "1", from: a.id, to: c.id });
+    addFlow(model, { name: "In", equation: "2", to: a.id });
+    addAuxiliary(model, { name: "Rate", equation: "0.1" });
+    addConnector(model, { from: "Rate", to: "AB" });
+
+    autoLayout(model);
+    expect(overlapPairs(model)).toEqual([]);
+  });
+});
+
+describe("autoLayout: aligning a flow between two misaligned stocks", () => {
+  // Regression: when a flow's two stocks are on different lines, neither can be satisfied — so
+  // the flow used to be left wherever dagre put it, skewing BOTH pipes. It now aligns with the
+  // stock it leaves (its `from`), so that pipe runs straight and only the other end turns.
+  test("the flow aligns with its from-stock, not with neither", () => {
+    const model = createEmptyModel();
+    const high = addStock(model, { name: "High", initialEquation: "100" });
+    const low = addStock(model, { name: "Low", initialEquation: "0" });
+    const transfer = addFlow(model, { name: "Transfer", equation: "1", from: high.id, to: low.id });
+    addFlow(model, { name: "Sideways", equation: "1", from: high.id });
+
+    autoLayout(model);
+
+    const centerY = (v: { pos: { y: number }; size: { height: number } }) => v.pos.y + v.size.height / 2;
+    // The precondition this test exists to exercise — asserted rather than guarded, so it can
+    // never quietly pass by the two stocks happening to come out level.
+    expect(Math.abs(centerY(high) - centerY(low))).toBeGreaterThan(4);
+    const flow = model.flows.find((f) => f.id === transfer.id)!;
+    expect(centerY(flow)).toBe(centerY(high));
   });
 });

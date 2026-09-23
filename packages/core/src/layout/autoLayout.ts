@@ -1,7 +1,7 @@
 import dagre from "@dagrejs/dagre";
 import { loopAnnotationPos, loopLabelOf } from "../loops/annotate.js";
 import { detectLoops } from "../loops/detect.js";
-import { allVariables, type Model } from "../model/types.js";
+import { allVariables, type Model, type Position, type Size } from "../model/types.js";
 
 export interface AutoLayoutOptions {
   /** "LR" (left-to-right, the default — reads naturally as causal flow) or "TB" (top-to-bottom). */
@@ -23,6 +23,18 @@ export interface AutoLayoutOptions {
  * happened to land before. Every other comment (anything a user wrote by hand) is left in place,
  * only nudged if it now overlaps a repositioned node.
  */
+/** Axis-aligned box intersection. A small tolerance is deliberately NOT applied — two boxes
+ * sharing an exact edge is a touch, not an overlap, and `boxesOverlap` already treats it that way
+ * by using strict inequalities. */
+function boxesOverlap(a: { pos: Position; size: Size }, b: { pos: Position; size: Size }): boolean {
+  return (
+    a.pos.x < b.pos.x + b.size.width &&
+    b.pos.x < a.pos.x + a.size.width &&
+    a.pos.y < b.pos.y + b.size.height &&
+    b.pos.y < a.pos.y + a.size.height
+  );
+}
+
 export function autoLayout(model: Model, options: AutoLayoutOptions = {}): void {
   const { direction = "LR", nodeSep = 60, rankSep = 120 } = options;
   const variables = allVariables(model);
@@ -83,11 +95,30 @@ export function autoLayout(model: Model, options: AutoLayoutOptions = {}): void 
         .filter((s): s is NonNullable<typeof s> => !!s)
         .map((s) => s.pos[perpAxis] + s.size[perpSize] / 2);
       if (centers.length === 0) continue;
-      // Both ends real stocks but on visibly different lines: leave the flow where dagre put it
-      // rather than force a line that matches neither.
-      if (centers.length === 2 && Math.abs(centers[0]! - centers[1]!) > 4) continue;
+      // Two real stocks on visibly different lines: align with the one this flow LEAVES (its
+      // `from`), so the pipe out of that stock runs straight. Aligning with neither (as this did
+      // before) left BOTH pipes skewed, which is worse than making one of the two straight and
+      // letting the other take a right-angle turn — the pipe renderer elbows rather than
+      // slants, so an unalignable end still reads as pipe work, not a diagonal.
+      if (centers.length === 2 && Math.abs(centers[0]! - centers[1]!) > 4) {
+        if (!fromStock) continue; // a flow into a single stock is already the one-stock case below
+        centers.length = 1;
+        centers[0] = fromStock.pos[perpAxis] + fromStock.size[perpSize] / 2;
+      }
       const target = centers.reduce((s, c) => s + c, 0) / centers.length;
-      flow.pos = { ...flow.pos, [perpAxis]: target - flow.size[perpSize] / 2 };
+      const snapped = { ...flow.pos, [perpAxis]: target - flow.size[perpSize] / 2 };
+
+      // Only take the straightening if it doesn't shove this flow on top of something else.
+      // Two flows between the SAME pair of stocks both snap to that pair's shared center line —
+      // and dagre gives same-rank nodes the same coordinate along the flow axis too, so without
+      // this check they land exactly on top of one another, which is worse than a kinked pipe.
+      // The one that can't be straightened keeps dagre's position, which is already collision-
+      // free by construction.
+      const box = { pos: snapped, size: flow.size };
+      const collides = allVariables(model).some(
+        (v) => v.id !== flow.id && boxesOverlap(box, { pos: v.pos, size: v.size }),
+      );
+      if (!collides) flow.pos = snapped;
     }
 
     for (const v of connected) {

@@ -18,12 +18,13 @@ import {
 import { useEffect, useMemo } from "react";
 import { uniqueName } from "@/lib/naming";
 import { useModelStore } from "@/state/modelStore";
+import { FlowPipeEdge } from "./FlowPipeEdge";
 import { buildGraph } from "./graph";
 import { AuxNode, CommentNode, FlowNode, LookupNode, LoopNode, StockNode } from "./nodes";
 import { RelationEdge } from "./RelationEdge";
 
 const nodeTypes = { stock: StockNode, flow: FlowNode, aux: AuxNode, lookup: LookupNode, loop: LoopNode, comment: CommentNode };
-const edgeTypes = { relation: RelationEdge };
+const edgeTypes = { relation: RelationEdge, pipe: FlowPipeEdge };
 
 export function FlowCanvas() {
   const model = useModelStore((s) => s.model);

@@ -41,7 +41,7 @@ export function buildGraph(
         source: f.from,
         target: f.id,
         ...handles,
-        type: "straight",
+        type: "pipe",
         style: { stroke: "var(--flow-color)", strokeWidth: 3 },
         markerEnd: { type: "arrowclosed" as const, color: "var(--flow-color)" },
       });
@@ -54,7 +54,7 @@ export function buildGraph(
         source: f.id,
         target: f.to,
         ...handles,
-        type: "straight",
+        type: "pipe",
         style: { stroke: "var(--flow-color)", strokeWidth: 3 },
         markerEnd: { type: "arrowclosed" as const, color: "var(--flow-color)" },
       });
