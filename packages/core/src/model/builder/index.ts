@@ -4,5 +4,6 @@ export * from "./auxiliary.js";
 export * from "./comment.js";
 export * from "./connector.js";
 export * from "./flow.js";
+export * from "./lookup.js";
 export * from "./mutations.js";
 export * from "./stock.js";

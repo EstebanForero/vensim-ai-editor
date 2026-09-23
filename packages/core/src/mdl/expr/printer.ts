@@ -1,4 +1,25 @@
-import type { Expr } from "./ast.js";
+import { normalizeLookupTable, type Expr, type LookupTable } from "./ast.js";
+
+/** Formats a number the way Vensim writes coordinates in a lookup — no exponent notation, no
+ * trailing `.0` — so a generated table reads the same as a hand-authored one and re-parses
+ * identically. */
+function num(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  // Round-trip through the shortest representation that still parses back to the same double,
+  // then strip floating-point noise (0.30000000000000004 -> 0.3).
+  return String(Number(n.toPrecision(12)));
+}
+
+/** Prints a lookup table in Vensim's own equation syntax:
+ * `([(xmin,ymin)-(xmax,ymax)],(x1,y1),(x2,y2),...)`. This IS the variable's equation text — a
+ * lookup is not stored as a structured field, it's stored as the equation a human would type in
+ * Vensim's own equation editor, and parsed back out of it on demand (see model/lookup.ts). */
+export function lookupTableToString(table: LookupTable): string {
+  const t = normalizeLookupTable(table);
+  const range = `[(${num(t.xMin)},${num(t.yMin)})-(${num(t.xMax)},${num(t.yMax)})]`;
+  const points = t.points.map((p) => `(${num(p.x)},${num(p.y)})`).join(",");
+  return `(${range},${points})`;
+}
 
 export function needsQuotes(name: string): boolean {
   return /[^A-Za-z0-9_]/.test(name) || /^\d/.test(name);
@@ -45,6 +66,7 @@ function exprPrecedence(e: Expr): number {
     case "num":
     case "var":
     case "call":
+    case "lookup":
       return Infinity;
     case "unary":
       return e.op === "NOT" ? NOT_PRECEDENCE : UNARY_PRECEDENCE;
@@ -79,9 +101,14 @@ function print(e: Expr): string {
       return e.op === "NOT" ? `NOT ${argStr}` : `${e.op}${argStr}`;
     }
     case "call": {
-      const name = e.name.toUpperCase() === "IF_THEN_ELSE" ? "IF THEN ELSE" : e.name;
+      const upper = e.name.toUpperCase();
+      // Undo the lexer's squashing of Vensim's own spaced function names (see
+      // lexer.ts's MULTI_WORD_FUNCTIONS).
+      const name = upper === "IF_THEN_ELSE" ? "IF THEN ELSE" : upper === "WITH_LOOKUP" ? "WITH LOOKUP" : e.name;
       return `${name}(${e.args.map(print).join(", ")})`;
     }
+    case "lookup":
+      return lookupTableToString(e.table);
     case "binary": {
       const prec = BINARY_PRECEDENCE[e.op] ?? 0;
       // `^` is parsed right-associative (parser.ts's parsePower recurses on the exponent), so

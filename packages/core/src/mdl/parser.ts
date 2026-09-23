@@ -58,15 +58,49 @@ function parseRecords(equationsText: string): RawRecord[] {
     const parts = chunk.split("~");
     const lhs = (parts[0] ?? "").trim();
     if (!lhs || lhs.startsWith("*")) continue;
-    const eqIdx = lhs.indexOf("=");
-    if (eqIdx === -1) continue; // not a variable definition (e.g. stray control text)
-    const name = lhs.slice(0, eqIdx).trim();
-    const equation = lhs.slice(eqIdx + 1).trim();
     const units = (parts[1] ?? "").trim();
     const comment = (parts[2] ?? "").trim();
-    records.push({ name, equation, units, comment });
+
+    const eqIdx = lhs.indexOf("=");
+    if (eqIdx !== -1) {
+      records.push({ name: lhs.slice(0, eqIdx).trim(), equation: lhs.slice(eqIdx + 1).trim(), units, comment });
+      continue;
+    }
+    const lookup = parseLookupDefinition(lhs);
+    if (lookup) records.push({ name: lookup.name, equation: lookup.equation, units, comment });
+    // Anything else with no `=`: not a variable definition (subscript declarations, stray
+    // control text, ...) — skipped, as before.
   }
   return records;
+}
+
+/**
+ * Vensim writes a lookup's own definition record with NO `=` — the record is just
+ * `name(<table>)`, e.g.
+ *
+ *     Effect of Delivery Delay on Supply Line f     ([(0,0)-(3,3)],
+ *     (0,0),(0.5,0.5),(3,3))
+ *         ~	dimensionless
+ *
+ * (confirmed identical in two independently Vensim-authored files —
+ * highperformancecoder/minsky's LongWave2.mdl and climateinteractive/SDEverywhere's lookup.mdl,
+ * the latter's short form being `a(\n\t[(0,0)-(2,1.2)],(0,0),...`). That's why an `=`-only
+ * splitter silently drops every lookup in a real file rather than erroring: the record parses as
+ * "not a variable definition" and gets skipped. Recognizing the shape here and normalizing it to
+ * an ordinary `name = <equation>` where the equation IS the table literal keeps everything
+ * downstream (addAuxiliary, the model's own storage) identical to every other variable.
+ *
+ * The name is everything before the first `(`, so a multi-word name (the common case, and the
+ * reason these are padded with spaces in real files) comes through whole.
+ */
+function parseLookupDefinition(lhs: string): { name: string; equation: string } | null {
+  const open = lhs.indexOf("(");
+  if (open <= 0) return null;
+  const name = lhs.slice(0, open).trim();
+  const equation = lhs.slice(open).trim();
+  const parsed = tryParseExpr(equation);
+  if (parsed?.type !== "lookup") return null;
+  return { name, equation };
 }
 
 interface FlatTerm {

@@ -1,10 +1,12 @@
-export type TokenType = "num" | "ident" | "op" | "lparen" | "rparen" | "comma" | "eof";
+export type TokenType = "num" | "ident" | "op" | "lparen" | "rparen" | "lbracket" | "rbracket" | "comma" | "eof";
 export interface Token {
   type: TokenType;
   text: string;
 }
 
-const MULTI_WORD_FUNCTIONS = ["IF THEN ELSE"];
+// Function names Vensim writes with a space in them. Squashed to a single identifier so the
+// lexer sees one token; printer.ts restores the space on the way out.
+const MULTI_WORD_FUNCTIONS = ["IF THEN ELSE", "WITH LOOKUP"];
 
 function normalizeMultiWordFunctions(src: string): string {
   let out = src;
@@ -51,6 +53,18 @@ export function tokenize(src: string, knownNames: string[] = []): Token[] {
     }
     if (c === ",") {
       tokens.push({ type: "comma", text: c });
+      i++;
+      continue;
+    }
+    // Square brackets appear only in a lookup table's `[(xmin,ymin)-(xmax,ymax)]` axis range —
+    // nothing else in this expression subset uses them.
+    if (c === "[") {
+      tokens.push({ type: "lbracket", text: c });
+      i++;
+      continue;
+    }
+    if (c === "]") {
+      tokens.push({ type: "rbracket", text: c });
       i++;
       continue;
     }

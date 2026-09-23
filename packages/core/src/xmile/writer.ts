@@ -15,8 +15,9 @@
 // fighting it further.
 
 import { detectLoops } from "../loops/detect.js";
-import { exprToString, tryParseExpr } from "../mdl/expr/index.js";
-import { allVariables, type Model } from "../model/types.js";
+import { exprToString, tryParseExpr, type Expr, type LookupTable } from "../mdl/expr/index.js";
+import { lookupScopeOf, lookupVariables, tableFromPoints } from "../model/lookup.js";
+import { allVariables, type Model, type Position } from "../model/types.js";
 
 // Text content only needs `&`/`<`/`>` escaped — a literal `"` is valid inside element text and
 // is exactly how real .xmile files (and Vensim's own equation syntax) quote a multi-word
@@ -47,6 +48,112 @@ function tag(name: string, content: string): string {
   return `<${name}>${content}</${name}>`;
 }
 
+/**
+ * XMILE has no equivalent of a Vensim lookup as this editor stores it — a named curve that any
+ * equation may call with its own argument. Instead, XMILE attaches a `<gf>` block to ONE
+ * variable and takes that variable's `<eqn>` as the curve's input, so
+ * `deaths = death_fraction(hare_density)` is written as an aux named `death fraction` with
+ * `<eqn>hare_density</eqn>` and the curve under it (confirmed against two independently
+ * authored real files — SDXorg's hares_and_foxes.xmile and simlin's fishbanks model.xmile,
+ * both of which use exactly this shape).
+ *
+ * So exporting a model that uses lookups means resolving each CALL to its own copy of the curve.
+ * `inlineLookups` below does that: where a variable's whole equation is a lookup call the curve
+ * is attached to that variable directly (the idiomatic shape above); anywhere a lookup is called
+ * as part of a larger expression, a helper aux is synthesized to hold the curve and the call is
+ * rewritten to reference it. The standalone lookup variables themselves are then left out of the
+ * output entirely — they're function definitions, and XMILE has nowhere to put one.
+ */
+interface InlinedLookup {
+  /** Variables whose `<eqn>` is a lookup's argument, with the curve attached as `<gf>`. */
+  gfByVarName: Map<string, LookupTable>;
+  /** Extra variables that exist only to carry a curve for a call inside a larger expression. */
+  helpers: { name: string; argExpr: string; table: LookupTable; pos: Position }[];
+  /** The rewritten equation text for every variable, keyed by the variable's name. */
+  equations: Map<string, string>;
+}
+
+function rewriteCalls(e: Expr, lookups: Map<string, LookupTable>, makeHelper: (arg: Expr, table: LookupTable) => string): Expr {
+  switch (e.type) {
+    case "call": {
+      const args = e.args.map((a) => rewriteCalls(a, lookups, makeHelper));
+      const table = lookups.get(e.name);
+      if (table && args[0]) return { type: "var", name: makeHelper(args[0], table) };
+      return { ...e, args };
+    }
+    case "unary":
+      return { ...e, arg: rewriteCalls(e.arg, lookups, makeHelper) };
+    case "binary":
+      return { ...e, left: rewriteCalls(e.left, lookups, makeHelper), right: rewriteCalls(e.right, lookups, makeHelper) };
+    case "num":
+    case "var":
+    case "lookup":
+      return e;
+  }
+}
+
+function inlineLookups(model: Model): InlinedLookup {
+  const lookups = lookupScopeOf(model);
+  const out: InlinedLookup = { gfByVarName: new Map(), helpers: [], equations: new Map() };
+  if (lookups.size === 0) return out;
+
+  const helperCounter = { n: 0 };
+  for (const v of allVariables(model)) {
+    const raw = v.kind === "stock" ? v.initialEquation : v.equation;
+    // A stock's equation is its INITIAL VALUE, not a per-step computation, so a graphical
+    // function can't be attached to it — its lookup calls always go through a helper aux.
+    const canHoldGf = v.kind !== "stock";
+    const parsed = tryParseExpr(raw, allVariables(model).map((x) => x.name));
+
+    // The idiomatic case: this variable's whole equation is one lookup call.
+    if (parsed?.type === "call") {
+      const table = lookups.get(parsed.name);
+      if (table && parsed.args[0] && canHoldGf) {
+        out.gfByVarName.set(v.name, table);
+        out.equations.set(v.name, exprToString(parsed.args[0]));
+        continue;
+      }
+    }
+
+    if (!parsed) {
+      out.equations.set(v.name, raw);
+      continue;
+    }
+    const rewritten = rewriteCalls(parsed, lookups, (arg, table) => {
+      helperCounter.n += 1;
+      const name = `${v.name} lookup ${helperCounter.n}`;
+      out.helpers.push({
+        name,
+        argExpr: exprToString(arg),
+        table,
+        pos: { x: v.pos.x, y: v.pos.y + 60 + (helperCounter.n - 1) * 50 },
+      });
+      return name;
+    });
+    out.equations.set(v.name, exprToString(rewritten));
+  }
+  return out;
+}
+
+/** The `<gf>` block itself. `<xpts>` and `<ypts>` are written together as explicit pairs rather
+ * than relying on `<xscale>`-plus-evenly-spaced `<ypts>`: both forms are real (hares_and_foxes
+ * uses explicit pairs, fishbanks uses the scale form), but the paired form states the curve
+ * exactly, with no dependence on a reader agreeing about how the points are spaced. `<xscale>`
+ * is emitted alongside as the axis range this editor's own table editor shows — it's redundant
+ * with the xpts, and harmless. */
+function gfBlock(table: LookupTable): string {
+  const t = tableFromPoints(table.points, table);
+  const xpts = t.points.map((p) => p.x).join(",");
+  const ypts = t.points.map((p) => p.y).join(",");
+  let out = "        <gf>\n";
+  out += `          <xscale min="${t.xMin}" max="${t.xMax}"/>\n`;
+  out += `          <yscale min="${t.yMin}" max="${t.yMax}"/>\n`;
+  out += `          <xpts>${xpts}</xpts>\n`;
+  out += `          <ypts>${ypts}</ypts>\n`;
+  out += "        </gf>\n";
+  return out;
+}
+
 export function writeXmile(model: Model): string {
   let out = '<?xml version="1.0" encoding="utf-8"?>\n';
   out += '<xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0">\n';
@@ -74,9 +181,14 @@ export function writeXmile(model: Model): string {
   out += "  <model>\n";
   out += "    <variables>\n";
 
+  const inlined = inlineLookups(model);
+  const lookupNames = new Set(lookupVariables(model).map((v) => v.name));
+  const eqnOf = (model: Model, name: string, fallback: string) =>
+    xmileEquation(model, inlined.equations.get(name) ?? fallback);
+
   for (const stock of model.stocks) {
     out += `      <stock name="${escapeXmlAttr(stock.name)}">\n`;
-    out += `        <eqn>${escapeXml(xmileEquation(model, stock.initialEquation))}</eqn>\n`;
+    out += `        <eqn>${escapeXml(eqnOf(model, stock.name, stock.initialEquation))}</eqn>\n`;
     for (const id of stock.inflows) {
       const flow = model.flows.find((f) => f.id === id);
       if (flow) out += `        ${tag("inflow", escapeXml(flow.name))}\n`;
@@ -92,28 +204,42 @@ export function writeXmile(model: Model): string {
 
   for (const flow of model.flows) {
     out += `      <flow name="${escapeXmlAttr(flow.name)}">\n`;
-    out += `        <eqn>${escapeXml(xmileEquation(model, flow.equation))}</eqn>\n`;
+    out += `        <eqn>${escapeXml(eqnOf(model, flow.name, flow.equation))}</eqn>\n`;
     if (flow.units) out += `        ${tag("units", escapeXml(flow.units))}\n`;
     if (flow.comment) out += `        ${tag("doc", escapeXml(flow.comment))}\n`;
+    const gf = inlined.gfByVarName.get(flow.name);
+    if (gf) out += gfBlock(gf);
     out += "      </flow>\n";
   }
 
   for (const aux of model.auxiliaries) {
+    // A lookup DEFINITION is a function, not a variable — XMILE has no element for one, and every
+    // place that called it now carries its own copy of the curve (see inlineLookups).
+    if (lookupNames.has(aux.name)) continue;
     out += `      <aux name="${escapeXmlAttr(aux.name)}">\n`;
-    out += `        <eqn>${escapeXml(xmileEquation(model, aux.equation))}</eqn>\n`;
+    out += `        <eqn>${escapeXml(eqnOf(model, aux.name, aux.equation))}</eqn>\n`;
     if (aux.units) out += `        ${tag("units", escapeXml(aux.units))}\n`;
     if (aux.comment) out += `        ${tag("doc", escapeXml(aux.comment))}\n`;
+    const gf = inlined.gfByVarName.get(aux.name);
+    if (gf) out += gfBlock(gf);
+    out += "      </aux>\n";
+  }
+
+  for (const helper of inlined.helpers) {
+    out += `      <aux name="${escapeXmlAttr(helper.name)}">\n`;
+    out += `        <eqn>${escapeXml(xmileEquation(model, helper.argExpr))}</eqn>\n`;
+    out += gfBlock(helper.table);
     out += "      </aux>\n";
   }
 
   out += "    </variables>\n";
-  out += writeView(model);
+  out += writeView(model, lookupNames, inlined.helpers);
   out += "  </model>\n";
   out += "</xmile>\n";
   return out;
 }
 
-function writeView(model: Model): string {
+function writeView(model: Model, lookupNames: Set<string>, helpers: InlinedLookup["helpers"]): string {
   let out = "    <views>\n";
   out += '      <view>\n';
 
@@ -151,7 +277,11 @@ function writeView(model: Model): string {
     out += "        </flow>\n";
   }
   for (const aux of model.auxiliaries) {
+    if (lookupNames.has(aux.name)) continue; // a function definition has no box on the diagram
     out += `        <aux name="${escapeXmlAttr(aux.name)}" x="${Math.round(aux.pos.x)}" y="${Math.round(aux.pos.y)}" width="${Math.round(aux.size.width)}" height="${Math.round(aux.size.height)}"/>\n`;
+  }
+  for (const helper of helpers) {
+    out += `        <aux name="${escapeXmlAttr(helper.name)}" x="${Math.round(helper.pos.x)}" y="${Math.round(helper.pos.y)}" width="90" height="45"/>\n`;
   }
   const posById = new Map<string, { x: number; y: number }>();
   for (const s of model.stocks) posById.set(s.id, s.pos);

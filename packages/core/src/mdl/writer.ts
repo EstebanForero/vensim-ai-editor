@@ -23,6 +23,7 @@
 // still gets orphaned on a real Vensim open+resave after this, the fix is local to the
 // `valveCenter` calculation and the Flow builder's default size, both flagged below.
 
+import { tryParseExpr } from "./expr/index.js";
 import { quoteRefIfNeeded } from "./expr/printer.js";
 import { referencePattern } from "../model/builder/helpers.js";
 import { detectLoops, type Loop } from "../loops/index.js";
@@ -37,6 +38,15 @@ function quoteNameIfNeeded(name: string): string {
 
 function variableRecord(name: string, equation: string, units: string, comment: string): string {
   return `${quoteNameIfNeeded(name)}= ${equation}\n\t~\t${units}\n\t~\t${comment}\n\t|\n\n`;
+}
+
+/** A lookup's own record carries NO `=` — real Vensim writes `Name(\n\t[(x,y)-(x,y)],\n\t(x,y),...)`
+ * and nothing else (see the parser's parseLookupDefinition for the two real files this was
+ * confirmed against). Emitting the usual `Name= (...)` instead would still be readable by this
+ * editor, but it is not the shape Vensim itself writes, and this writer's whole point is to hand
+ * Vensim a file indistinguishable from its own. */
+function lookupRecord(name: string, equation: string, units: string, comment: string): string {
+  return `${quoteNameIfNeeded(name)}${equation}\n\t~\t${units}\n\t~\t${comment}\n\t|\n\n`;
 }
 
 /** Strips accents/diacritics (e.g. "Recepción" -> "Recepcion") — real Vensim's own Equations
@@ -126,7 +136,11 @@ export function writeMdl(model: Model): string {
   }
 
   for (const aux of model.auxiliaries) {
-    out += variableRecord(mdlSafeName(aux.name), rewriteEquationRefs(aux.equation, nameMap), aux.units, aux.comment);
+    const equation = rewriteEquationRefs(aux.equation, nameMap);
+    const name = mdlSafeName(aux.name);
+    out += tryParseExpr(equation)?.type === "lookup"
+      ? lookupRecord(name, equation, aux.units, aux.comment)
+      : variableRecord(name, equation, aux.units, aux.comment);
   }
 
   out += "********************************************************\n\t.Control\n";
@@ -144,7 +158,11 @@ export function writeMdl(model: Model): string {
   // scans specifically for "\r\n" (rather than treating "\n" alone as a line terminator) would
   // either fail to find a line boundary at all or leave a stray "\r" glued onto the last field
   // of every line, corrupting exactly the kind of trailing numeric fields this format leans on.
-  return out.replace(/\n/g, "\r\n");
+  //
+  // Normalizing CR first (`\r\n?` -> `\n`) is not cosmetic: a model parsed from a CRLF file
+  // carries those `\r`s inside its multi-line equation text (an INTEG's, a lookup's), and
+  // converting newlines on top of them would emit `\r\r\n` in the middle of every such equation.
+  return out.replace(/\r\n?/g, "\n").replace(/\n/g, "\r\n");
 }
 
 /** Deterministic +1/-1 from a string, used to alternate which side a relation's curve bends

@@ -1,6 +1,7 @@
 import { ModelError } from "../model/errors.js";
+import { lookupScopeOf } from "../model/lookup.js";
 import { allVariables, type Model } from "../model/types.js";
-import { collectVarNames, evaluate, tryParseExpr, type Expr } from "../mdl/expr/index.js";
+import { collectVarNames, evaluate, tryParseExpr, type Expr, type LookupTable } from "../mdl/expr/index.js";
 import { topoSort } from "./topo.js";
 
 export interface SimResult {
@@ -18,18 +19,25 @@ interface Compiled {
   nameToId: Map<string, string>;
   auxAndFlowOrder: CompiledVar[];
   stockInit: CompiledVar[];
+  lookups: Map<string, LookupTable>;
+  /** Names of variables that ARE lookup definitions. They're callable functions, not values, so
+   * they're left out of the per-step evaluation order and out of `series` entirely. */
+  lookupNames: Set<string>;
 }
 
 function compile(model: Model): Compiled {
   const nameToId = new Map<string, string>();
   for (const v of allVariables(model)) nameToId.set(v.name, v.id);
   const knownNames = [...nameToId.keys()];
+  const lookups = lookupScopeOf(model);
 
-  const auxVars: CompiledVar[] = model.auxiliaries.map((a) => ({
-    id: a.id,
-    name: a.name,
-    expr: parseOrThrow(a.name, a.equation, knownNames),
-  }));
+  const auxVars: CompiledVar[] = model.auxiliaries
+    .filter((a) => !lookups.has(a.name))
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      expr: parseOrThrow(a.name, a.equation, knownNames),
+    }));
   const flowVars: CompiledVar[] = model.flows.map((f) => ({
     id: f.id,
     name: f.name,
@@ -54,7 +62,7 @@ function compile(model: Model): Compiled {
     expr: parseOrThrow(s.name, s.initialEquation, knownNames),
   }));
 
-  return { nameToId, auxAndFlowOrder, stockInit };
+  return { nameToId, auxAndFlowOrder, stockInit, lookups, lookupNames: new Set(lookups.keys()) };
 }
 
 function parseOrThrow(varName: string, eq: string, knownNames: string[]): Expr {
@@ -72,7 +80,7 @@ function computeEnv(model: Model, compiled: Compiled, stockValues: Map<string, n
   for (const [k, v] of env) envObj[k] = v;
 
   for (const v of compiled.auxAndFlowOrder) {
-    const value = evaluate(v.expr, envObj);
+    const value = evaluate(v.expr, envObj, compiled.lookups);
     env.set(v.name, value);
     envObj[v.name] = value;
   }
@@ -105,18 +113,22 @@ export function simulate(model: Model): SimResult {
 
   const time: number[] = [];
   const series: Record<string, number[]> = Object.create(null);
-  for (const v of allVariables(model)) series[v.name] = [];
+  // A lookup definition gets no series: it has no value at a timestep, it's a curve. Including
+  // one would put a meaningless flat line (always 0) on every chart and in run_simulation's
+  // output for a variable that isn't really a variable.
+  const seriesVars = allVariables(model).filter((v) => !compiled.lookupNames.has(v.name));
+  for (const v of seriesVars) series[v.name] = [];
 
   let stockValues = new Map<string, number>();
   for (const s of compiled.stockInit) {
-    stockValues.set(s.id, evaluate(s.expr, { Time: startTime }));
+    stockValues.set(s.id, evaluate(s.expr, { Time: startTime }, compiled.lookups));
   }
 
   for (let step = 0; step <= steps; step++) {
     const t = startTime + step * dt;
     const env = computeEnv(model, compiled, stockValues, t);
     time.push(t);
-    for (const v of allVariables(model)) {
+    for (const v of seriesVars) {
       series[v.name]!.push(env.get(v.name) ?? 0);
     }
 

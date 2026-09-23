@@ -1,5 +1,6 @@
 import { ModelError } from "../errors.js";
 import { nextId } from "../ids.js";
+import { lookupScopeOf } from "../lookup.js";
 import { inferPolarity } from "../polarity.js";
 import { allVariables, type Connector, type Model, type Polarity, type Position, type Variable } from "../types.js";
 import { resolveVariableRef } from "./helpers.js";
@@ -24,7 +25,10 @@ export interface AddConnectorInput {
 export function inferConnectorPolarity(model: Model, source: Variable, target: Variable): Polarity | null {
   if (!("equation" in target) || !target.equation) return null;
   const knownNames = allVariables(model).map((v) => v.name);
-  return inferPolarity(target.equation, source.name, knownNames);
+  // The model's lookups go along for the ride: `Rate = Effect(Inventory)` is signable when
+  // `Effect` is a monotonic curve, and without the tables this would fall through to "unknown"
+  // and lose the polarity (and any loop classification that depends on it).
+  return inferPolarity(target.equation, source.name, knownNames, lookupScopeOf(model));
 }
 
 /** Adds a causal relation (a.k.a. connector) between two variables. Also how a pure

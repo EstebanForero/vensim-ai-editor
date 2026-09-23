@@ -17,7 +17,8 @@
 // `null` — "don't know," which callers should treat as "leave it to the caller's own default,"
 // never silently guess.
 
-import type { Expr } from "../mdl/expr/ast.js";
+import { isFunctionRegistered } from "../mdl/expr/functions.js";
+import type { Expr, LookupTable } from "../mdl/expr/ast.js";
 import { tryParseExpr } from "../mdl/expr/parser.js";
 import type { Polarity } from "./types.js";
 
@@ -59,7 +60,27 @@ function agreeingSign(signs: Sign[]): Sign {
   return signs.reduce(addSign, "zero");
 }
 
-function analyze(e: Expr, target: string): SignPair {
+/** The sign of a monotonic lookup's slope, or null when it isn't monotonic — a curve that both
+ * rises and falls can't be signed without knowing where on it the model is operating, but a
+ * strictly increasing one is "+" everywhere and a strictly decreasing one is "-" everywhere.
+ * Flat stretches (repeated y) are allowed; they contribute nothing either way. */
+function lookupSlopeSign(table: LookupTable): Sign | null {
+  const ys = table.points.map((p) => p.y);
+  let up = false;
+  let down = false;
+  for (let i = 1; i < ys.length; i++) {
+    if (ys[i]! > ys[i - 1]!) up = true;
+    else if (ys[i]! < ys[i - 1]!) down = true;
+  }
+  if (up && down) return null;
+  if (up) return "pos";
+  if (down) return "neg";
+  return "zero";
+}
+
+type LookupScopeParam = Map<string, LookupTable> | undefined;
+
+function analyze(e: Expr, target: string, lookups?: LookupScopeParam): SignPair {
   switch (e.type) {
     case "num":
       return { value: e.value > 0 ? "pos" : e.value < 0 ? "neg" : "zero", deriv: "zero" };
@@ -67,8 +88,12 @@ function analyze(e: Expr, target: string): SignPair {
     case "var":
       return e.name === target ? { value: "pos", deriv: "pos" } : { value: "pos", deriv: "zero" };
 
+    case "lookup":
+      // A table literal used as a value contributes no dependence; its own y-values are numbers.
+      return { value: "unknown", deriv: "zero" };
+
     case "unary": {
-      const a = analyze(e.arg, target);
+      const a = analyze(e.arg, target, lookups);
       if (e.op === "-") return { value: negate(a.value), deriv: negate(a.deriv) };
       if (e.op === "+") return a;
       // NOT: a boolean flip — not meaningfully signed, and anything depending on a NOT'd
@@ -77,8 +102,8 @@ function analyze(e: Expr, target: string): SignPair {
     }
 
     case "binary": {
-      const l = analyze(e.left, target);
-      const r = analyze(e.right, target);
+      const l = analyze(e.left, target, lookups);
+      const r = analyze(e.right, target, lookups);
       switch (e.op) {
         case "+":
           return { value: addSign(l.value, r.value), deriv: addSign(l.deriv, r.deriv) };
@@ -106,7 +131,7 @@ function analyze(e: Expr, target: string): SignPair {
     }
 
     case "call":
-      return analyzeCall(e.name.toUpperCase(), e.args, target);
+      return analyzeCall(e.name, e.args, target, lookups);
   }
 }
 
@@ -131,9 +156,27 @@ function powerSign(base: SignPair, exponentExpr: Expr): SignPair {
   return { value: "pos", deriv: base.deriv === "zero" ? "zero" : "unknown" };
 }
 
-function analyzeCall(name: string, args: Expr[], target: string): SignPair {
-  const parts = args.map((a) => analyze(a, target));
+function analyzeCall(rawName: string, args: Expr[], target: string, lookups?: LookupScopeParam): SignPair {
+  const name = rawName.toUpperCase();
+  const parts = args.map((a) => analyze(a, target, lookups));
   const anyDeriv = () => (parts.some((p) => p.deriv !== "zero") ? "unknown" : "zero");
+
+  // A call to a model-defined lookup, which the built-in switch below knows nothing about. Even
+  // though a curve's slope at an arbitrary point is unknowable, a MONOTONIC one has the same
+  // sign everywhere, and that's the common case for the "effect of X on Y" curves lookups are
+  // normally used for — so a relation into a lookup's argument can still be signed correctly
+  // (and, from there, a feedback loop through it classified R vs B).
+  const table = lookups?.get(rawName);
+  if (table) {
+    const slope = lookupSlopeSign(table);
+    const argDeriv = parts[0]?.deriv ?? "zero";
+    if (slope === null) return { value: "unknown", deriv: argDeriv === "zero" ? "zero" : "unknown" };
+    if (slope === "zero") return { value: "unknown", deriv: "zero" };
+    return { value: "unknown", deriv: slope === "pos" ? argDeriv : negate(argDeriv) };
+  }
+  // An unrecognized call name that isn't a lookup either — fall through to the built-in switch,
+  // whose default already handles "don't know".
+  if (!isFunctionRegistered(rawName)) return { value: "unknown", deriv: anyDeriv() };
 
   switch (name) {
     case "MIN":
@@ -193,10 +236,15 @@ function analyzeCall(name: string, args: Expr[], target: string): SignPair {
  * functions, ...). `null` means "don't know," not "positive" — callers should fall back to their
  * own default (this editor's convention is "+") rather than treat `null` as any particular sign.
  */
-export function inferPolarity(equation: string, sourceVarName: string, knownNames: string[]): Polarity | null {
+export function inferPolarity(
+  equation: string,
+  sourceVarName: string,
+  knownNames: string[],
+  lookups?: Map<string, LookupTable>,
+): Polarity | null {
   const expr = tryParseExpr(equation, knownNames);
   if (!expr) return null;
-  const { deriv } = analyze(expr, sourceVarName);
+  const { deriv } = analyze(expr, sourceVarName, lookups);
   if (deriv === "pos") return "+";
   if (deriv === "neg") return "-";
   return null;

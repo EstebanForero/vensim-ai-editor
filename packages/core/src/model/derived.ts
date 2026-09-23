@@ -4,6 +4,7 @@
 // constant" is never stored, only computed from its equation on demand.
 
 import { collectVarNames, tryParseExpr } from "../mdl/expr/index.js";
+import { collectLookupRefs } from "./lookup.js";
 import { allVariables, findVariable, type Auxiliary, type Model, type Variable } from "./types.js";
 
 /**
@@ -17,6 +18,9 @@ export function isConstantAuxiliary(aux: Auxiliary, model?: Model): boolean {
   const knownNames = model ? allVariables(model).map((v) => v.name) : [];
   const parsed = tryParseExpr(aux.equation, knownNames);
   if (!parsed) return false;
+  // A lookup table also references no variables (it's all numbers), but it is emphatically not a
+  // constant — it's a function other equations call, and nothing about it is a fixed value.
+  if (parsed.type === "lookup") return false;
   return collectVarNames(parsed).size === 0;
 }
 
@@ -25,7 +29,9 @@ function ownEquation(variable: Variable): string {
 }
 
 /** Every variable this one's equation (or initial value, for a stock) directly references —
- * "what does this depend on". */
+ * "what does this depend on". A lookup called as `Effect(x)` counts as a dependency of the
+ * caller on `Effect` as well as on `x`: `collectVarNames` only walks a call's arguments, so the
+ * callee's own name is folded in here. */
 export function equationDependencies(model: Model, variable: Variable): Variable[] {
   const knownNames = allVariables(model)
     .map((v) => v.name)
@@ -33,6 +39,7 @@ export function equationDependencies(model: Model, variable: Variable): Variable
   const parsed = tryParseExpr(ownEquation(variable), knownNames);
   if (!parsed) return [];
   const names = collectVarNames(parsed);
+  for (const ref of collectLookupRefs(parsed)) names.add(ref);
   return allVariables(model).filter((v) => names.has(v.name));
 }
 

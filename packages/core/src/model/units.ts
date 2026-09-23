@@ -200,7 +200,15 @@ function analyzeDim(e: Expr, unitsByName: Map<string, UnitDim>): DimResult {
     }
 
     case "call":
-      return analyzeCallDim(e.name.toUpperCase(), e.args, unitsByName);
+      return analyzeCallDim(e.name, e.args, unitsByName);
+
+    case "lookup":
+      // A table literal is a curve, and its output units are the OWNING variable's declared
+      // units — not something derivable from the literal itself (all of whose numbers are
+      // untyped). Reporting "unknown" keeps `check` from inventing a mismatch against the
+      // variable's own declared units; the meaningful check for a lookup is at its call sites,
+      // which analyzeCallDim handles.
+      return { dim: "unknown", mismatches: [], literal: false };
   }
 }
 
@@ -210,7 +218,10 @@ function literalExponent(e: Expr): number | null {
   return null;
 }
 
-function analyzeCallDim(name: string, args: Expr[], unitsByName: Map<string, UnitDim>): DimResult {
+/** `rawName` is the call's name exactly as written (variable names are matched case-sensitively),
+ * upper-cased only for the built-in dispatch below. */
+function analyzeCallDim(rawName: string, args: Expr[], unitsByName: Map<string, UnitDim>): DimResult {
+  const name = rawName.toUpperCase();
   const parts = args.map((a) => analyzeDim(a, unitsByName));
   const allMismatches = () => parts.flatMap((p) => p.mismatches);
 
@@ -279,9 +290,20 @@ function analyzeCallDim(name: string, args: Expr[], unitsByName: Map<string, Uni
       // PULSE(start, duration): a 0/1 dimensionless switch.
       return { dim: { ...DIMENSIONLESS }, mismatches: allMismatches(), literal: false };
 
-    default:
+    default: {
+      // Not a built-in. If the name is a model variable that declares units, this is a call to a
+      // lookup table, and the result carries the units the lookup itself declares — in Vensim a
+      // lookup's `~units` line describes what it RETURNS, not what it takes. Without this, every
+      // equation using a lookup computes as "unknown" and the declared-vs-computed check below
+      // silently skips it — which is exactly where an output-units slip is easiest to make and
+      // hardest to notice.
+      const asLookup = unitsByName.get(rawName);
+      if (asLookup !== undefined && asLookup !== "unknown") {
+        return { dim: asLookup, mismatches: allMismatches(), literal: false };
+      }
       // An unrecognized function's unit contract isn't known — don't guess.
       return { dim: "unknown", mismatches: allMismatches(), literal: false };
+    }
   }
 }
 
