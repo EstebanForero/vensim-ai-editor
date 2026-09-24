@@ -70,7 +70,7 @@ function LoopBadge({ cx, cy, polarity, n }: { cx: number; cy: number; polarity: 
  * but a button you have to scroll to find is one you don't find. */
 function Frame({ children }: { children: React.ReactNode }) {
   return (
-    <svg viewBox="0 0 320 190" className="max-h-72 w-full" role="img">
+    <svg viewBox="0 0 320 190" className="max-h-64 w-full" role="img">
       <defs>
         <marker id="arch-ex-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />

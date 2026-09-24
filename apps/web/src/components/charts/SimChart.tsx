@@ -2,9 +2,8 @@ import { isLookupVariable } from "@vensim-ai/core";
 import { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
+import { CHART_PALETTE as PALETTE, chartWash } from "@/lib/chartPalette";
 import { useModelStore } from "@/state/modelStore";
-
-const PALETTE = ["#6d28d9", "#0ea5e9", "#16a34a", "#dc2626", "#d97706", "#db2777", "#0891b2", "#65a30d"];
 
 export function SimChart() {
   const model = useModelStore((s) => s.model);
@@ -61,7 +60,7 @@ export function SimChart() {
             className="rounded-full border px-2 py-0.5 text-[11px]"
             style={{
               borderColor: PALETTE[i % PALETTE.length],
-              backgroundColor: selected.has(name) ? PALETTE[i % PALETTE.length] + "22" : "transparent",
+              backgroundColor: selected.has(name) ? chartWash(PALETTE[i % PALETTE.length]!) : "transparent",
               color: PALETTE[i % PALETTE.length],
             }}
           >

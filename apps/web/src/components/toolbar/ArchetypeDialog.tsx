@@ -5,6 +5,7 @@ import { Fragment, useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useModelStore } from "@/state/modelStore";
+import { ArchetypeCurve } from "./ArchetypeCurve";
 import { ARCHETYPE_DIAGRAMS } from "./archetypeExamples";
 
 /** "likely" is the full signature; "possible" is a weaker form of it that a small diagram often
@@ -90,27 +91,30 @@ export function ArchetypeDialog() {
         <DialogHeader>
           <DialogTitle>Archetypes</DialogTitle>
           <DialogDescription>
-            The classic systems archetypes, each with a schematic and a model you can open and run. The ones this model's{" "}
-            <em>structure</em> matches are listed first — an R loop and a B loop on one stock, two reinforcing loops fighting
-            each other, and so on. Those are candidates to confirm, not a verdict: a signature is necessary but not
-            sufficient, so a small diagram can match several at once, and each names the loops and variables it was read
-            from so you can check it against the diagram.
+            The classic systems archetypes, each with a schematic, a sample curve and a model you can open and run. The
+            ones this model's <em>structure</em> matches are listed first — candidates to confirm, not a verdict, since
+            a signature is necessary but not sufficient and a small diagram can match several at once. Each names the
+            loops and variables it was read from, so you can check it against the diagram.
           </DialogDescription>
         </DialogHeader>
 
-        {matches !== null && matches.length === 0 && (
-          <p className="flex items-start gap-2 text-sm text-muted-foreground">
-            <Shapes className="mt-0.5 size-4 shrink-0" />
-            <span>
-              No structural matches in this model — no match, not no archetype: a model that has the pattern modelled
-              differently from these signatures won't be picked up. Every archetype is still listed below, and each one's
-              example can be opened.
-            </span>
-          </p>
-        )}
-
-        <div className="flex max-h-[32rem] gap-4">
+        {/* Tall enough to show the schematic, the sample curve and its slider together — the
+            slider is the point of the curve panel and must not be something you have to scroll to
+            find — but bounded by the viewport, so on a short screen it scrolls instead. */}
+        <div className="flex max-h-[max(24rem,calc(100vh-13rem))] gap-4">
           <div className="w-64 shrink-0 space-y-2 overflow-y-auto pr-1">
+            {/* Here rather than above the two columns: it belongs to the list (this is every
+                archetype, not the ones found), and the column below the six rows is empty space
+                the detail pane next to it can't afford to waste. */}
+            {matches !== null && matches.length === 0 && (
+              <p className="flex items-start gap-1.5 rounded-md border border-border bg-muted/40 p-2 text-[11px] text-muted-foreground">
+                <Shapes className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  No structural matches — no match, not no archetype: a model that has the pattern modelled differently
+                  from these signatures won't be picked up.
+                </span>
+              </p>
+            )}
             {rows.map((row, i) => (
               <Fragment key={row.key}>
                 {i === firstUnmatched && (
@@ -168,12 +172,19 @@ function CandidateDetail({ row, onOpenExample }: { row: Row; onOpenExample: (row
         <div className="rounded-md border border-border bg-card p-2">
           <Diagram />
         </div>
+        {/* The structure above says what the archetype is made of; this says what that structure
+            *does* when it runs — the same claim, in the other direction, and the one the example
+            is checked against. */}
+        <div className="mt-3 mb-1 flex items-baseline justify-between gap-2">
+          <span className="text-xs font-medium">Sample curve</span>
+          <span className="text-[10px] text-muted-foreground">the example's own run</span>
+        </div>
+        <ArchetypeCurve id={row.id} />
         <p className="mt-2 text-sm">{MEANINGS.get(row.id)}</p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {row.match
-            ? row.match.summary
-            : "This model's structure doesn't match this archetype's signature. The example is a model built to have it — open it and run it to see the pattern."}
-        </p>
+        {/* Only when there's something to say about *this* model. With no match the note above the
+            list has already said it, and repeating it here cost two lines the panel can't spare —
+            the slider below the curve has to stay above the fold. */}
+        {row.match && <p className="mt-2 text-xs text-muted-foreground">{row.match.summary}</p>}
       </div>
       {/* Below the scroll area, not inside it: the button is the one thing here you can't find by
           scrolling past a long summary, so it must not be something you have to scroll to. */}

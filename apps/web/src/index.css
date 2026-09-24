@@ -40,6 +40,19 @@
   --lookup-color: oklch(0.48 0.11 195);
   --lookup-fill: oklch(0.97 0.025 195);
   --lookup-border: oklch(0.62 0.1 195);
+  /* Chart series colours, in the fixed order charts assign them. A theme token rather than a
+     constant because the light steps do not survive the flip: violet-700 sits at almost exactly
+     the dark card's luminance (about 1.2:1), so a chart that reused the light values would lose
+     its first series in dark mode while the second stayed legible. The dark column is the same
+     eight hues one ramp-step up, chosen against the dark surface rather than derived from it. */
+  --chart-1: #6d28d9;
+  --chart-2: #0ea5e9;
+  --chart-3: #16a34a;
+  --chart-4: #dc2626;
+  --chart-5: #d97706;
+  --chart-6: #db2777;
+  --chart-7: #0891b2;
+  --chart-8: #65a30d;
 }
 
 .dark {
@@ -77,6 +90,14 @@
   --lookup-color: oklch(0.78 0.11 195);
   --lookup-fill: oklch(0.24 0.03 195);
   --lookup-border: oklch(0.5 0.08 195);
+  --chart-1: #a78bfa;
+  --chart-2: #38bdf8;
+  --chart-3: #4ade80;
+  --chart-4: #f87171;
+  --chart-5: #fbbf24;
+  --chart-6: #f472b6;
+  --chart-7: #22d3ee;
+  --chart-8: #a3e635;
 }
 
 @theme inline {
@@ -113,4 +134,48 @@
     @apply bg-background text-foreground;
     margin: 0;
   }
+}
+
+/* The archetype panel's curve scrubber. A native range input is drawn by the browser as a thick
+   accent-coloured bar, which reads as a progress indicator rather than a handle you drag — and
+   sitting next to a chart it competes with the data for attention. Restyled as a thin recessive
+   track with a small ringed thumb; unlayered so it wins over the utility classes, and written
+   for both engine families since `appearance: none` alone leaves the track engine-drawn. */
+.curve-slider {
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.curve-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--border);
+}
+.curve-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 9999px;
+  background: var(--primary);
+  border: 2px solid var(--card);
+}
+.curve-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--border);
+}
+.curve-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--primary);
+  border: 2px solid var(--card);
+}
+.curve-slider:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 9999px;
 }
