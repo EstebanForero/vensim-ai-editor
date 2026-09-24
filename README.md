@@ -39,8 +39,11 @@ Studio, …). Defaults to `https://api.openai.com/v1` and `gpt-4o`.
 The `.mdl` codec covers the core arithmetic/equation subset Vensim uses for stocks (`INTEG`),
 flows, and auxiliaries, plus the control block (`FINAL TIME`, `INITIAL TIME`, `TIME STEP`,
 `SAVEPER`) and a best-effort read/write of the sketch section for diagram layout. Subscripted
-(array) variables, macros, lookup tables, and DELAY/SMOOTH-family builtins are not modeled yet —
-opening a file that uses them won't crash, but those constructs won't simulate or render.
+(array) variables and macros are not modeled yet — opening a file that uses them won't crash, but
+those constructs won't simulate or render. Lookup tables are modelled, and so are `DELAY1`,
+`DELAY3`, `DELAY N`, `SMOOTH` and `SMOOTH3` (expanded into stocks and flows before simulating, so
+they integrate alongside the model's own levels); `DELAY FIXED` and the explicit-initial `DELAY1I`
+family are not.
 
 ## Causal relations and feedback loops
 

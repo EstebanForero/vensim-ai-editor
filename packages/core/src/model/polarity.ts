@@ -209,6 +209,19 @@ function analyzeCall(rawName: string, args: Expr[], target: string, lookups?: Lo
     case "ARCTAN":
       return { value: "pos", deriv: parts[0]?.deriv ?? "zero" };
 
+    // A delay or smoothing is a monotone lag with unit steady-state gain: raising the input
+    // raises what comes out, only later. So the input's sign passes straight through and the
+    // delay time (args[1]) contributes nothing — it changes *when*, never *which way*. Without
+    // this, every feedback loop running through a delay is left unclassified, which is exactly
+    // the loop an archetype like Shifting the Burden is built out of. (Lowered to stocks before
+    // simulating — see sim/lowerDelays.ts — but this analysis reads the model as written.)
+    case "DELAY1":
+    case "DELAY3":
+    case "DELAY_N":
+    case "SMOOTH":
+    case "SMOOTH3":
+      return { value: "pos", deriv: parts[0]?.deriv ?? "zero" };
+
     case "ZIDZ":
     case "XIDZ": {
       // Behaves like args[0]/args[1] whenever the divisor isn't zero — reuse the quotient rule.

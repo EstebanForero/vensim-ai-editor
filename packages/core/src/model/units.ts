@@ -290,6 +290,16 @@ function analyzeCallDim(rawName: string, args: Expr[], unitsByName: Map<string, 
       // PULSE(start, duration): a 0/1 dimensionless switch.
       return { dim: { ...DIMENSIONLESS }, mismatches: allMismatches(), literal: false };
 
+    // A delay passes its input through unchanged, only later, so the result carries the input's
+    // units. The delay time is in model time units, not the input's — reading it here would
+    // combine "m3/Month" with "Month" and invent a mismatch that isn't there.
+    case "DELAY1":
+    case "DELAY3":
+    case "DELAY_N":
+    case "SMOOTH":
+    case "SMOOTH3":
+      return { dim: parts[0]?.dim ?? "unknown", mismatches: allMismatches(), literal: parts[0]?.literal ?? false };
+
     default: {
       // Not a built-in. If the name is a model variable that declares units, this is a call to a
       // lookup table, and the result carries the units the lookup itself declares — in Vensim a

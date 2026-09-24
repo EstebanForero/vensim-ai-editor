@@ -6,13 +6,19 @@ export interface Token {
 
 // Function names Vensim writes with a space in them. Squashed to a single identifier so the
 // lexer sees one token; printer.ts restores the space on the way out.
-const MULTI_WORD_FUNCTIONS = ["IF THEN ELSE", "WITH LOOKUP"];
+//
+// Each is squashed only when the words are directly followed by a call's `(`. That guard matters
+// most for `DELAY N`, whose first word is one modelers use constantly: without it, a variable
+// named "Delay Needed" or an equation containing "Delivery Delay Now" would be rewritten into a
+// mangled identifier. `IF THEN ELSE` and `WITH LOOKUP` always appear as calls, so for them the
+// guard changes nothing.
+const MULTI_WORD_FUNCTIONS = ["IF THEN ELSE", "WITH LOOKUP", "DELAY N"];
 
 function normalizeMultiWordFunctions(src: string): string {
   let out = src;
   for (const name of MULTI_WORD_FUNCTIONS) {
     const squashed = name.replace(/ /g, "_");
-    out = out.replace(new RegExp(name.replace(/ /g, "\\s+"), "gi"), squashed);
+    out = out.replace(new RegExp(`${name.replace(/ /g, "\\s+")}\\s*(?=\\()`, "gi"), squashed);
   }
   return out;
 }

@@ -3,8 +3,10 @@
 // Scope (see project plan): full arithmetic/INTEG equation section, control variables
 // (FINAL TIME / INITIAL TIME / TIME STEP / SAVEPER), and a best-effort read of the sketch
 // section's `10,` (variable box) records for x/y layout and `1,` (arrow) records for causal
-// connectors. Subscripts, macros, lookups, and DELAY/SMOOTH-family builtins are not modeled;
-// their raw equation text is preserved in `unsupportedRaw` rather than dropped or crashed on.
+// connectors. Subscripts and macros are not modeled; their raw equation text is preserved in
+// `unsupportedRaw` rather than dropped or crashed on. Lookups are modeled, and the
+// DELAY/SMOOTH family parses as ordinary calls — it's the *simulator* that expands them, into
+// stocks and flows, before it integrates (see sim/lowerDelays.ts).
 
 import { addAuxiliary, addComment, addConnector, addFlow, addStock } from "../model/builder/index.js";
 import { stripDiacritics } from "../model/builder/helpers.js";

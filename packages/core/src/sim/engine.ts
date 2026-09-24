@@ -1,7 +1,8 @@
 import { ModelError } from "../model/errors.js";
 import { lookupScopeOf } from "../model/lookup.js";
 import { allVariables, type Model } from "../model/types.js";
-import { collectVarNames, evaluate, tryParseExpr, type Expr, type LookupTable } from "../mdl/expr/index.js";
+import { collectVarNames, evaluate, tryParseExpr, type EvalEnv, type Expr, type LookupTable } from "../mdl/expr/index.js";
+import { lowerDelays } from "./lowerDelays.js";
 import { topoSort } from "./topo.js";
 
 export interface SimResult {
@@ -71,18 +72,15 @@ function parseOrThrow(varName: string, eq: string, knownNames: string[]): Expr {
   return parsed;
 }
 
-/** Evaluates all auxiliaries/flows given current stock values and time, returning a full name->value env. */
-function computeEnv(model: Model, compiled: Compiled, stockValues: Map<string, number>, time: number): Map<string, number> {
-  const env = new Map<string, number>();
-  env.set("Time", time);
-  for (const s of model.stocks) env.set(s.name, stockValues.get(s.id) ?? 0);
-  const envObj: Record<string, number> = Object.create(null);
-  for (const [k, v] of env) envObj[k] = v;
+/** Evaluates all auxiliaries/flows given current stock values and time, returning the full
+ * name->value environment they were computed against. */
+function computeEnv(model: Model, compiled: Compiled, stockValues: Map<string, number>, time: number): EvalEnv {
+  const env: EvalEnv = Object.create(null);
+  env["Time"] = time;
+  for (const s of model.stocks) env[s.name] = stockValues.get(s.id) ?? 0;
 
   for (const v of compiled.auxAndFlowOrder) {
-    const value = evaluate(v.expr, envObj, compiled.lookups);
-    env.set(v.name, value);
-    envObj[v.name] = value;
+    env[v.name] = evaluate(v.expr, env, compiled.lookups);
   }
   // The clock wins, whatever the model contains. A variable named `Time` can't be created
   // through the builder (it's in RESERVED_NAMES), but one can still arrive in an imported .mdl —
@@ -90,8 +88,7 @@ function computeEnv(model: Model, compiled: Compiled, stockValues: Map<string, n
   // would silently get the wrong value for the rest of the run. Re-asserting it here means the
   // worst case is a variable that's ignored (and flagged by validateModel) rather than a model
   // that quietly computes the wrong answer.
-  env.set("Time", time);
-  envObj["Time"] = time;
+  env["Time"] = time;
   return env;
 }
 
@@ -102,18 +99,23 @@ function stockDerivatives(model: Model, compiled: Compiled, stockValues: Map<str
     let d = 0;
     for (const fid of s.inflows) {
       const flow = model.flows.find((f) => f.id === fid);
-      if (flow) d += env.get(flow.name) ?? 0;
+      if (flow) d += env[flow.name] ?? 0;
     }
     for (const fid of s.outflows) {
       const flow = model.flows.find((f) => f.id === fid);
-      if (flow) d -= env.get(flow.name) ?? 0;
+      if (flow) d -= env[flow.name] ?? 0;
     }
     derivs.set(s.id, d);
   }
   return derivs;
 }
 
-export function simulate(model: Model): SimResult {
+export function simulate(original: Model): SimResult {
+  // Delay/smoothing builtins become ordinary stocks and flows first, so the integrator below
+  // needs no notion of them at all — see lowerDelays.ts for why that beats evaluating them. The
+  // series are collected from the ORIGINAL model, which is what keeps the generated delay state
+  // out of the charts.
+  const { model, delayStockIds } = lowerDelays(original);
   const compiled = compile(model);
   const { startTime, stopTime, dt, integrationMethod } = model.simSpec;
   if (dt <= 0) throw new ModelError("Time step (dt) must be positive.");
@@ -124,12 +126,42 @@ export function simulate(model: Model): SimResult {
   // A lookup definition gets no series: it has no value at a timestep, it's a curve. Including
   // one would put a meaningless flat line (always 0) on every chart and in run_simulation's
   // output for a variable that isn't really a variable.
-  const seriesVars = allVariables(model).filter((v) => !compiled.lookupNames.has(v.name));
+  const seriesVars = allVariables(original).filter((v) => !compiled.lookupNames.has(v.name));
   for (const v of seriesVars) series[v.name] = [];
 
   let stockValues = new Map<string, number>();
-  for (const s of compiled.stockInit) {
-    stockValues.set(s.id, evaluate(s.expr, { Time: startTime }, compiled.lookups));
+  const initEnv: EvalEnv = Object.create(null);
+  initEnv["Time"] = startTime;
+
+  // The model's own stocks, in dependency order: an initial equation may reference another stock
+  // (`Inventory = INTEG(..., Capacity)`), and evaluating those in declaration order would read a
+  // stock that hasn't been set yet. Dependencies on anything that isn't a stock initial — a
+  // constant, Time — are ignored by topoSort, and are available in `initEnv` regardless.
+  const ownInit = compiled.stockInit.filter((s) => !delayStockIds.has(s.id));
+  const orderedInit = topoSort(
+    ownInit.map((s) => ({
+      id: s.id,
+      dependsOn: [...collectVarNames(s.expr)].map((n) => compiled.nameToId.get(n)).filter((x): x is string => !!x),
+    })),
+  );
+  const initById = new Map(ownInit.map((s) => [s.id, s]));
+  for (const id of orderedInit) {
+    const s = initById.get(id);
+    if (!s) continue;
+    const value = evaluate(s.expr, initEnv, compiled.lookups);
+    stockValues.set(s.id, value);
+    initEnv[s.name] = value;
+  }
+
+  // Delay state settles at whatever its input produces at the initial time, and that input is
+  // normally an expression over auxiliaries and flows — which only exist once the initial state
+  // above is known. So these are evaluated against the model's fully-computed t0 environment
+  // rather than alongside it.
+  if (delayStockIds.size > 0) {
+    const t0 = computeEnv(model, compiled, stockValues, startTime);
+    for (const s of compiled.stockInit) {
+      if (delayStockIds.has(s.id)) stockValues.set(s.id, evaluate(s.expr, t0, compiled.lookups));
+    }
   }
 
   for (let step = 0; step <= steps; step++) {
@@ -137,7 +169,7 @@ export function simulate(model: Model): SimResult {
     const env = computeEnv(model, compiled, stockValues, t);
     time.push(t);
     for (const v of seriesVars) {
-      series[v.name]!.push(env.get(v.name) ?? 0);
+      series[v.name]!.push(env[v.name] ?? 0);
     }
 
     if (step === steps) break;
