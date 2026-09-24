@@ -1,13 +1,21 @@
-/** The classic system-dynamics archetypes whose structure is fully decidable from the model's
- * signed causal graph. The delay-dependent ones (Shifting the Burden in particular) are absent
- * on purpose: telling Shifting the Burden from Fixes that Fail turns on which of the two paths
- * is slow, and the simulator has no DELAY/SMOOTH support to answer that with — see detect.ts. */
+// Public shapes of the archetype report. The archetypes themselves — their labels, meanings,
+// detectors and examples — live in registry.ts; `ArchetypeId` is declared here explicitly rather
+// than derived from that table, so this module has no imports and the table can import it
+// without a cycle.
+
+/** The classic system-dynamics archetypes this codebase can detect.
+ *
+ * Every one of these is decidable from the model itself: loop structure from the diagram, and —
+ * for Shifting the Burden — the presence of a delay read from the equations. Archetypes that
+ * would need to judge *intent* rather than structure are not here, and neither are ones whose
+ * discriminating feature the model format can't express. */
 export type ArchetypeId =
   | "limits-to-growth"
   | "tragedy-of-the-commons"
   | "escalation"
   | "success-to-the-successful"
-  | "fixes-that-fail";
+  | "fixes-that-fail"
+  | "shifting-the-burden";
 
 /**
  * How much structure backs a match. `"likely"` means the full signature is present — e.g. both
@@ -19,10 +27,9 @@ export type ArchetypeConfidence = "likely" | "possible";
 
 /**
  * One structural match. Deliberately *not* a verdict: an archetype's signature is a necessary
- * condition, not a sufficient one — any R loop and B loop that happen to act on one stock match
- * Limits to Growth whether or not the modeler meant it, and a three-loop diagram will match
- * several archetypes at once. Every field here exists so a modeler can confirm or dismiss the
- * candidate in one glance rather than trusting the label.
+ * condition, not a sufficient one, and a three-loop diagram will match several archetypes at
+ * once. Every field here exists so a modeler can confirm or dismiss the candidate in one glance
+ * rather than trusting the label.
  */
 export interface ArchetypeMatch {
   /** Opaque, stable identifier for this match, derived from the structure it was found on — so
@@ -36,7 +43,8 @@ export interface ArchetypeMatch {
    * What the model actually contains — the *structure*, never an interpretation of it. Says
    * "`R1` and `B1` both act on the same stock, `Water`", not "this model is limited by water":
    * the archetype name supplies the pattern, and this line lets the reader check it against the
-   * diagram instead of taking it on faith.
+   * diagram instead of taking it on faith. (What the pattern *means* is on the definition, in
+   * registry.ts.)
    */
   summary: string;
   /** ids of the loops involved, as `detectLoops` returns them. */

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { detectArchetypes } from "../src/archetypes/detect.js";
+import { ARCHETYPES, buildArchetypeExample, detectArchetypes } from "../src/archetypes/index.js";
 import type { ArchetypeId } from "../src/archetypes/types.js";
 import { addAuxiliary, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
 import { detectLoops } from "../src/loops/detect.js";
+import { simulate } from "../src/sim/engine.js";
 import { createEmptyModel } from "../src/model/types.js";
 
 /** Everything an archetype match reports about *why* it matched — the labels and names — with
@@ -201,6 +202,36 @@ describe("detectArchetypes", () => {
 
   // One candidate per shared resource, not one per pair of flows: three users of one stock are a
   // single commons, so a second one has to come from a second stock.
+  // Shifting the Burden turns on a delay, which no amount of loop structure can show: the two
+  // paths differ only in that one of them is slow. That is readable from the equation and from
+  // nothing else, which is why this archetype was missing until DELAY existed.
+  test("Shifting the Burden: a fast path and a delayed one out of the same problem", () => {
+    const model = createEmptyModel();
+    addStock(model, { name: "Problem", initialEquation: "100", pos: { x: 0, y: 0 } });
+    addFlow(model, { name: "Relief", equation: "Problem * 0.3", from: "Problem", pos: { x: 0, y: 100 } }); // fast
+    addAuxiliary(model, { name: "Slow Path", equation: "DELAY1(Problem, 8)", pos: { x: 200, y: 0 } });
+    addFlow(model, { name: "Cure", equation: "Slow Path", from: "Problem", pos: { x: 200, y: 100 } }); // delayed
+    addConnector(model, { from: "Problem", to: "Relief" });
+    addConnector(model, { from: "Problem", to: "Slow Path" });
+    addConnector(model, { from: "Slow Path", to: "Cure" });
+
+    const matches = matchesOf(detectArchetypes(model), "shifting-the-burden");
+    expect(matches).toHaveLength(1);
+    // No reinforcing loop spans the two paths here, so this is the bare two-path structure.
+    expect(matches[0]!.confidence).toBe("possible");
+    expect(matches[0]!.summary).toContain("runs through a delay");
+  });
+
+  test("Shifting the Burden: not reported when both paths are the same speed", () => {
+    const model = createEmptyModel();
+    addStock(model, { name: "Problem", initialEquation: "100", pos: { x: 0, y: 0 } });
+    addFlow(model, { name: "Relief", equation: "Problem * 0.3", from: "Problem", pos: { x: 0, y: 100 } });
+    addFlow(model, { name: "Cure", equation: "Problem * 0.2", from: "Problem", pos: { x: 200, y: 100 } });
+    addConnector(model, { from: "Problem", to: "Relief" });
+    addConnector(model, { from: "Problem", to: "Cure" });
+    expect(matchesOf(detectArchetypes(model), "shifting-the-burden")).toEqual([]);
+  });
+
   test("limit caps the report", () => {
     const model = createEmptyModel();
     for (const [stock, a, b] of [
@@ -216,5 +247,42 @@ describe("detectArchetypes", () => {
 
     expect(detectArchetypes(model)).toHaveLength(2);
     expect(detectArchetypes(model, { limit: 1 })).toHaveLength(1);
+  });
+});
+
+describe("archetype examples", () => {
+  // The property that makes the examples trustworthy: each one is a real model the detector
+  // reads as the archetype it is filed under. Neither can drift without the suite failing.
+  for (const archetype of ARCHETYPES) {
+    test(`${archetype.label}: its own example is detected as it`, () => {
+      expect(detectArchetypes(buildArchetypeExample(archetype.id)).map((m) => m.archetype)).toContain(archetype.id);
+    });
+
+    test(`${archetype.label}: its example runs and produces finite output`, () => {
+      const result = simulate(buildArchetypeExample(archetype.id));
+      expect(result.time.length).toBeGreaterThan(1);
+      for (const [name, values] of Object.entries(result.series)) {
+        expect(values.every((v) => Number.isFinite(v))).toBe(true);
+        expect(name.length).toBeGreaterThan(0);
+      }
+      expect(Object.keys(result.series).length).toBeGreaterThan(1);
+    });
+
+    test(`${archetype.label}: its example has a label, a meaning and a distinct model`, () => {
+      expect(archetype.label.length).toBeGreaterThan(0);
+      expect(archetype.meaning.length).toBeGreaterThan(20);
+      expect(buildArchetypeExample(archetype.id).name).toContain(archetype.label.split(" — ")[0]!);
+    });
+
+    test(`${archetype.label}: building its example twice gives independent models`, () => {
+      const first = buildArchetypeExample(archetype.id);
+      const second = buildArchetypeExample(archetype.id);
+      expect(first.stocks.map((s) => s.id)).not.toEqual(second.stocks.map((s) => s.id));
+    });
+  }
+
+  test("no two archetypes share an id", () => {
+    const ids = ARCHETYPES.map((a) => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

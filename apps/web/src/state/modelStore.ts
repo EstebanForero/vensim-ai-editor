@@ -1,4 +1,6 @@
 import {
+  allVariables,
+  buildArchetypeExample,
   checkUnits,
   createEmptyModel,
   detectArchetypes,
@@ -154,6 +156,9 @@ interface ModelStoreState {
   setUnitsDialogOpen: (open: boolean) => void;
   runArchetypeCheck: () => void;
   setArchetypeDialogOpen: (open: boolean) => void;
+  /** Replaces the model with the example for this match's archetype, closing the report.
+   * Returns false if the user declined the replacement. */
+  loadArchetypeExample: (match: ArchetypeMatch) => boolean;
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
   setAiModel: (name: string) => void;
@@ -227,7 +232,29 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   editingId: null,
   lookupEditorId: null,
 
-  setModel: (model) => set({ ...commit(model), selectedId: null, simResult: null }),
+  // The on-demand reports are cleared, not carried over: they describe the model that *was*
+  // loaded, and leaving them would let the units dialog or the archetype report show findings
+  // from a model the user is no longer looking at.
+  setModel: (model) =>
+    set({ ...commit(model), selectedId: null, simResult: null, unitIssues: null, archetypeMatches: null }),
+
+  loadArchetypeExample: (match) => {
+    const { model } = get();
+    // The template dropdown replaces the model silently; this doesn't, because the button sits
+    // one click away from a report the user may not have opened intending to discard their work.
+    if (allVariables(model).length > 0 && !window.confirm(`Replace the current model with the ${match.label} example?`)) {
+      return false;
+    }
+    set({
+      ...commit(buildArchetypeExample(match.archetype)),
+      selectedId: null,
+      simResult: null,
+      unitIssues: null,
+      archetypeMatches: null,
+      archetypeDialogOpen: false,
+    });
+    return true;
+  },
 
   mutate: (fn) => {
     const { model } = get();

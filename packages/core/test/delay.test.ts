@@ -239,6 +239,30 @@ describe("delay state and the rest of the model", () => {
   });
 });
 
+describe("delays through the .mdl codec", () => {
+  // Vensim has no delay record of its own — a delay is ordinary equation text — so the only
+  // thing that has to survive a save and reload is the equation itself, verbatim. Checked
+  // against every example rather than a fixture, since the examples are what a user actually
+  // opens and saves.
+  for (const id of ARCHETYPES.map((a) => a.id)) {
+    test(`${id}: survives write-then-parse with its equations intact`, () => {
+      const model = buildArchetypeExample(id);
+      const reparsed = parseMdl(writeMdl(model));
+      const equations = (m: Model) =>
+        [...m.stocks.map((s) => [s.name, s.initialEquation] as const), ...m.flows.map((f) => [f.name, f.equation] as const), ...m.auxiliaries.map((a) => [a.name, a.equation] as const)]
+          .sort(([a], [b]) => a.localeCompare(b));
+      expect(equations(reparsed)).toEqual(equations(model));
+    });
+  }
+
+  test("a written delay is still a delay when it comes back", () => {
+    const reparsed = parseMdl(writeMdl(buildArchetypeExample("shifting-the-burden")));
+    const movement = reparsed.auxiliaries.find((a) => a.name === "Movimiento")!;
+    expect(movement.equation).toBe("DELAY1(MIN(Problema * Tasa de cobertura, Capacidad), 8)");
+    expect(detectArchetypes(reparsed).some((m) => m.archetype === "shifting-the-burden")).toBe(true);
+  });
+});
+
 describe("delays in the rest of the analysis", () => {
   test("a delay is monotone in its input, so a relation through it has a sign", () => {
     const NAMES = ["Pressure", "R", "T", "A", "B"];

@@ -1,5 +1,5 @@
 import { isLookupVariable } from "@vensim-ai/core";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import { useModelStore } from "@/state/modelStore";
@@ -18,6 +18,13 @@ export function SimChart() {
     [model],
   );
   const [selected, setSelected] = useState<Set<string>>(() => new Set(model.stocks.map((s) => s.name)));
+  // Re-sync when the model is replaced (a template, an opened file, an archetype example).
+  // Without this the initializer above only ever runs once, so the chips and the plotted lines
+  // would still be the *previous* model's variable names — and, since nothing in the new model
+  // matches them, every line would read NaN.
+  useEffect(() => {
+    setSelected(new Set(model.stocks.map((s) => s.name)));
+  }, [model]);
 
   const data = useMemo(() => {
     if (!simResult) return [];
