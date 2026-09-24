@@ -1,10 +1,26 @@
 import { describe, expect, test } from "bun:test";
 import { ARCHETYPES, buildArchetypeExample, detectArchetypes } from "../src/archetypes/index.js";
 import type { ArchetypeId } from "../src/archetypes/types.js";
-import { addAuxiliary, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
+import { addAuxiliary, addConnector, addConstant, addFlow, addStock } from "../src/model/builder/index.js";
 import { detectLoops } from "../src/loops/detect.js";
 import { simulate } from "../src/sim/engine.js";
-import { createEmptyModel } from "../src/model/types.js";
+import { createEmptyModel, findVariableByName, type Model } from "../src/model/types.js";
+
+/** The example with one variable's equation swapped out — the counterfactual an archetype's claim
+ * is tested against. Stocks carry the value in `initialEquation`, everything else in `equation`. */
+function without(model: Model, name: string, equation: string): Model {
+  const copy = structuredClone(model);
+  const v = findVariableByName(copy, name) as { equation?: string; initialEquation?: string } | undefined;
+  if (!v) throw new Error(`no variable named ${name}`);
+  if (v.initialEquation !== undefined) v.initialEquation = equation;
+  else v.equation = equation;
+  return copy;
+}
+
+/** The last value of a series, which is what nearly every claim about these examples is about. */
+function endOf(model: Model, name: string): number {
+  return simulate(model).series[name]!.at(-1)!;
+}
 
 /** Everything an archetype match reports about *why* it matched — the labels and names — with
  * the free-text summary left out, so these assertions stay about structure. */
@@ -89,27 +105,42 @@ describe("detectArchetypes", () => {
     expect(matchesOf(detectArchetypes(model), "tragedy-of-the-commons")).toEqual([]);
   });
 
-  test("Escalation: two reinforcing loops that each push the other down", () => {
+  test("Escalation: one reinforcing loop through two sides that feed each other", () => {
     const model = createEmptyModel();
-    addAuxiliary(model, { name: "My Activity", equation: "My Result * 0.1", pos: { x: 0, y: 0 } });
-    addAuxiliary(model, { name: "My Result", equation: "My Activity", pos: { x: 100, y: 0 } });
-    addAuxiliary(model, { name: "Their Activity", equation: "Their Result * 0.1", pos: { x: 0, y: 100 } });
-    addAuxiliary(model, { name: "Their Result", equation: "Their Activity", pos: { x: 100, y: 100 } });
-    addConnector(model, { from: "My Activity", to: "My Result" });
-    addConnector(model, { from: "My Result", to: "My Activity" });
-    addConnector(model, { from: "Their Activity", to: "Their Result" });
-    addConnector(model, { from: "Their Result", to: "Their Activity" });
-    addConnector(model, { from: "My Activity", to: "Their Result", polarity: "-" });
-    addConnector(model, { from: "Their Activity", to: "My Result", polarity: "-" });
+    addStock(model, { name: "My Arms", initialEquation: "100", pos: { x: 0, y: 0 } });
+    addStock(model, { name: "Their Arms", initialEquation: "100", pos: { x: 0, y: 100 } });
+    addFlow(model, { name: "My Production", equation: "Their Arms * 0.1", to: "My Arms", pos: { x: 100, y: 0 } });
+    addFlow(model, { name: "Their Production", equation: "My Arms * 0.1", to: "Their Arms", pos: { x: 100, y: 100 } });
+    addConnector(model, { from: "Their Arms", to: "My Production" });
+    addConnector(model, { from: "My Arms", to: "Their Production" });
 
     const matches = matchesOf(detectArchetypes(model), "escalation");
     expect(matches).toHaveLength(1);
     expect(matches[0]!.confidence).toBe("likely");
-    // The two 2-node loops the escalation runs between — not the 4-node cycle they also form.
     for (const label of matches[0]!.loopLabels) expect(detectLoops(model).map((l) => `${l.polarity}${l.number}`)).toContain(label);
-    expect(matches[0]!.nodeNames.sort()).toEqual(["My Activity", "My Result", "Their Activity", "Their Result"]);
-    expect(matches[0]!.summary).toContain("`My Activity` → `Their Result`");
-    expect(matches[0]!.summary).toContain("`Their Activity` → `My Result`");
+    expect(matches[0]!.nodeNames.sort()).toEqual(["My Arms", "My Production", "Their Arms", "Their Production"]);
+    expect(matches[0]!.summary).toContain("`My Arms`");
+    expect(matches[0]!.summary).toContain("`Their Arms`");
+  });
+
+  // The shape the detector used to ask for, and the reason it was wrong: two reinforcing loops
+  // each suppressing the other is a spiral one side wins, not a race neither can leave. This was
+  // a passing escalation test until the example it was written against turned out to model
+  // capitulation — the loser's production fell to zero, and switching it off made the winner
+  // grow faster. Success to the Successful produces this shape too, which is the giveaway.
+  test("Escalation: a dominance spiral is not a race", () => {
+    const model = createEmptyModel();
+    addStock(model, { name: "My Arms", initialEquation: "120", pos: { x: 0, y: 0 } });
+    addStock(model, { name: "Their Arms", initialEquation: "100", pos: { x: 0, y: 100 } });
+    addFlow(model, { name: "My Production", equation: "MAX(0, My Arms - Their Arms + 50) * Tasa", to: "My Arms", pos: { x: 100, y: 0 } });
+    addFlow(model, { name: "Their Production", equation: "MAX(0, Their Arms - My Arms + 50) * Tasa", to: "Their Arms", pos: { x: 100, y: 100 } });
+    addConstant(model, { name: "Tasa", value: 0.05, pos: { x: 200, y: 0 } });
+    addConnector(model, { from: "My Arms", to: "My Production" });
+    addConnector(model, { from: "Their Arms", to: "My Production", polarity: "-" });
+    addConnector(model, { from: "Their Arms", to: "Their Production" });
+    addConnector(model, { from: "My Arms", to: "Their Production", polarity: "-" });
+
+    expect(matchesOf(detectArchetypes(model), "escalation")).toHaveLength(0);
   });
 
   test("Success to the Successful: two reinforcing loops fed by one allocation", () => {
@@ -255,7 +286,12 @@ describe("archetype examples", () => {
   // reads as the archetype it is filed under. Neither can drift without the suite failing.
   for (const archetype of ARCHETYPES) {
     test(`${archetype.label}: its own example is detected as it`, () => {
-      expect(detectArchetypes(buildArchetypeExample(archetype.id)).map((m) => m.archetype)).toContain(archetype.id);
+      // `limit` is raised well past its default because a model with many loops can honestly
+      // produce more than twelve matches — and the default slice runs in archetype order, so a
+      // crowded report would hide this match rather than mean the detector never fired at all.
+      // This test is about the detector, so it asks for everything the detector found.
+      const matches = detectArchetypes(buildArchetypeExample(archetype.id), { limit: 200 });
+      expect(matches.map((m) => m.archetype)).toContain(archetype.id);
     });
 
     test(`${archetype.label}: its example runs and produces finite output`, () => {
@@ -280,6 +316,75 @@ describe("archetype examples", () => {
       expect(first.stocks.map((s) => s.id)).not.toEqual(second.stocks.map((s) => s.id));
     });
   }
+
+  // Each archetype is a causal claim, and a causal claim can be tested: take the mechanism away
+  // and the outcome has to change. Structure alone turned out to be too weak a bar — a model can
+  // carry an archetype's loops and still be driven entirely by something else. The commons example
+  // had two farms drawing on one aquifer and lost the aquifer just as fast with one; Success to
+  // the Successful had a success-feeds-allocation loop that, given equal access, left the two
+  // activities at 1337.6 and 1335.6 — the loop did nothing, and a difference in access rates was
+  // doing all the work. Both passed every structural test in this file.
+  describe("archetype examples behave like the archetype", () => {
+    test("Limits to Growth: the limit is what stops the growth", () => {
+      const model = buildArchetypeExample("limits-to-growth");
+      // Births and deaths balance at 4000, so it climbs towards that and flattens.
+      expect(endOf(model, "Population")).toBeGreaterThan(3800);
+      expect(endOf(model, "Population")).toBeLessThan(4000);
+      // Remove the crowding term and nothing stops it.
+      expect(endOf(without(model, "Death Rate", "Base Death Rate"), "Population")).toBeGreaterThan(100_000);
+    });
+
+    test("Tragedy of the Commons: the second farm is what drains it", () => {
+      const model = buildArchetypeExample("tragedy-of-the-commons");
+      // One farm asks for 60,000 against a sustainable yield of 100,000, so it is fine forever —
+      // the aquifer even recovers from where it starts.
+      expect(endOf(without(model, "Demanda B", "0"), "Agua disponible")).toBeGreaterThan(700_000);
+      // The same farm twice asks for 120,000 against the same 100,000, and it drains to nothing.
+      expect(endOf(model, "Agua disponible")).toBeLessThan(1_000);
+    });
+
+    test("Success to the Successful: allocating by track record is what starves the loser", () => {
+      const model = buildArchetypeExample("success-to-the-successful");
+      expect(endOf(model, "Actividad A")).toBeGreaterThan(30);
+      expect(endOf(model, "Actividad B")).toBeLessThan(1); // starved out entirely
+      // Give both a fixed half of the budget instead and there is no winner at all — so the
+      // allocation feedback, not the two-project head start, is what produces the outcome.
+      const flat = without(without(model, "Acceso A", "0.5"), "Acceso B", "0.5");
+      expect(endOf(flat, "Actividad A")).toBeCloseTo(endOf(flat, "Actividad B"), 1);
+    });
+
+    test("Fixes that Fail: the side effect is what brings the problem back", () => {
+      const model = buildArchetypeExample("fixes-that-fail");
+      const problem = simulate(model).series["Problema"]!;
+      expect(Math.min(...problem)).toBeLessThan(50); // the fix works at first
+      expect(problem.at(-1)!).toBeGreaterThan(500); // then the problem returns past where it started
+      // Without the side effect it simply resolves.
+      expect(endOf(without(model, "Tasa de efecto", "0"), "Problema")).toBeLessThan(1);
+    });
+
+    test("Shifting the Burden: the quick fix is what destroys the capacity", () => {
+      const model = buildArchetypeExample("shifting-the-burden");
+      // The relief is a real improvement — the problem falls well below where it started.
+      expect(endOf(model, "Problema")).toBeLessThan(200);
+      // And it is paid for out of the same effort budget: the capacity is never built, and decays.
+      expect(endOf(model, "Capacidad")).toBeLessThan(1);
+      // Fund the cure instead and the capacity gets built and the problem ends up lower still —
+      // after a much worse middle, which is the trade the archetype describes.
+      const cureOnly = without(model, "Alivio rapido", "0");
+      expect(endOf(cureOnly, "Capacidad")).toBeGreaterThan(30);
+      expect(endOf(cureOnly, "Problema")).toBeLessThan(endOf(model, "Problema"));
+    });
+
+    test("Escalation: neither side can leave the race", () => {
+      const model = buildArchetypeExample("escalation");
+      const unopposed = without(without(model, "Produccion B", "0"), "Misiles B", "0");
+      // No rival arsenal, no arms race: A has nothing to respond to.
+      expect(endOf(unopposed, "Misiles A")).toBeLessThan(130);
+      // And with a rival, both keep climbing — the loser included.
+      expect(endOf(model, "Misiles A")).toBeGreaterThan(300);
+      expect(endOf(model, "Misiles B")).toBeGreaterThan(200);
+    });
+  });
 
   test("no two archetypes share an id", () => {
     const ids = ARCHETYPES.map((a) => a.id);

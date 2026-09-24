@@ -141,5 +141,21 @@ export function detectArchetypes(model: Model, options: DetectArchetypesOptions 
       (a.confidence === b.confidence ? 0 : a.confidence === "likely" ? -1 : 1) ||
       a.summary.localeCompare(b.summary),
   );
-  return matches.slice(0, limit);
+
+  // Spend the limit round-robin across the archetypes that matched, rather than taking the first
+  // `limit` in archetype order. Limits to Growth fires on every (R, B) pair acting on one stock,
+  // so a model with a handful of loops yields a dozen of them — and a plain slice then spends the
+  // entire report on that one archetype and silently drops every other match behind it. A model
+  // that matches only one archetype is unaffected: it still gets the whole limit.
+  const groups = order.map((id) => matches.filter((m) => m.archetype === id));
+  const report: ArchetypeMatch[] = [];
+  for (let round = 0; report.length < limit; round++) {
+    const before = report.length;
+    for (const group of groups) {
+      const next = group[round];
+      if (next && report.length < limit) report.push(next);
+    }
+    if (report.length === before) break; // every group is exhausted
+  }
+  return report;
 }

@@ -14,6 +14,7 @@ import {
   type ArchetypeContext,
   type Evidence,
 } from "./context.js";
+import type { Loop } from "../loops/types.js";
 
 /**
  * Limits to Growth — a reinforcing loop and a balancing loop acting on the same stock. The R
@@ -86,34 +87,75 @@ export function tragedyOfTheCommons(ctx: ArchetypeContext): Evidence[] {
 }
 
 /**
- * Escalation — two reinforcing loops, each pushing the other's own part of the diagram down, so
- * that each side's growth is the other's problem and neither can back off without losing ground.
+ * Escalation — a reinforcing loop running through two sides, each of which feeds the other, so
+ * neither can stop without falling behind.
  *
- * The negative edges are required to cross between each loop's *private* nodes. Without that,
- * two loops that merely share a node would match on the shared node's edges alone — a
- * self-inflicted dip in a common variable, not a fight between two sides.
+ * This signature used to ask for something else: two reinforcing loops, each pushing the other's
+ * private nodes *down*. That is not a race, it is a dominance spiral, and the two can be told
+ * apart by watching them run. The old signature's example had each side building in proportion to
+ * how far *ahead* it was, so the side that fell behind stopped rearming — and switching the
+ * loser's production off made the winner grow faster, the exact opposite of "neither can leave".
+ * It also fired on Success to the Successful models, which is the shape it really describes.
+ *
+ * The correction is that coupling has to be *positive*: escalation is "each responds in kind",
+ * and a response is a feed, not a suppression. Two mutually feeding sides form one reinforcing
+ * loop rather than two, because neither side has a reinforcing loop of its own — which is why
+ * the old signature could never match a real arms race, however it was written up.
+ *
+ * A loop carrying more (or fewer) than two stocks is left alone: there is no pair to race.
  */
 export function escalation(ctx: ArchetypeContext): Evidence[] {
   const out: Evidence[] = [];
-  for (const { a, b, aOnly, bOnly } of reinforcingPairs(ctx)) {
-    if (aOnly.length === 0 || bOnly.length === 0) continue;
-    const aPushesDown = crossEdges(ctx, aOnly, bOnly, -1);
-    const bPushesDown = crossEdges(ctx, bOnly, aOnly, -1);
-    if (aPushesDown.length === 0 || bPushesDown.length === 0) continue;
-    const nodes = [...new Set([...aPushesDown, ...bPushesDown].flatMap((e) => [e.from, e.to]))];
-    const edge = (e: { from: string; to: string }) => `${nameList(ctx, [e.from])} → ${nameList(ctx, [e.to])}`;
+  for (const loop of ctx.loops) {
+    if (loop.polarity !== "R") continue;
+    const sides = raceOf(ctx, loop);
+    if (!sides) continue;
     out.push(
       evidence(ctx, {
-        loops: [a, b],
-        nodes,
+        loops: [loop],
+        nodes: loop.nodeIds,
         confidence: "likely",
-        summary: `${loopLabel(a)} and ${loopLabel(b)} both reinforce, and each pushes the other down (${aPushesDown
-          .map(edge)
-          .join(", ")}; ${bPushesDown.map(edge).join(", ")}).`,
+        summary: `${loopLabel(loop)} runs through ${nameList(ctx, sides)} and back round — each one's growth is part of what drives the other's, so neither can stop without falling behind.`,
       }),
     );
   }
   return out;
+}
+
+/** The two sides of this loop, if it is a race at all: exactly two stocks, and the way round from
+ * one to the other a *feed* rather than a suppression. Because the loop as a whole reinforces, its
+ * two halves carry the same sign — so checking one direction settles both. */
+function raceOf(ctx: ArchetypeContext, loop: Loop): [string, string] | null {
+  const at = loop.nodeIds.flatMap((id, i) => (ctx.kinds.get(id) === "stock" ? [i] : []));
+  if (at.length !== 2) return null;
+  const [i, j] = at as [number, number];
+  if (pathSign(ctx, loop, i, j) !== 1) return null;
+  // Neither side may drive its own inflow. That is what separates a race from a stock that is
+  // simply a *consequence* of the other — accumulated damage, a by-product, a spillover — which
+  // reinforces in exactly the same shape and is what Fixes that Fail is made of.
+  if (selfDriven(ctx, loop, i) || selfDriven(ctx, loop, j)) return null;
+  return [loop.nodeIds[i]!, loop.nodeIds[j]!];
+}
+
+/** The sign of the edge chain from one position in the loop round to another: +1 for an even
+ * number of negative links along the way, -1 for an odd number. */
+function pathSign(ctx: ArchetypeContext, loop: Loop, from: number, to: number): 1 | -1 {
+  const n = loop.nodeIds.length;
+  let sign: 1 | -1 = 1;
+  for (let k = from; k !== to; k = (k + 1) % n) {
+    const edge = (ctx.adjacency.get(loop.nodeIds[k]!) ?? []).find((e) => e.to === loop.nodeIds[(k + 1) % n]!);
+    if (edge?.sign === -1) sign = sign === 1 ? -1 : 1;
+  }
+  return sign;
+}
+
+/** Whether the stock at this position in the loop also feeds the node that feeds *it* — the stock
+ * growing on its own momentum rather than in response to the other side. */
+function selfDriven(ctx: ArchetypeContext, loop: Loop, at: number): boolean {
+  const n = loop.nodeIds.length;
+  const stock = loop.nodeIds[at]!;
+  const inflow = loop.nodeIds[(at - 1 + n) % n]!;
+  return (ctx.adjacency.get(stock) ?? []).some((e) => e.to === inflow);
 }
 
 /**

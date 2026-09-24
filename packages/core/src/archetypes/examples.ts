@@ -30,102 +30,205 @@ function limitsToGrowth(): Model {
   addFlow(model, { name: "Deaths", equation: "Population * Death Rate", from: pop.id, units: "People/Year", pos: { x: 560, y: 200 } });
   addConstant(model, { name: "Birth Rate", value: 0.1, units: "1/Year", pos: { x: 200, y: 320 } });
   addConstant(model, { name: "Base Death Rate", value: 0.02, units: "1/Year", pos: { x: 560, y: 400 } });
-  addConstant(model, { name: "Capacity", value: 1000, units: "People", pos: { x: 680, y: 480 } });
+  // Not the carrying capacity, whatever the name suggests: this is the size at which crowding
+  // *doubles* the death rate. Births and deaths balance at 4000 — four times this.
+  addConstant(model, { name: "Crowding Scale", value: 1000, units: "People", pos: { x: 680, y: 480 } });
   addAuxiliary(model, {
     name: "Death Rate",
-    equation: "Base Death Rate * (1 + Population / Capacity)",
+    equation: "Base Death Rate * (1 + Population / Crowding Scale)",
     units: "1/Year",
-    comment: "Rises with the population's own size — this is the constraint the R loop runs into.",
+    comment: "Rises with the population's own size — the constraint the R loop runs into. Births and deaths balance at 4000.",
     pos: { x: 560, y: 320 },
   });
   addConnector(model, { from: "Population", to: "Births" });
   addConnector(model, { from: "Birth Rate", to: "Births" });
   addConnector(model, { from: "Population", to: "Death Rate" });
   addConnector(model, { from: "Base Death Rate", to: "Death Rate" });
-  addConnector(model, { from: "Capacity", to: "Death Rate" });
+  addConnector(model, { from: "Crowding Scale", to: "Death Rate" });
   addConnector(model, { from: "Death Rate", to: "Deaths" });
-  model.simSpec = { ...YEARS };
+  // Long enough to watch it flatten: the population passes 3900 and stops moving.
+  model.simSpec = { ...YEARS, stopTime: 100 };
   return model;
 }
 
-/** Two farms drawing on one aquifer. Each draw looks reasonable on its own; together they drain
- * it, and neither equation contains the other's. */
+/** Two farms drawing on one aquifer.
+ *
+ * The whole test of this archetype is that the *second* farm is what causes the depletion. So the
+ * aquifer has to be able to sustain one: it refills on its own, at a rate that peaks when it is
+ * half full — 100,000 m3/Month here. Each farm needs 60,000. Either one alone is therefore fine
+ * forever; the two together ask for 120,000 against a yield of 100,000, and that twenty per cent
+ * is the whole story.
+ *
+ * The previous version failed that test twice over. It had no recharge at all and drew a
+ * *proportional* share of whatever was left, so one farm alone ran the aquifer down to 21 m3 —
+ * the tragedy happened either way, and the second farm changed nothing. A proportional draw also
+ * cannot collapse a resource: the smaller it gets, the less is taken, so it always finds an
+ * equilibrium rather than an end. Both are fixed here — regrowth gives the stock a yield that can
+ * be exceeded, and demand gives the farms a claim that does not shrink as the water disappears.
+ * (Its aquifer also held 1,000 m3, which is a swimming pool; the harvest numbers here are the
+ * same ratios at a size you don't have to apologise for.) */
 function tragedyOfTheCommons(): Model {
   const model = createEmptyModel("Tragedy of the Commons — Two Farms, One Aquifer");
   const water = addStock(model, {
     name: "Agua disponible",
-    initialEquation: "1000",
+    initialEquation: "800000",
     units: "m3",
-    comment: "The shared resource. Neither farmer's equation mentions the other, but both drain this.",
+    comment: "The shared aquifer. It refills on its own — but only so fast.",
     pos: { x: 340, y: 200 },
   });
-  addFlow(model, { name: "Extraccion A", equation: "Agua disponible * Tasa de extraccion A", from: water.id, units: "m3/Month", pos: { x: 160, y: 200 } });
-  addFlow(model, { name: "Extraccion B", equation: "Agua disponible * Tasa de extraccion B", from: water.id, units: "m3/Month", pos: { x: 520, y: 200 } });
-  addConstant(model, { name: "Tasa de extraccion A", value: 0.08, units: "1/Month", pos: { x: 160, y: 320 } });
-  addConstant(model, { name: "Tasa de extraccion B", value: 0.06, units: "1/Month", pos: { x: 520, y: 320 } });
+  addFlow(model, {
+    name: "Recarga",
+    equation: "Tasa de recarga * Agua disponible * (1 - Agua disponible / Capacidad del acuifero)",
+    to: water.id,
+    units: "m3/Month",
+    comment: "Regrowth, fastest at half full and zero at empty or full. Its peak is the most this aquifer can yield forever.",
+    pos: { x: 340, y: 60 },
+  });
+  // "What the farm needs, up to what is actually there." The MIN is what lets demand exceed
+  // supply without the stock going negative — and, unlike a proportional draw, it does not weaken
+  // as the aquifer empties.
+  addFlow(model, {
+    name: "Extraccion A",
+    equation: "MIN(Demanda A, Agua disponible / Tiempo de bombeo)",
+    from: water.id,
+    units: "m3/Month",
+    comment: "Farm A pumps what it needs. Nothing in this equation mentions Farm B.",
+    pos: { x: 150, y: 200 },
+  });
+  addFlow(model, {
+    name: "Extraccion B",
+    equation: "MIN(Demanda B, Agua disponible / Tiempo de bombeo)",
+    from: water.id,
+    units: "m3/Month",
+    comment: "Identical in shape to A's — and just as reasonable read on its own.",
+    pos: { x: 530, y: 200 },
+  });
+  addConstant(model, { name: "Capacidad del acuifero", value: 1000000, units: "m3", pos: { x: 520, y: 60 } });
+  addConstant(model, { name: "Tasa de recarga", value: 0.4, units: "1/Month", comment: "Peak recharge is Tasa * Capacidad / 4 — 100,000 m3/Month, the sustainable yield.", pos: { x: 700, y: 60 } });
+  addConstant(model, { name: "Demanda A", value: 60000, units: "m3/Month", comment: "Under the 100,000 m3/Month yield, so this farm alone is sustainable.", pos: { x: 150, y: 320 } });
+  addConstant(model, { name: "Demanda B", value: 60000, units: "m3/Month", comment: "The same size. Two draws of 60,000 make 120,000 against a yield of 100,000.", pos: { x: 530, y: 320 } });
+  addConstant(model, { name: "Tiempo de bombeo", value: 1, units: "Month", comment: "The fastest the pumps could empty the aquifer between them — there is no extracting water that isn't there.", pos: { x: 340, y: 360 } });
+  addConnector(model, { from: "Agua disponible", to: "Recarga" });
+  addConnector(model, { from: "Tasa de recarga", to: "Recarga" });
+  addConnector(model, { from: "Capacidad del acuifero", to: "Recarga" });
   addConnector(model, { from: "Agua disponible", to: "Extraccion A" });
-  addConnector(model, { from: "Tasa de extraccion A", to: "Extraccion A" });
+  addConnector(model, { from: "Demanda A", to: "Extraccion A" });
+  addConnector(model, { from: "Tiempo de bombeo", to: "Extraccion A" });
   addConnector(model, { from: "Agua disponible", to: "Extraccion B" });
-  addConnector(model, { from: "Tasa de extraccion B", to: "Extraccion B" });
+  addConnector(model, { from: "Demanda B", to: "Extraccion B" });
+  addConnector(model, { from: "Tiempo de bombeo", to: "Extraccion B" });
   model.simSpec = { ...YEARS, stopTime: 48, timeUnits: "Month" };
   return model;
 }
 
-/** An arms race. Each side builds because it feels behind, and building puts the other side
- * further behind — so a small early lead widens instead of settling. */
+/** An arms race. Each side builds *because* the other has missiles — so neither can stop, and the
+ * race has no resting point.
+ *
+ * A previous version had each side build in proportion to how far *behind* it was. That reads like
+ * escalation but is its opposite: once one side pulled ahead, the other's building rate fell to
+ * zero and it stopped rearming altogether. It modelled capitulation — and the giveaway was that
+ * switching the loser's production off made the winner grow *faster*. Here each side responds to
+ * the other's arsenal, so zeroing one side stops the other dead: no enemy, no arms race. */
 function escalation(): Model {
   const model = createEmptyModel("Escalation — Arms Race");
-  const a = addStock(model, { name: "Misiles A", initialEquation: "120", units: "Missiles", comment: "Starts slightly ahead — and the lead grows.", pos: { x: 200, y: 120 } });
+  const a = addStock(model, { name: "Misiles A", initialEquation: "120", units: "Missiles", comment: "Starts ahead, and answers faster — so the lead widens.", pos: { x: 200, y: 120 } });
   const b = addStock(model, { name: "Misiles B", initialEquation: "100", units: "Missiles", pos: { x: 560, y: 120 } });
-  // MAX(0, ...) because a stockpile can stop growing but never un-build: without it the side
-  // that falls behind gets a negative production rate and a negative arsenal.
-  addFlow(model, { name: "Produccion A", equation: "MAX(0, Misiles A - Misiles B + Umbral) * Tasa de produccion", to: a.id, units: "Missiles/Year", pos: { x: 380, y: 60 } });
-  addFlow(model, { name: "Produccion B", equation: "MAX(0, Misiles B - Misiles A + Umbral) * Tasa de produccion", to: b.id, units: "Missiles/Year", pos: { x: 380, y: 320 } });
-  addConstant(model, { name: "Umbral", value: 50, units: "Missiles", comment: "Each side arms even at parity.", pos: { x: 380, y: 420 } });
-  addConstant(model, { name: "Tasa de produccion", value: 0.05, units: "1/Year", pos: { x: 250, y: 420 } });
-  addConnector(model, { from: "Misiles A", to: "Produccion A" });
-  addConnector(model, { from: "Misiles A", to: "Produccion B", polarity: "-" });
-  addConnector(model, { from: "Misiles B", to: "Produccion B" });
-  addConnector(model, { from: "Misiles B", to: "Produccion A", polarity: "-" });
-  addConnector(model, { from: "Umbral", to: "Produccion A" });
-  addConnector(model, { from: "Umbral", to: "Produccion B" });
-  addConnector(model, { from: "Tasa de produccion", to: "Produccion A" });
-  addConnector(model, { from: "Tasa de produccion", to: "Produccion B" });
+  addFlow(model, {
+    name: "Produccion A",
+    equation: "Misiles B * Tasa de respuesta A",
+    to: a.id,
+    units: "Missiles/Year",
+    comment: "A builds in response to B's arsenal. Take B away and A never builds another missile.",
+    pos: { x: 380, y: 60 },
+  });
+  addFlow(model, {
+    name: "Produccion B",
+    equation: "Misiles A * Tasa de respuesta B",
+    to: b.id,
+    units: "Missiles/Year",
+    comment: "The same shape as A's. Neither equation contains a stopping condition, because escalation doesn't have one.",
+    pos: { x: 380, y: 320 },
+  });
+  addConstant(model, { name: "Tasa de respuesta A", value: 0.09, units: "1/Year", comment: "A answers more than twice as hard as B does.", pos: { x: 220, y: 420 } });
+  addConstant(model, { name: "Tasa de respuesta B", value: 0.04, units: "1/Year", pos: { x: 540, y: 420 } });
+  addConnector(model, { from: "Misiles B", to: "Produccion A" });
+  addConnector(model, { from: "Tasa de respuesta A", to: "Produccion A" });
+  addConnector(model, { from: "Misiles A", to: "Produccion B" });
+  addConnector(model, { from: "Tasa de respuesta B", to: "Produccion B" });
   model.simSpec = { ...YEARS, stopTime: 40 };
   return model;
 }
 
-/** Two activities sharing one pool of resources, where each one's success feeds the pool it draws
- * on. The one with better access takes more of it, so its lead widens. */
+/** Two activities competing for one fixed budget, allocated by track record. The one that is
+ * already ahead attracts more of it, so a small early lead becomes total dominance.
+ *
+ * The budget is *fixed*, and that is doing real work: the archetype is about a limited resource
+ * being divided, so what one activity attracts is what the other doesn't. A previous version had
+ * the pool grow with the two activities' own success, which meant the winner's gains cost the
+ * loser nothing — and, measurably, the feedback did nothing at all: given equal access the two
+ * ended at 1337.6 and 1335.6, still in lockstep. All the divergence came from a difference in
+ * access rates, which is an assumption about merit, not the archetype.
+ *
+ * What makes the lead compound here is the threshold. Allocating by success alone is *linear* —
+ * both grow at the same rate and the ratio never moves, however long you run it. Increasing
+ * returns are what turn a 20% head start into a rout, and a track record is the most ordinary
+ * form of them there is: below a certain size, an activity has no results to point at and
+ * attracts nothing at all. */
 function successToTheSuccessful(): Model {
   const model = createEmptyModel("Success to the Successful — Two Activities, One Budget");
-  const a = addStock(model, { name: "Actividad A", initialEquation: "12", units: "Projects", pos: { x: 160, y: 200 } });
+  const a = addStock(model, { name: "Actividad A", initialEquation: "12", units: "Projects", comment: "Ahead from the start — by two projects.", pos: { x: 160, y: 200 } });
   const b = addStock(model, { name: "Actividad B", initialEquation: "10", units: "Projects", pos: { x: 560, y: 200 } });
   addFlow(model, { name: "Recursos para A", equation: "Reparto * Acceso A", to: a.id, units: "Projects/Year", pos: { x: 160, y: 80 } });
   addFlow(model, { name: "Recursos para B", equation: "Reparto * Acceso B", to: b.id, units: "Projects/Year", pos: { x: 560, y: 80 } });
+  addFlow(model, { name: "Cierre A", equation: "Actividad A * Tasa de cierre", from: a.id, units: "Projects/Year", pos: { x: 60, y: 200 } });
+  addFlow(model, { name: "Cierre B", equation: "Actividad B * Tasa de cierre", from: b.id, units: "Projects/Year", pos: { x: 660, y: 200 } });
+  addAuxiliary(model, { name: "Exito A", equation: "MAX(0, Actividad A - Escala de exito)", units: "Projects", comment: "What A has to show for itself. The scale is subtracted, not a target.", pos: { x: 160, y: 320 } });
+  addAuxiliary(model, { name: "Exito B", equation: "MAX(0, Actividad B - Escala de exito)", units: "Projects", pos: { x: 560, y: 320 } });
+  addAuxiliary(model, { name: "Acceso A", equation: "Exito A / (Exito A + Exito B)", units: "Dmnl", comment: "A's share of the budget — and it rises with A's own success. That is the reinforcing loop.", pos: { x: 60, y: 420 } });
+  addAuxiliary(model, { name: "Acceso B", equation: "Exito B / (Exito A + Exito B)", units: "Dmnl", pos: { x: 660, y: 420 } });
+  // The budget has a hard ceiling — `Presupuesto` — which is the point: what one activity
+  // attracts is what the other doesn't. It is released in step with the pipeline of credible
+  // projects, and `Escala de asignacion` is small enough that it reaches its ceiling almost at
+  // once, so the amount actually divided barely moves as the two activities grow.
+  //
+  // Provenance, since the shape looks fussier than the idea: the report finds this archetype by
+  // looking for an allocation node sitting *inside* both reinforcing loops. A bare constant has no
+  // incoming edges, so it can't be in a cycle and the pattern goes unreported. The ceiling is what
+  // keeps the pool from inflating with success — which, as the counterfactual test shows, is what
+  // would silently turn the feedback back off.
   addAuxiliary(model, {
     name: "Reparto",
-    equation: "Exito A + Exito B",
-    units: "Projects",
-    comment: "The shared pool. Both loops pass through it — that is what makes this one system.",
+    equation: "Presupuesto * (Exito A + Exito B) / (Exito A + Exito B + Escala de asignacion)",
+    units: "Projects/Year",
+    comment: "The divided budget. Never exceeds Presupuesto, and is essentially there from the start.",
     pos: { x: 360, y: 200 },
   });
-  addAuxiliary(model, { name: "Exito A", equation: "Actividad A", units: "Projects", pos: { x: 160, y: 320 } });
-  addAuxiliary(model, { name: "Exito B", equation: "Actividad B", units: "Projects", pos: { x: 560, y: 320 } });
-  // A draws half again as much of the pool as B — the asymmetry the archetype turns on, and the
-  // only place in the model where it is stated.
-  addConstant(model, { name: "Acceso A", value: 0.06, units: "1/Year", comment: "A's rate of draw on the pool.", pos: { x: 60, y: 420 } });
-  addConstant(model, { name: "Acceso B", value: 0.04, units: "1/Year", pos: { x: 660, y: 420 } });
-  for (const [stock, success, flow, access] of [
-    ["Actividad A", "Exito A", "Recursos para A", "Acceso A"],
-    ["Actividad B", "Exito B", "Recursos para B", "Acceso B"],
+  addConstant(model, { name: "Presupuesto", value: 4, units: "Projects/Year", comment: "The ceiling. Fixed.", pos: { x: 360, y: 40 } });
+  addConstant(model, { name: "Escala de asignacion", value: 1, units: "Projects", comment: "How quickly the budget reaches its ceiling. Small: it is essentially all released from the start.", pos: { x: 360, y: 560 } });
+  addConstant(model, { name: "Escala de exito", value: 8, units: "Projects", comment: "The size at which an activity starts attracting anything. Below it, its share is zero.", pos: { x: 360, y: 480 } });
+  addConstant(model, { name: "Tasa de cierre", value: 0.08, units: "1/Year", comment: "Projects finish and leave — which is what lets the starved activity actually shrink.", pos: { x: 360, y: 100 } });
+  for (const [stock, success, flow, access, close] of [
+    ["Actividad A", "Exito A", "Recursos para A", "Acceso A", "Cierre A"],
+    ["Actividad B", "Exito B", "Recursos para B", "Acceso B", "Cierre B"],
   ] as const) {
     addConnector(model, { from: "Reparto", to: flow });
     addConnector(model, { from: access, to: flow });
     addConnector(model, { from: stock, to: success });
-    addConnector(model, { from: success, to: "Reparto" });
+    addConnector(model, { from: "Escala de exito", to: success });
+    addConnector(model, { from: success, to: access });
+    addConnector(model, { from: stock, to: close });
+    addConnector(model, { from: "Tasa de cierre", to: close });
   }
-  model.simSpec = { ...YEARS, stopTime: 40 };
+  // Each side's share needs the other's success to divide by.
+  addConnector(model, { from: "Exito B", to: "Acceso A" });
+  addConnector(model, { from: "Exito A", to: "Acceso B" });
+  addConnector(model, { from: "Presupuesto", to: "Reparto" });
+  addConnector(model, { from: "Escala de asignacion", to: "Reparto" });
+  // Both sides' success reaches the budget — without these the pool is drawn but never fed, and
+  // no cycle passes through it.
+  addConnector(model, { from: "Exito A", to: "Reparto" });
+  addConnector(model, { from: "Exito B", to: "Reparto" });
+  model.simSpec = { ...YEARS, stopTime: 60 };
   return model;
 }
 
@@ -162,20 +265,34 @@ function fixesThatFail(): Model {
   return model;
 }
 
-/** A problem with two solutions: one that relieves it now, and one that would fix it for good but
- * takes years — while the quick relief erodes the capacity the slow one depends on. */
+/** A problem with two solutions: one that relieves it now, and one that would solve it but takes
+ * months to have any effect — while the effort the relief consumes is effort not spent building
+ * the capacity the slow solution runs on.
+ *
+ * The test of this archetype is what the *quick fix* costs. A previous version failed it badly:
+ * its fundamental solution covered 2% of the problem against a 25% appearance rate, so the cure
+ * could never have worked at any capacity — and with the relief removed the problem didn't
+ * return, it exploded to 677,485. The model was saying the quick fix was the only thing keeping
+ * the problem down, which is the opposite of the archetype.
+ *
+ * Here the relief buys a real, visible improvement — the problem falls from 200 while the cure is
+ * still ramping up — and it is paid for out of the same effort budget. Left alone the cure builds
+ * the capacity to finish the job; used, it starves. Measured over the run: with the relief, the
+ * problem settles around 125 with the capacity ground to nothing; without it, the problem
+ * overshoots while the cure builds and then comes down to about 83, with the capacity at 40.
+ * The relief looks better for the first two years and worse forever after. */
 function shiftingTheBurden(): Model {
   const model = createEmptyModel("Shifting the Burden — Relief vs Rebuilding");
-  const problem = addStock(model, { name: "Problema", initialEquation: "100", units: "Cases", comment: "Held down by whichever solution is doing the work.", pos: { x: 380, y: 200 } });
+  const problem = addStock(model, { name: "Problema", initialEquation: "200", units: "Cases", comment: "Held down by whichever solution is doing the work.", pos: { x: 380, y: 200 } });
   const capacity = addStock(model, {
     name: "Capacidad",
-    initialEquation: "50",
+    initialEquation: "2",
     units: "Cases/Month",
-    comment: "How fast the fundamental solution can work — and what the relief quietly erodes.",
-    pos: { x: 700, y: 380 },
+    comment: "How fast the fundamental solution can work — and what the relief quietly starves.",
+    pos: { x: 760, y: 380 },
   });
-  addFlow(model, { name: "Aparicion", equation: "Problema * Tasa de aparicion", to: problem.id, units: "Cases/Month", pos: { x: 200, y: 200 } });
-  addFlow(model, { name: "Alivio rapido", equation: "Problema * Intensidad del paliativo", from: problem.id, units: "Cases/Month", pos: { x: 560, y: 120 } });
+  addFlow(model, { name: "Aparicion", equation: "Casos nuevos", to: problem.id, units: "Cases/Month", comment: "New cases arrive at a steady rate, whether or not anything is being done about them.", pos: { x: 180, y: 200 } });
+  addFlow(model, { name: "Alivio rapido", equation: "Problema * Intensidad del paliativo", from: problem.id, units: "Cases/Month", comment: "The quick fix: immediate, proportional to the problem, and hungry for effort.", pos: { x: 560, y: 120 } });
   addFlow(model, { name: "Solucion fundamental", equation: "Movimiento", from: problem.id, units: "Cases/Month", pos: { x: 560, y: 300 } });
   addAuxiliary(model, {
     name: "Movimiento",
@@ -184,33 +301,40 @@ function shiftingTheBurden(): Model {
     // MIN because the fundamental solution can only work as fast as its capacity allows.
     equation: "DELAY1(MIN(Problema * Tasa de cobertura, Capacidad), 8)",
     units: "Cases/Month",
-    comment: "The fundamental solution — it takes months to have any effect. That delay is the whole difference between the two paths.",
-    pos: { x: 700, y: 240 },
+    comment: "The fundamental solution — months to have any effect. That delay is why the quick fix is so tempting.",
+    pos: { x: 760, y: 240 },
   });
   // Flows, not connectors: a variable only accumulates what a *flow* carries, so wiring these as
   // relations would leave the capacity sitting at its initial value for the whole run.
-  addFlow(model, { name: "Desarrollo", equation: "Tasa de desarrollo", to: capacity.id, units: "Cases/Month/Month", comment: "Capacity is rebuilt at a steady rate — unless the relief is eating it.", pos: { x: 880, y: 440 } });
   addFlow(model, {
-    name: "Erosion",
-    equation: "Alivio rapido * Tasa de erosion",
+    name: "Desarrollo",
+    equation: "MAX(0, Tasa de desarrollo - Alivio rapido * Tasa de erosion)",
+    to: capacity.id,
+    units: "Cases/Month/Month",
+    comment: "Capacity is built with the effort the relief leaves over — which, while the relief is running, is none of it.",
+    pos: { x: 960, y: 440 },
+  });
+  addFlow(model, {
+    name: "Deterioro",
+    equation: "Capacidad * Tasa de deterioro",
     from: capacity.id,
     units: "Cases/Month/Month",
-    comment: "The side effect: the quicker the relief, the faster the durable capacity is used up.",
-    pos: { x: 560, y: 440 },
+    comment: "Capacity you stop maintaining, you lose. This is what actually drives it down.",
+    pos: { x: 600, y: 440 },
   });
-  addConstant(model, { name: "Tasa de aparicion", value: 0.25, units: "1/Month", pos: { x: 60, y: 120 } });
+  addConstant(model, { name: "Casos nuevos", value: 25, units: "Cases/Month", comment: "The backlog grows by this much every month, whatever else happens.", pos: { x: 40, y: 120 } });
   addConstant(model, {
     name: "Intensidad del paliativo",
-    value: 0.28,
+    value: 0.2,
     units: "1/Month",
-    comment: "Just enough to outpace the problem — which is why the relief, not the cure, does the work.",
+    comment: "Enough to outpace the inflow at first — which is exactly why it gets used.",
     pos: { x: 460, y: 30 },
   });
-  addConstant(model, { name: "Tasa de cobertura", value: 0.02, units: "1/Month", pos: { x: 700, y: 140 } });
-  addConstant(model, { name: "Tasa de desarrollo", value: 0.6, units: "Cases/Month/Month", pos: { x: 960, y: 500 } });
-  addConstant(model, { name: "Tasa de erosion", value: 0.05, units: "1/Month", pos: { x: 460, y: 540 } });
-  addConnector(model, { from: "Problema", to: "Aparicion" });
-  addConnector(model, { from: "Tasa de aparicion", to: "Aparicion" });
+  addConstant(model, { name: "Tasa de cobertura", value: 0.3, units: "1/Month", comment: "What the cure could cover per case, once there is capacity to cover it with.", pos: { x: 760, y: 140 } });
+  addConstant(model, { name: "Tasa de desarrollo", value: 2, units: "Cases/Month/Month", comment: "Capacity built per month, with the full effort budget behind it.", pos: { x: 1040, y: 520 } });
+  addConstant(model, { name: "Tasa de erosion", value: 0.15, units: "1/Month", comment: "How much of that budget the relief takes for itself, per case it handles.", pos: { x: 440, y: 540 } });
+  addConstant(model, { name: "Tasa de deterioro", value: 0.05, units: "1/Month", pos: { x: 460, y: 620 } });
+  addConnector(model, { from: "Casos nuevos", to: "Aparicion" });
   addConnector(model, { from: "Problema", to: "Alivio rapido" });
   addConnector(model, { from: "Intensidad del paliativo", to: "Alivio rapido" });
   addConnector(model, { from: "Problema", to: "Movimiento" });
@@ -218,9 +342,13 @@ function shiftingTheBurden(): Model {
   addConnector(model, { from: "Tasa de cobertura", to: "Movimiento" });
   addConnector(model, { from: "Movimiento", to: "Solucion fundamental" });
   addConnector(model, { from: "Tasa de desarrollo", to: "Desarrollo" });
-  addConnector(model, { from: "Alivio rapido", to: "Erosion" });
-  addConnector(model, { from: "Tasa de erosion", to: "Erosion" });
-  model.simSpec = { ...YEARS, stopTime: 36, timeUnits: "Month" };
+  addConnector(model, { from: "Alivio rapido", to: "Desarrollo", polarity: "-" });
+  addConnector(model, { from: "Tasa de erosion", to: "Desarrollo", polarity: "-" });
+  addConnector(model, { from: "Capacidad", to: "Deterioro" });
+  addConnector(model, { from: "Tasa de deterioro", to: "Deterioro" });
+  // Ten years, not four: the cure-only path takes that long to build the capacity and then bring
+  // the problem down, and stopping earlier would show it at its worst and call that the ending.
+  model.simSpec = { ...YEARS, stopTime: 120, timeUnits: "Month" };
   return model;
 }
 
