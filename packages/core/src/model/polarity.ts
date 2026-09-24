@@ -115,13 +115,29 @@ function analyze(e: Expr, target: string, lookups?: LookupScopeParam): SignPair 
             value: mulSign(l.value, r.value),
             deriv: addSign(mulSign(l.deriv, r.value), mulSign(l.value, r.deriv)),
           };
-        case "/":
+        case "/": {
           // Quotient rule: d(l/r) = (l'*r - l*r') / r^2 — the denominator r^2 is always
           // positive (away from r=0), so only the numerator's sign matters.
-          return {
-            value: mulSign(l.value, r.value),
-            deriv: addSign(mulSign(l.deriv, r.value), negate(mulSign(l.value, r.deriv))),
-          };
+          const value = mulSign(l.value, r.value);
+          const deriv = addSign(mulSign(l.deriv, r.value), negate(mulSign(l.value, r.deriv)));
+          if (deriv !== "unknown") return { value, deriv };
+          // The rule above combines the numerator's *whole* value with the denominator's slope,
+          // and that loses the cancellation in forms like `x / (x + y)` — the shape of every
+          // "share of" equation, and of Success to the Successful. There l'*r and l*r' are both
+          // positive, so it reports ambiguity, while the difference is a*c: positive. Cancelling
+          // l*r' against the part of l'*r that carries r's own slope needs both sides to be
+          // linear in the target, which is all this second pass claims.
+          //
+          // With l = a*x + b and r = c*x + d (a, b, c, d all independent of x), the numerator is
+          // exactly a*d - b*c, so the signs of those two products settle it. It is only reached
+          // when the rule above gave up, so it can sharpen a verdict but never overrule one.
+          const ls = linearIn(e.left, target, lookups);
+          const rs = linearIn(e.right, target, lookups);
+          if (ls && rs && ls.coef !== "zero" && rs.coef !== "zero") {
+            return { value, deriv: addSign(mulSign(ls.coef, rs.const), negate(mulSign(ls.const, rs.coef))) };
+          }
+          return { value, deriv };
+        }
         case "^":
           return powerSign(l, e.right);
         default:
@@ -238,6 +254,70 @@ function analyzeCall(rawName: string, args: Expr[], target: string, lookups?: Lo
     // when the target genuinely doesn't appear in any argument at all.
     default:
       return { value: "unknown", deriv: anyDeriv() };
+  }
+}
+
+/**
+ * The target's coefficient and everything independent of it: `a*target + b`, as two signs. `null`
+ * when the expression isn't that shape at all — the target times itself, raised to a power, put
+ * through a lookup or a trend function, or used where this analysis has no rule.
+ *
+ * Sign-only and structural, like the rest of this file: `a` and `b` are taken to be positive
+ * unless shown otherwise, and nothing is ever evaluated. That's what makes this usable for the
+ * cancellation in `analyze`'s quotient case, which needs to know that the part of `l'*r` carrying
+ * `r`'s own slope is the same quantity as `l*r'` — true when both sides are linear in the target,
+ * and false the moment the target is squared, looked up, or wrapped in a nonlinear function.
+ */
+function linearIn(e: Expr, target: string, lookups?: LookupScopeParam): { coef: Sign; const: Sign } | null {
+  switch (e.type) {
+    case "num":
+      return { coef: "zero", const: e.value > 0 ? "pos" : e.value < 0 ? "neg" : "zero" };
+
+    case "var":
+      return e.name === target ? { coef: "pos", const: "zero" } : { coef: "zero", const: "pos" };
+
+    case "lookup":
+      // A table literal used as a value: no dependence on anything, but not a known number.
+      return { coef: "zero", const: "unknown" };
+
+    case "unary": {
+      const a = linearIn(e.arg, target, lookups);
+      if (!a) return null;
+      if (e.op === "-") return { coef: negate(a.coef), const: negate(a.const) };
+      if (e.op === "+") return a;
+      return null; // NOT: boolean-valued.
+    }
+
+    case "binary": {
+      const l = linearIn(e.left, target, lookups);
+      const r = linearIn(e.right, target, lookups);
+      if (!l || !r) return null;
+      switch (e.op) {
+        case "+":
+          return { coef: addSign(l.coef, r.coef), const: addSign(l.const, r.const) };
+        case "-":
+          return { coef: addSign(l.coef, negate(r.coef)), const: addSign(l.const, negate(r.const)) };
+        case "*":
+          // Linear only when one side doesn't involve the target at all; that side's own sign
+          // then scales both parts of the other.
+          if (l.coef === "zero") return { coef: mulSign(l.const, r.coef), const: mulSign(l.const, r.const) };
+          if (r.coef === "zero") return { coef: mulSign(r.const, l.coef), const: mulSign(r.const, l.const) };
+          return null;
+        case "/":
+          if (r.coef === "zero") return { coef: mulSign(l.coef, r.const), const: mulSign(l.const, r.const) };
+          return null;
+        default:
+          return null; // "^" and the comparisons: not linear in the target.
+      }
+    }
+
+    case "call": {
+      // Linear only when no argument involves the target, which makes the call a constant here.
+      // A monotone lookup of the target, or a DELAY of it, is monotone in the target and not
+      // *linear* in it — so none of those qualify.
+      if (e.args.some((a) => linearIn(a, target, lookups)?.coef !== "zero")) return null;
+      return { coef: "zero", const: analyzeCall(e.name, e.args, target, lookups).value };
+    }
   }
 }
 

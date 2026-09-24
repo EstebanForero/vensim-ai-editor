@@ -4,8 +4,9 @@
 // constant" is never stored, only computed from its equation on demand.
 
 import { collectVarNames, tryParseExpr } from "../mdl/expr/index.js";
-import { collectLookupRefs } from "./lookup.js";
-import { allVariables, findVariable, type Auxiliary, type Model, type Variable } from "./types.js";
+import { collectLookupRefs, lookupScopeOf } from "./lookup.js";
+import { inferPolarity } from "./polarity.js";
+import { allVariables, findVariable, type Auxiliary, type Model, type Polarity, type Variable } from "./types.js";
 
 /**
  * An Auxiliary behaves as a constant when its equation references no other variable — a bare
@@ -49,6 +50,54 @@ export function equationDependencies(model: Model, variable: Variable): Variable
  * thing making a value flow. */
 export function equationDependents(model: Model, variable: Variable): Variable[] {
   return allVariables(model).filter((v) => v.id !== variable.id && equationDependencies(model, v).some((d) => d.id === variable.id));
+}
+
+export interface CausalEdge {
+  from: Variable;
+  to: Variable;
+  /** Whether raising `from` raises ("+") or lowers ("-") `to`. */
+  polarity: Polarity;
+}
+
+/**
+ * The causal structure the *equations* state: for every variable, the variables its own equation
+ * reads, each as a signed edge into it.
+ *
+ * This is the counterpart to `model.connectors`, which is the structure someone *drew*. The two
+ * normally agree — drawing a relation here infers its sign from the target's equation, and
+ * `setEquation` refreshes those signs when the equation changes — so on a fully drawn model this
+ * adds nothing. They part company when nothing was drawn: a model typed straight from its
+ * equations, or a `.mdl` whose sketch is empty or partial, carries no relations at all, and every
+ * consumer of the drawn graph then reports that it has no feedback structure, however plainly it
+ * has some. `loops/graph.ts` reads both, for exactly that reason.
+ *
+ * Two deliberate omissions:
+ *
+ * - **Stocks contribute nothing.** A stock's equation is its *initial value*, which fixes t0 and
+ *   nothing after it; the things that drive a stock are its flows, which already carry their own
+ *   edges. Treating an initial value as a causal link would invent feedback where a level merely
+ *   starts somewhere.
+ * - **An edge whose sign the equation doesn't determine is left out, not defaulted.** A loop's
+ *   polarity is the product of its edges' signs, so an invented "+" turns a balancing loop into a
+ *   reinforcing one and every archetype reading built on it goes with it. A missing edge loses one
+ *   loop; a wrong sign mislabels every loop through it. The cost is that a model read from its
+ *   equations alone can find fewer loops than the same model fully drawn — but only loops whose
+ *   own sign was undetermined, which the archetype detectors (all of them polarity-based, bar the
+ *   commons') could not have classified anyway. See model/polarity.ts for when a sign is
+ *   genuinely undecidable.
+ */
+export function equationCausalEdges(model: Model): CausalEdge[] {
+  const knownNames = allVariables(model).map((v) => v.name);
+  const lookups = lookupScopeOf(model);
+  const edges: CausalEdge[] = [];
+  for (const to of allVariables(model)) {
+    if (to.kind === "stock") continue;
+    for (const from of equationDependencies(model, to)) {
+      const polarity = inferPolarity(to.equation, from.name, knownNames, lookups);
+      if (polarity) edges.push({ from, to, polarity });
+    }
+  }
+  return edges;
 }
 
 export interface VariableRelationships {

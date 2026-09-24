@@ -48,6 +48,20 @@ describe("detectArchetypes", () => {
     expect(matches[0]!.summary).toBe("R1 (reinforcing) and B1 (balancing) both act on the stock `Population`.");
   });
 
+  // What the same stock looks like when nothing feeds it back: one drain, one balancing loop, and
+  // no archetype at all. It reads as Limits to Growth — with a confident "likely", not even the
+  // downgraded kind — if a relation drawn from the outflow's valve back to the stock it drains is
+  // allowed to restate the flow's own pipe as a second, sign-flipped edge. See loops/graph.ts.
+  test("Limits to Growth: not reported for a stock that is only being drained", () => {
+    const model = createEmptyModel();
+    const stock = addStock(model, { name: "Inventory", initialEquation: "50", pos: { x: 0, y: 0 } });
+    const outflow = addFlow(model, { name: "Shipments", equation: "Inventory * 0.1", from: stock.id, pos: { x: 100, y: 0 } });
+    addConnector(model, { from: outflow.name, to: stock.name, polarity: "+" });
+
+    expect(matchesOf(detectArchetypes(model), "limits-to-growth")).toEqual([]);
+    expect(detectArchetypes(model)).toEqual([]);
+  });
+
   // The loops share the stock *and* an intermediate variable, which is just as often one loop's
   // return path as a real constraint — reported, but not at the same confidence.
   test("Limits to Growth: downgraded when the loops share more than the stock", () => {
@@ -91,7 +105,12 @@ describe("detectArchetypes", () => {
     const model = createEmptyModel();
     addStock(model, { name: "Water", initialEquation: "1000", pos: { x: 0, y: 0 } });
     addFlow(model, { name: "P1", equation: "Water * 0.1", from: "Water", pos: { x: 100, y: 0 } });
-    addFlow(model, { name: "P2", equation: "Water * 0.1", from: "Water", pos: { x: 200, y: 0 } });
+    // P2 is the same actor's second pipe, and its equation has to say so: driven off P1, not off
+    // the level. An earlier version of this test wrote `P2 = Water * 0.1` and drew only
+    // `Water -> P1`, which made P2 look like part of P1's loop — but only because the drawing
+    // left out an influence the equation plainly had. Read from the equations (see
+    // loops/graph.ts), that model is two independent draws on one stock, which is the commons.
+    addFlow(model, { name: "P2", equation: "P1 * 0.5", from: "Water", pos: { x: 200, y: 0 } });
     addConnector(model, { from: "Water", to: "P1" });
     addConnector(model, { from: "P1", to: "P2" });
 
@@ -323,6 +342,26 @@ describe("archetype examples", () => {
         expect(name.length).toBeGreaterThan(0);
       }
       expect(Object.keys(result.series).length).toBeGreaterThan(1);
+    });
+
+    // Detection has to be a property of the model, not of its drawing. Relations are drawn by
+    // hand — or by an importer, or not at all — so an answer that depended on them would change
+    // when someone tidied the sketch, and would be missing entirely for a model that arrived
+    // without one. This is the check that a model typed straight from its equations still reads
+    // as the archetype it is.
+    test(`${archetype.label}: its example is still detected as it with every relation removed`, () => {
+      const model = buildArchetypeExample(archetype.id);
+      expect(model.connectors.length).toBeGreaterThan(0); // otherwise this test proves nothing
+      const undrawn = { ...model, connectors: [] };
+      const found = (m: Model) => detectArchetypes(m, { limit: 200 }).map((x) => x.archetype);
+
+      expect(found(undrawn)).toContain(archetype.id);
+      // Reading the equations can only ever find *less*: an arrow whose sign its equation
+      // doesn't determine is left out rather than guessed, since a wrong sign mislabels every
+      // loop through it. Two examples lose a secondary match that way, and both for a real
+      // reason — Limits to Growth's mortality rate moves with population only if natality
+      // exceeds base mortality, and the commons' regrowth rises then falls about half-full.
+      for (const id of found(undrawn)) expect(found(model)).toContain(id);
     });
 
     test(`${archetype.label}: its example has a label, a meaning and a distinct model`, () => {

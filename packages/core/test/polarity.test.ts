@@ -11,6 +11,35 @@ describe("inferPolarity", () => {
     expect(inferPolarity("P / T", "T", NAMES)).toBe("-");
   });
 
+  // The quotient rule takes the numerator's whole value against the denominator's slope, and that
+  // loses the cancellation in a "share of" equation: both terms look positive, so it reports
+  // ambiguity where the difference is decidable. This is the equation Success to the Successful
+  // is built from, and the reason its model reads correctly with no relations drawn.
+  test("a share of a total rises with its own part and falls with the rest", () => {
+    expect(inferPolarity("A / (A + B)", "A", NAMES)).toBe("+");
+    expect(inferPolarity("A / (A + B)", "B", NAMES)).toBe("-");
+    expect(inferPolarity("Reparto * A / (A + B)", "A", NAMES)).toBe("+");
+    expect(inferPolarity("Reparto * A / (A + B)", "B", NAMES)).toBe("-");
+  });
+
+  test("the cancellation is claimed only where the target really cancels", () => {
+    // The algebra these two rest on is l = a*x + b, r = c*x + d, giving l'*r - l*r' = a*d - b*c:
+    // signed by the two products, which is all this reader has. Both cases below come out right
+    // anyway — a ratio whose target cancels to nothing is no relation at all, and one where the
+    // terms oppose each other is decided by their signs alone.
+    expect(inferPolarity("A / (A * B)", "A", NAMES)).toBeNull();
+    expect(inferPolarity("(A + B) / (A - B)", "A", NAMES)).toBe("-");
+  });
+
+  test("a target inside a nonlinear term is not treated as linear", () => {
+    // B is squared in the denominator, so this is not a*c - b*d and the numerator's terms can't
+    // be separated by sign alone.
+    expect(inferPolarity("A / (A + B * B)", "B", NAMES)).toBe("-"); // decided by the plain rule
+    expect(inferPolarity("A * A / (A + B)", "B", NAMES)).toBe("-"); // numerator not linear in B
+    // A squared against A: the plain rule gives up and the linear pass must not claim it.
+    expect(inferPolarity("A * A / (A + B)", "A", NAMES)).toBeNull();
+  });
+
   test("R = P * T: both +", () => {
     expect(inferPolarity("P * T", "P", NAMES)).toBe("+");
     expect(inferPolarity("P * T", "T", NAMES)).toBe("+");

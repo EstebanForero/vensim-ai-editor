@@ -404,6 +404,30 @@ TIME STEP  = 0.25
     expect(reparsed.connectors.length).toBeGreaterThan(0);
   });
 
+  // The same model, once as Vensim itself exports it (sketch and all) and once converted through
+  // `xmutil`, which writes the equations with no sketch section at all. Loop detection used to
+  // read only the drawn relations, so the second file reported *no feedback structure whatever* —
+  // while the first reported two loops. Equations are read now, so the two agree, and this pair is
+  // the evidence for it: a real file from outside this editor that used to come back empty.
+  test("a model with no sketch section reads the same as one with the relations drawn", () => {
+    const dir = join(import.meta.dir, "..", "..", "..", "example-compatibility");
+    const drawn = parseMdl(readFileSync(join(dir, "double_arrow_native.mdl"), "utf-8"));
+    const undrawn = parseMdl(readFileSync(join(dir, "double_arrow_via_xmutil.mdl"), "utf-8"));
+
+    expect(drawn.connectors.length).toBeGreaterThan(0);
+    expect(undrawn.connectors).toHaveLength(0);
+
+    const labels = (m: ReturnType<typeof parseMdl>) =>
+      detectLoops(m)
+        .map((l) => `${l.polarity}${l.number}`)
+        .sort();
+    expect(labels(undrawn)).toEqual(labels(drawn));
+    expect(labels(undrawn)).toEqual(["B1", "B2"]);
+    expect([...undrawn.stocks, ...undrawn.flows, ...undrawn.auxiliaries].map((v) => v.name).sort()).toEqual(
+      [...drawn.stocks, ...drawn.flows, ...drawn.auxiliaries].map((v) => v.name).sort(),
+    );
+  });
+
   test("reads a real Vensim export (example-compatibility/flow-diagram.mdl) faithfully", () => {
     // A hand-exported-from-Vensim rabbit-population model — the reference for this editor's
     // compatibility with files it did not itself write. In particular, its causal arrows are
