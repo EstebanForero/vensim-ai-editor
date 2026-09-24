@@ -32,20 +32,20 @@ describe("axisFor", () => {
       expect(top).toBeGreaterThanOrEqual(max);
       expect(ticks).toHaveLength(5);
       for (let i = 1; i < ticks.length; i++) expect(ticks[i]!).toBeGreaterThan(ticks[i - 1]!);
-      // Every tick is the same step apart, and that step is 1, 2 or 5 times a power of ten.
+      // Every tick is the same step apart, and that step is 1, 2, 2.5 or 5 times a power of ten.
       const step = ticks[1]!;
       const mantissa = Number((step / 10 ** Math.floor(Math.log10(step))).toPrecision(12));
-      expect([1, 2, 5]).toContain(mantissa);
+      expect([1, 2, 2.5, 5]).toContain(mantissa);
       for (let i = 0; i < ticks.length; i++) expect(ticks[i]!).toBeCloseTo(i * step, 6);
     }
   });
 
   // A chart whose axis runs to twice its data wastes half the plot on empty space — most visible
-  // on the escalation curve, which would otherwise sit in the bottom third of its own frame. 2.5x
-  // is the true worst case: the 2-to-5 gap between allowed steps is the widest one there is.
-  test("the axis never leaves more than 2.5x headroom, and usually much less", () => {
-    for (const max of [37, 1486.8, 3948.3, 323604, 9, 10, 99, 2.5, 0.03]) {
-      expect(axisFor(max).top).toBeLessThanOrEqual(max * 2.5);
+  // on the escalation curve, which would otherwise sit in the bottom third of its own frame. 2x is
+  // the worst case (the 1-to-2 gap between allowed steps), and the archetypes come in far under it.
+  test("the axis never leaves more than 2x headroom, and usually much less", () => {
+    for (const max of [37, 1486.8, 3948.3, 323604, 9, 10, 99, 100, 2.5, 0.03]) {
+      expect(axisFor(max).top).toBeLessThanOrEqual(max * 2);
     }
     // The archetypes' own runs, which is where it has to look right.
     for (const { id, values } of plottedRuns()) {

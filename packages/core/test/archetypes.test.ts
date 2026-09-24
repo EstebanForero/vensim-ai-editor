@@ -396,62 +396,78 @@ describe("archetype examples", () => {
   describe("archetype examples behave like the archetype", () => {
     test("Limits to Growth: the limit is what stops the growth", () => {
       const model = buildArchetypeExample("limits-to-growth");
-      expect(endOf(model, "Poblacion")).toBeGreaterThan(3900); // settles at the carrying capacity
-      expect(endOf(model, "Poblacion")).toBeLessThan(4000);
+      expect(endOf(model, "Population")).toBeGreaterThan(3900); // settles at the carrying capacity
+      expect(endOf(model, "Population")).toBeLessThan(4000);
       // Remove the crowding term and nothing stops it.
-      const unlimited = without(model, "Capacidad de carga", "999999999");
-      expect(endOf(unlimited, "Poblacion")).toBeGreaterThan(100_000);
+      const unlimited = without(model, "Carrying capacity", "999999999");
+      expect(endOf(unlimited, "Population")).toBeGreaterThan(100_000);
     });
 
     test("Tragedy of the Commons: the second farm is what drains it", () => {
       const model = buildArchetypeExample("tragedy-of-the-commons");
       // One farm takes under the regrowth rate, so it is fine forever — the aquifer even recovers
       // from where it starts.
-      expect(endOf(without(model, "Tasa de extraccion B", "0"), "Agua disponible")).toBeGreaterThan(300_000);
+      expect(endOf(without(model, "Use rate B", "0"), "Water available")).toBeGreaterThan(300_000);
       // The same farm twice takes more than the aquifer regrows, and it drains to nothing.
-      expect(endOf(model, "Agua disponible")).toBeLessThan(20_000);
+      expect(endOf(model, "Water available")).toBeLessThan(20_000);
     });
 
     test("Success to the Successful: allocating by track record is what starves the loser", () => {
       const model = buildArchetypeExample("success-to-the-successful");
-      expect(endOf(model, "Actividad A")).toBeGreaterThan(30);
-      expect(endOf(model, "Actividad B")).toBeLessThan(1); // starved out entirely
+      expect(endOf(model, "Activity A")).toBeGreaterThan(30);
+      expect(endOf(model, "Activity B")).toBeLessThan(1); // starved out entirely
       // Give both a fixed half of the budget instead and there is no winner at all — so the
       // allocation feedback, not the two-project head start, is what produces the outcome.
-      const flat = without(without(model, "Recursos para A", "1.5"), "Recursos para B", "1.5");
-      expect(endOf(flat, "Actividad A")).toBeCloseTo(endOf(flat, "Actividad B"), 1);
+      const flat = without(without(model, "Resources for A", "1.5"), "Resources for B", "1.5");
+      expect(endOf(flat, "Activity A")).toBeCloseTo(endOf(flat, "Activity B"), 1);
     });
 
     test("Fixes that Fail: the side effect is what brings the problem back", () => {
       const model = buildArchetypeExample("fixes-that-fail");
-      const problem = simulate(model).series["Problema"]!;
+      const problem = simulate(model).series["Problem"]!;
       expect(Math.min(...problem)).toBeLessThan(50); // the fix works at first
       expect(problem.at(-1)!).toBeGreaterThan(500); // then the problem returns past where it started
       // Without the side effect it simply resolves.
-      expect(endOf(without(model, "Tasa de efecto", "0"), "Problema")).toBeLessThan(1);
+      expect(endOf(without(model, "Side effect rate", "0"), "Problem")).toBeLessThan(1);
     });
 
     test("Shifting the Burden: the quick fix is what destroys the capacity", () => {
       const model = buildArchetypeExample("shifting-the-burden");
       // The relief is a real improvement — the problem falls well below where it started.
-      expect(endOf(model, "Problema")).toBeLessThan(200);
+      expect(endOf(model, "Problem")).toBeLessThan(200);
       // And it is paid for: the capacity it depends on is ground away.
-      expect(endOf(model, "Capacidad")).toBeLessThan(10);
+      expect(endOf(model, "Capacity")).toBeLessThan(10);
       // Fund the cure instead and the capacity gets built and the problem ends up lower still —
       // after a much worse middle, which is the trade the archetype describes.
-      const cureOnly = without(model, "Alivio rapido", "0");
-      expect(endOf(cureOnly, "Capacidad")).toBeGreaterThan(100);
-      expect(endOf(cureOnly, "Problema")).toBeLessThan(endOf(model, "Problema"));
+      const cureOnly = without(model, "Quick relief", "0");
+      expect(endOf(cureOnly, "Capacity")).toBeGreaterThan(100);
+      expect(endOf(cureOnly, "Problem")).toBeLessThan(endOf(model, "Problem"));
     });
 
     test("Escalation: neither side can leave the race", () => {
       const model = buildArchetypeExample("escalation");
-      const unopposed = without(without(model, "Produccion B", "0"), "Misiles B", "0");
+      const unopposed = without(without(model, "Production B", "0"), "Missiles B", "0");
       // No rival arsenal, no arms race: A has nothing to respond to.
-      expect(endOf(unopposed, "Misiles A")).toBeLessThan(130);
+      expect(endOf(unopposed, "Missiles A")).toBeLessThan(130);
       // And with a rival, both keep climbing — the loser included.
-      expect(endOf(model, "Misiles A")).toBeGreaterThan(300);
-      expect(endOf(model, "Misiles B")).toBeGreaterThan(200);
+      expect(endOf(model, "Missiles A")).toBeGreaterThan(300);
+      expect(endOf(model, "Missiles B")).toBeGreaterThan(200);
+    });
+
+    test("Eroding Goals: writing the standard down is what lowers it", () => {
+      const model = buildArchetypeExample("eroding-goals");
+      // The gap closes from both ends, so the two meet below where the standard started — 76,
+      // which is 40% of the 60-point gap taken out of the standard rather than the performance.
+      // Both time constants are in play; neither path is a rounding error.
+      expect(endOf(model, "Quality standard")).toBeGreaterThan(74);
+      expect(endOf(model, "Quality standard")).toBeLessThan(79);
+      expect(endOf(model, "Performance")).toBeGreaterThan(74);
+      expect(endOf(model, "Performance")).toBeLessThan(endOf(model, "Quality standard"));
+      // Take the erosion away and the same gap closes one way only: the standard holds and the
+      // performance does all the travelling. Same model, same loop — one edge.
+      const held = without(model, "Time to erode", "1000000");
+      expect(endOf(held, "Quality standard")).toBeGreaterThan(99);
+      expect(endOf(held, "Performance")).toBeGreaterThan(95);
     });
   });
 
@@ -470,16 +486,16 @@ describe("archetype examples", () => {
     // check that it notices — including the exact way the commons example used to be wrong.
     test("it catches an example that was over-drawn from the first day", () => {
       const model = buildArchetypeExample("tragedy-of-the-commons");
-      const rushed = without(without(model, "Retraso de B", "0"), "Tiempo de llegada", "0.001");
-      expect(checkCurve(rushed, { "Agua disponible": collapses })).toEqual([
-        '"Agua disponible" never rose above where it started (0.0%)',
+      const rushed = without(without(model, "B start delay", "0"), "B ramp time", "0.001");
+      expect(checkCurve(rushed, { "Water available": collapses })).toEqual([
+        '"Water available" never rose above where it started (0.0%)',
       ]);
     });
 
     test("it catches a limit that doesn't limit", () => {
       const model = buildArchetypeExample("limits-to-growth");
-      const unlimited = without(model, "Capacidad de carga", "999999999");
-      expect(checkCurve(unlimited, { Poblacion: plateaus })).toHaveLength(1);
+      const unlimited = without(model, "Carrying capacity", "999999999");
+      expect(checkCurve(unlimited, { Population: plateaus })).toHaveLength(1);
     });
 
     test("it treats a stock pinned near zero as depleted, spikes and all", () => {

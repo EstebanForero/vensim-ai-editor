@@ -5,17 +5,18 @@
 
 /** The classic system-dynamics archetypes this codebase can detect.
  *
- * Every one of these is decidable from the model itself: loop structure from the diagram, and —
- * for Shifting the Burden — the presence of a delay read from the equations. Archetypes that
- * would need to judge *intent* rather than structure are not here, and neither are ones whose
- * discriminating feature the model format can't express. */
+ * Every one of these is decidable from the model itself: loop structure from the diagram and the
+ * equations behind it, and — for Shifting the Burden — the presence of a delay read from the
+ * equations. Archetypes that would need to judge *intent* rather than structure are not here, and
+ * neither are ones whose discriminating feature the model format can't express. */
 export type ArchetypeId =
   | "limits-to-growth"
   | "tragedy-of-the-commons"
   | "escalation"
   | "success-to-the-successful"
   | "fixes-that-fail"
-  | "shifting-the-burden";
+  | "shifting-the-burden"
+  | "eroding-goals";
 
 /**
  * How much structure backs a match. `"likely"` means the full signature is present — e.g. both

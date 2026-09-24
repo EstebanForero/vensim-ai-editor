@@ -18,8 +18,8 @@ describe("inferPolarity", () => {
   test("a share of a total rises with its own part and falls with the rest", () => {
     expect(inferPolarity("A / (A + B)", "A", NAMES)).toBe("+");
     expect(inferPolarity("A / (A + B)", "B", NAMES)).toBe("-");
-    expect(inferPolarity("Reparto * A / (A + B)", "A", NAMES)).toBe("+");
-    expect(inferPolarity("Reparto * A / (A + B)", "B", NAMES)).toBe("-");
+    expect(inferPolarity("Budget * A / (A + B)", "A", NAMES)).toBe("+");
+    expect(inferPolarity("Budget * A / (A + B)", "B", NAMES)).toBe("-");
   });
 
   test("the cancellation is claimed only where the target really cancels", () => {

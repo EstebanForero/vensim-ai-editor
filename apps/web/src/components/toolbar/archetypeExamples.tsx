@@ -211,6 +211,28 @@ function ShiftingTheBurden() {
   );
 }
 
+/** Eroding Goals — a gap between a standard and a performance, with a balancing loop closing it
+ * from either end. Drawn like the other two-loop figures, but nothing here reinforces: the whole
+ * trap is that both paths balance, so the system converges quietly and nothing ever looks wrong.
+ * The minus on the way back into `Standard` is the erosion itself — more gap, lower standard. */
+function ErodingGoals() {
+  return (
+    <Frame>
+      <Box x={16} y={12} label="Standard" stock />
+      <Box x={212} y={12} label="Performance" stock />
+      <Box x={114} y={148} label="Gap" />
+      <Arrow d="M 62 42 L 150 146" />
+      <Arrow d="M 114 163 L 4 163 L 4 25 L 14 25" sign="−" at={[13, 86]} />
+      <Arrow d="M 258 42 L 172 146" sign="−" at={[226, 100]} />
+      <Arrow d="M 206 163 L 316 163 L 316 25 L 306 25" />
+      {/* Each badge sits in its own loop's interior — between the left edge and the diagonal on
+          one side, between the diagonal and the right edge on the other. */}
+      <LoopBadge cx={54} cy={100} polarity="B" n={1} />
+      <LoopBadge cx={266} cy={100} polarity="B" n={2} />
+    </Frame>
+  );
+}
+
 export const ARCHETYPE_DIAGRAMS: Record<ArchetypeId, () => React.ReactElement> = {
   "limits-to-growth": LimitsToGrowth,
   "tragedy-of-the-commons": TragedyOfTheCommons,
@@ -218,4 +240,5 @@ export const ARCHETYPE_DIAGRAMS: Record<ArchetypeId, () => React.ReactElement> =
   "success-to-the-successful": SuccessToTheSuccessful,
   "fixes-that-fail": FixesThatFail,
   "shifting-the-burden": ShiftingTheBurden,
+  "eroding-goals": ErodingGoals,
 };

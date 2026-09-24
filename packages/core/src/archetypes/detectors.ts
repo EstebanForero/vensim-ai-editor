@@ -217,6 +217,68 @@ function limitedSources(ctx: ArchetypeContext, a: string[], b: string[]): string
 }
 
 /**
+ * Eroding Goals — a gap between a target and a level, with a balancing loop that closes it from
+ * either end: one by moving the level, one by moving the target.
+ *
+ * What makes this its own pattern rather than an ordinary goal-seeking system is that **the target
+ * can move**. A gap between a constant target and a level closes one way only — the level does all
+ * the travelling. Here the reference is itself a level, so the same gap can be taken out of it, and
+ * it is: the loop through the target lowers the target rather than raising the performance, and the
+ * two meet somewhere below where the standard started. Nothing looks broken at any point, which is
+ * the whole difficulty of the pattern.
+ *
+ * Read structurally as an auxiliary that is one stock minus another — the two edges into it from
+ * stocks, one of each sign — with a balancing loop through each of those stocks. The stock the gap
+ * is measured *from*, the one that widens it, is the target; the other is the performance.
+ *
+ * Both terms have to be stocks, and that is the discriminator rather than a detail: `Target −
+ * Actual` with a constant target is the most ordinary goal-seeking loop there is, and it has no
+ * eroding-goals in it. Only a reference that can be revised has somewhere to erode to.
+ */
+export function erodingGoals(ctx: ArchetypeContext): Evidence[] {
+  const out: Evidence[] = [];
+  for (const gap of ctx.kinds.keys()) {
+    if (ctx.kinds.get(gap) !== "auxiliary") continue;
+    for (const target of stocksFeeding(ctx, gap, 1)) {
+      for (const performance of stocksFeeding(ctx, gap, -1)) {
+        if (target === performance) continue;
+        const through = (stock: string) =>
+          ctx.loops.find((l) => l.polarity === "B" && l.nodeIds.includes(gap) && l.nodeIds.includes(stock));
+        const targetLoop = through(target);
+        const performanceLoop = through(performance);
+        if (!targetLoop || !performanceLoop || targetLoop.id === performanceLoop.id) continue;
+        out.push(
+          evidence(ctx, {
+            loops: [targetLoop, performanceLoop],
+            nodes: [gap, target, performance],
+            confidence: "likely",
+            summary: `${nameList(ctx, [gap])} widens with ${nameList(ctx, [target])} and narrows with ${nameList(
+              ctx,
+              [performance],
+            )}, and a balancing loop closes that gap through each of them — ${loopLabel(targetLoop)} through ${nameList(
+              ctx,
+              [target],
+            )}, ${loopLabel(performanceLoop)} through ${nameList(ctx, [performance])}.`,
+          }),
+        );
+      }
+    }
+  }
+  return out;
+}
+
+/** The stocks with an edge of this sign into `node` — the two terms of a difference, when there
+ * is one of each. */
+function stocksFeeding(ctx: ArchetypeContext, node: string, sign: 1 | -1): string[] {
+  const out: string[] = [];
+  for (const [from, edges] of ctx.adjacency) {
+    if (ctx.kinds.get(from) !== "stock") continue;
+    if (edges.some((e) => e.to === node && e.sign === sign)) out.push(from);
+  }
+  return out;
+}
+
+/**
  * Fixes that Fail — a balancing loop and a reinforcing loop running between the same two
  * variables: one path is the fix pulling the problem down, the other is the unintended
  * consequence pushing it back up.

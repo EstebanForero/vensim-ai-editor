@@ -140,6 +140,22 @@ export const eroded: ShapeCheck = (s) => {
   return null;
 };
 
+/**
+ * Comes down and settles clearly below where it started, without collapsing — a standard revised
+ * to fit the results.
+ *
+ * The difference from `eroded` is the whole point of the archetype: this is not a thing consumed
+ * to nothing, it is most of a thing still standing, which is exactly what makes it easy to live
+ * with and therefore the trap. And unlike `givesBackGain` it does not come back — the standard
+ * stays where it was written down to, which is what makes the next concession easier.
+ */
+export const driftsDown: ShapeCheck = (s) => {
+  if (s.settled > s.first * 0.9) return `only came down from ${s.first.toFixed(0)} to ${s.settled.toFixed(0)} — the standard held`;
+  if (s.settled < s.first * 0.15) return `slid from ${s.first.toFixed(0)} to ${s.settled.toFixed(0)} — that is a collapse, not a standard being written down`;
+  if (s.low < s.settled * 0.8) return `fell to ${s.low.toFixed(0)} before coming back to ${s.settled.toFixed(0)} — that is a rebound, not a standard drifting`;
+  return null;
+};
+
 /** The curve each archetype's example has to produce, by series name. */
 export type ArchetypeCurve = Record<string, ShapeCheck>;
 
