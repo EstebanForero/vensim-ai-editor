@@ -73,12 +73,12 @@ export const HELP = `Generate a system-dynamics model from a description.
 
   vensim-ai-generate <prompt> [options]
 
-  <prompt>              What to build. "-" reads it from stdin.
-${FLAGS.map((f) => `  ${(f.names[0]! + (f.arg ? ` ${f.arg}` : "")).padEnd(20)}${f.help}`).join("\n")}
-  -h, --help          Show this
+  ${"<prompt>".padEnd(20)}What to build. "-" reads it from stdin.
+${FLAGS.map((f) => `  ${(f.names.join(", ") + (f.arg ? ` ${f.arg}` : "")).padEnd(20)}${f.help}`).join("\n")}
+  ${"-h, --help".padEnd(20)}Show this
 
 Formats:
-${FORMAT_NAMES.map((name) => `  ${name.padEnd(8)}${formatOf(name).note ?? ""}`).join("\n")}
+${FORMAT_NAMES.map((name) => `  ${name.padEnd(20)}${formatOf(name).note ?? ""}`).join("\n")}
 
 Environment: VENSIM_AI_API_KEY (or OPENAI_API_KEY / DEEPSEEK_API_KEY / GEMINI_API_KEY /
 OPENROUTER_API_KEY), plus VENSIM_AI_PROVIDER, VENSIM_AI_MODEL and VENSIM_AI_BASE_URL to save
