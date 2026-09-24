@@ -130,8 +130,11 @@ function Escalation() {
       <Arrow d="M 74 142 L 74 42" />
       <Arrow d="M 248 40 L 248 140" />
       <Arrow d="M 282 142 L 282 42" />
-      <Arrow d="M 102 34 L 216 156" sign="−" at={[150, 84]} />
-      <Arrow d="M 218 156 L 104 34" sign="−" at={[170, 110]} />
+      {/* The two cross-links are the whole archetype, and as straight lines they lie almost
+          exactly on top of one another — one thick arrow with two minus signs smeared together.
+          Bowed apart instead, so each is a link you can trace and each sign belongs to a line. */}
+      <Arrow d="M 100 38 Q 204 62 240 142" sign="−" at={[194, 68]} />
+      <Arrow d="M 218 150 Q 118 126 102 42" sign="−" at={[132, 118]} />
       <LoopBadge cx={57} cy={90} polarity="R" n={1} />
       <LoopBadge cx={265} cy={90} polarity="R" n={2} />
     </Frame>
@@ -168,8 +171,11 @@ function FixesThatFail() {
       <Arrow d="M 232 42 L 80 40" sign="−" at={[160, 52]} />
       <Arrow d="M 248 42 L 194 146" />
       <Arrow d="M 114 163 L 10 163 L 10 44" />
-      <LoopBadge cx={160} cy={94} polarity="B" n={1} />
-      <LoopBadge cx={290} cy={122} polarity="R" n={1} />
+      {/* Both badges sit in their own loop's interior. B1's loop is the thin sliver between the
+          two arrows at the top, which is too narrow to hold a badge, so it goes directly beneath
+          it — leaving it mid-figure put it closer to the R loop than to the one it names. */}
+      <LoopBadge cx={150} cy={62} polarity="B" n={1} />
+      <LoopBadge cx={120} cy={112} polarity="R" n={1} />
     </Frame>
   );
 }
@@ -184,14 +190,23 @@ function ShiftingTheBurden() {
       <Box x={8} y={104} label="Quick fix" />
       <Box x={216} y={104} label="Delayed fix" />
       <Box x={114} y={154} label="Capacity" stock />
-      <Arrow d="M 140 38 L 78 102" sign="−" at={[96, 62]} />
-      <Arrow d="M 8 118 L 2 118 L 2 23 L 112 23" />
-      <Arrow d="M 180 38 L 242 102" sign="−" at={[222, 62]} />
-      <Arrow d="M 312 118 L 318 118 L 318 23 L 208 23" />
+      {/* The minus belongs on the *solution → problem* link — more relief, less problem — not on
+          problem → solution, which is "more problem, more relief". Either way the loop sums to B,
+          so the wrong pairing looks right until you read it: it says more problem means less
+          fixing. */}
+      <Arrow d="M 140 38 L 78 102" />
+      <Arrow d="M 8 118 L 2 118 L 2 23 L 112 23" sign="−" at={[56, 16]} />
+      <Arrow d="M 180 38 L 242 102" />
+      <Arrow d="M 312 118 L 318 118 L 318 23 L 208 23" sign="−" at={[268, 16]} />
       <Arrow d="M 78 134 L 132 160" sign="−" at={[92, 154]} />
+      {/* Capacity feeds the delayed fix — without this the R badge labeled a loop with no visible
+          closure, since the erosion arrow alone is only one side of it. */}
+      <Arrow d="M 206 169 L 240 169 L 240 136" />
       <LoopBadge cx={54} cy={62} polarity="B" n={1} />
       <LoopBadge cx={286} cy={62} polarity="B" n={2} />
-      <LoopBadge cx={196} cy={166} polarity="R" n={1} />
+      {/* Inside the erosion cycle (quick fix → capacity → delayed fix → problem), not on top of
+          the Capacity box, which is where it landed when the box was drawn last. */}
+      <LoopBadge cx={158} cy={122} polarity="R" n={1} />
     </Frame>
   );
 }

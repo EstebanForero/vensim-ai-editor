@@ -6,6 +6,7 @@ import {
   detectArchetypes,
   simulate,
   validateModel,
+  type ArchetypeId,
   type ArchetypeMatch,
   type Model,
   type SimResult,
@@ -156,9 +157,14 @@ interface ModelStoreState {
   setUnitsDialogOpen: (open: boolean) => void;
   runArchetypeCheck: () => void;
   setArchetypeDialogOpen: (open: boolean) => void;
-  /** Replaces the model with the example for this match's archetype, closing the report.
-   * Returns false if the user declined the replacement. */
-  loadArchetypeExample: (match: ArchetypeMatch) => boolean;
+  /** Replaces the model with this archetype's example, closing the report. Returns false if the
+   * user declined the replacement.
+   *
+   * Takes only the id and the display name rather than an `ArchetypeMatch`, because the examples
+   * are a browsable library: you can open one for an archetype the current model doesn't match,
+   * and then there is no match to pass. (`ArchetypeMatch` has both fields, so a match still
+   * satisfies this.) */
+  loadArchetypeExample: (archetype: { archetype: ArchetypeId; label: string }) => boolean;
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
   setAiModel: (name: string) => void;
@@ -238,15 +244,15 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   setModel: (model) =>
     set({ ...commit(model), selectedId: null, simResult: null, unitIssues: null, archetypeMatches: null }),
 
-  loadArchetypeExample: (match) => {
+  loadArchetypeExample: ({ archetype, label }) => {
     const { model } = get();
     // The template dropdown replaces the model silently; this doesn't, because the button sits
     // one click away from a report the user may not have opened intending to discard their work.
-    if (allVariables(model).length > 0 && !window.confirm(`Replace the current model with the ${match.label} example?`)) {
+    if (allVariables(model).length > 0 && !window.confirm(`Replace the current model with the ${label} example?`)) {
       return false;
     }
     set({
-      ...commit(buildArchetypeExample(match.archetype)),
+      ...commit(buildArchetypeExample(archetype)),
       selectedId: null,
       simResult: null,
       unitIssues: null,
