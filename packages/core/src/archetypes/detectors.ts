@@ -170,12 +170,11 @@ export function successToTheSuccessful(ctx: ArchetypeContext): Evidence[] {
   const out: Evidence[] = [];
   for (const { a, b, shared, aOnly, bOnly } of reinforcingPairs(ctx)) {
     if (aOnly.length === 0 || bOnly.length === 0) continue;
-    for (const allocId of shared) {
-      if (ctx.kinds.get(allocId) === "stock") continue;
-      // The allocation has to actually feed both sides — a node the two loops merely both pass
-      // through on the way to somewhere else is a shared dependency, not a split.
-      if (crossEdges(ctx, [allocId], aOnly, 1).length === 0) continue;
-      if (crossEdges(ctx, [allocId], bOnly, 1).length === 0) continue;
+    // The two loops must have nothing in common but the resource they divide. Two loops turning on
+    // the same stock are two paths drawing on one thing, not two sides competing — that is the
+    // commons, and it has its own detector.
+    if (shared.length > 0) continue;
+    for (const allocId of limitedSources(ctx, aOnly, bOnly)) {
       const nodes = [allocId, ...aOnly, ...bOnly];
       out.push(
         evidence(ctx, {
@@ -188,6 +187,31 @@ export function successToTheSuccessful(ctx: ArchetypeContext): Evidence[] {
         }),
       );
     }
+  }
+  return out;
+}
+
+/**
+ * The resource the two sides are dividing: something that feeds both of them and that neither
+ * feeds back into.
+ *
+ * That second clause is the archetype, not a technicality. The resource is *limited* — what one
+ * side gets is what the other doesn't — and a pool the two sides replenish is not limited at all.
+ * It is also where this signature used to go wrong: requiring the allocation to sit *inside* both
+ * loops forces the pool to be endogenous, which makes each side's share cancel against it, and the
+ * lead then stops compounding no matter how the example is written. The textbook figure draws the
+ * resource outside the loops for exactly this reason.
+ */
+function limitedSources(ctx: ArchetypeContext, a: string[], b: string[]): string[] {
+  const sides = new Set([...a, ...b]);
+  const out: string[] = [];
+  for (const id of ctx.kinds.keys()) {
+    if (sides.has(id) || ctx.kinds.get(id) === "stock") continue;
+    if (crossEdges(ctx, [id], a, 1).length === 0) continue;
+    if (crossEdges(ctx, [id], b, 1).length === 0) continue;
+    const fedBack = crossEdges(ctx, [...sides], [id], 1).length + crossEdges(ctx, [...sides], [id], -1).length;
+    if (fedBack > 0) continue;
+    out.push(id);
   }
   return out;
 }

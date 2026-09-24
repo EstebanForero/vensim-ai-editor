@@ -258,7 +258,7 @@ describe("delays through the .mdl codec", () => {
   test("a written delay is still a delay when it comes back", () => {
     const reparsed = parseMdl(writeMdl(buildArchetypeExample("shifting-the-burden")));
     const movement = reparsed.auxiliaries.find((a) => a.name === "Movimiento")!;
-    expect(movement.equation).toBe("DELAY1(MIN(Problema * Tasa de cobertura, Capacidad), 8)");
+    expect(movement.equation).toBe("DELAY1(MIN(Problema * Tasa de cobertura, Capacidad), Retraso)");
     expect(detectArchetypes(reparsed).some((m) => m.archetype === "shifting-the-burden")).toBe(true);
   });
 });

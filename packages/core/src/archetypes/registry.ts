@@ -7,6 +7,7 @@
 // exhaustiveness against it.
 
 import { buildContext, type ArchetypeContext, type Evidence } from "./context.js";
+import { checkCurve, climbs, collapses, eroded, givesBackGain, plateaus, rebounds, runsAway, starvedOut, type ArchetypeCurve } from "./curve.js";
 import {
   escalation,
   fixesThatFail,
@@ -18,7 +19,7 @@ import {
 import { buildArchetypeExample } from "./examples.js";
 import { detectLoops } from "../loops/detect.js";
 import type { Model } from "../model/types.js";
-import type { ArchetypeMatch, DetectArchetypesOptions } from "./types.js";
+import type { ArchetypeId, ArchetypeMatch, DetectArchetypesOptions } from "./types.js";
 
 export interface ArchetypeDefinition {
   id: string;
@@ -33,6 +34,13 @@ export interface ArchetypeDefinition {
   meaning: string;
   detect: (ctx: ArchetypeContext) => Evidence[];
   buildExample: () => Model;
+  /**
+   * The shape this archetype's example has to produce when it runs, by series name. Checked by
+   * `verifyArchetypeExample`, so an example that stops behaving like its archetype fails the suite
+   * without anyone having to write a test for it — see curve.ts for why structure alone is not
+   * enough, and for what counts as a spike rather than a failure.
+   */
+  curve: ArchetypeCurve;
 }
 
 /**
@@ -49,6 +57,7 @@ export const ARCHETYPES = [
       "Growth is real, but a constraint tightens as it grows — so the reinforcing loop slows and the state levels off instead of continuing.",
     detect: limitsToGrowth,
     buildExample: () => buildArchetypeExample("limits-to-growth"),
+    curve: { Poblacion: plateaus },
   },
   {
     id: "tragedy-of-the-commons",
@@ -57,6 +66,7 @@ export const ARCHETYPES = [
       "Each user's draw on a shared resource looks harmless on its own; together the loops deplete it, and no single one is the cause.",
     detect: tragedyOfTheCommons,
     buildExample: () => buildArchetypeExample("tragedy-of-the-commons"),
+    curve: { "Agua disponible": collapses },
   },
   {
     id: "escalation",
@@ -65,6 +75,7 @@ export const ARCHETYPES = [
       "Each side's growth threatens the other, and each responds in kind — a race neither can leave without losing ground.",
     detect: escalation,
     buildExample: () => buildArchetypeExample("escalation"),
+    curve: { "Misiles A": runsAway, "Misiles B": runsAway },
   },
   {
     id: "success-to-the-successful",
@@ -73,6 +84,7 @@ export const ARCHETYPES = [
       "Two activities share one allocation, and success attracts more of it — so the leader pulls ahead regardless of merit.",
     detect: successToTheSuccessful,
     buildExample: () => buildArchetypeExample("success-to-the-successful"),
+    curve: { "Actividad A": climbs, "Actividad B": starvedOut },
   },
   {
     id: "fixes-that-fail",
@@ -81,6 +93,7 @@ export const ARCHETYPES = [
       "The fix works, but its side effect feeds the problem back — so the problem returns, and more of the same fix is applied.",
     detect: fixesThatFail,
     buildExample: () => buildArchetypeExample("fixes-that-fail"),
+    curve: { Problema: rebounds },
   },
   {
     id: "shifting-the-burden",
@@ -89,6 +102,7 @@ export const ARCHETYPES = [
       "A quick fix relieves the symptom while a slower, deeper solution goes unattended — and the quick fix erodes the capacity the deeper one needs.",
     detect: shiftingTheBurden,
     buildExample: () => buildArchetypeExample("shifting-the-burden"),
+    curve: { Problema: givesBackGain, Capacidad: eroded },
   },
 ] as const satisfies readonly ArchetypeDefinition[];
 
@@ -112,6 +126,17 @@ export const ARCHETYPES = [
  * A model with no feedback loops returns nothing, and so does one whose loops match no signature
  * — an empty result means "no structural match found", never "no archetype here".
  */
+/**
+ * Runs this archetype's example and reports every way its run fails to look like the archetype.
+ * Empty means it looks right. This is the automatic half of "the example really is the archetype":
+ * the detector reads its structure, this reads its behaviour.
+ */
+export function verifyArchetypeExample(id: ArchetypeId): string[] {
+  const archetype = ARCHETYPES.find((a) => a.id === id);
+  if (!archetype) return [`no archetype "${id}"`];
+  return checkCurve(archetype.buildExample(), archetype.curve);
+}
+
 export function detectArchetypes(model: Model, options: DetectArchetypesOptions = {}): ArchetypeMatch[] {
   const { limit = 12 } = options;
   const loops = detectLoops(model);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ARCHETYPES, buildArchetypeExample, detectArchetypes } from "../src/archetypes/index.js";
+import { ARCHETYPES, buildArchetypeExample, checkCurve, collapses, detectArchetypes, eroded, plateaus, verifyArchetypeExample } from "../src/archetypes/index.js";
 import type { ArchetypeId } from "../src/archetypes/types.js";
 import { addAuxiliary, addConnector, addConstant, addFlow, addStock } from "../src/model/builder/index.js";
 import { detectLoops } from "../src/loops/detect.js";
@@ -143,35 +143,51 @@ describe("detectArchetypes", () => {
     expect(matchesOf(detectArchetypes(model), "escalation")).toHaveLength(0);
   });
 
-  test("Success to the Successful: two reinforcing loops fed by one allocation", () => {
+  test("Success to the Successful: two reinforcing loops fed by one limited resource", () => {
     const model = createEmptyModel();
+    // The resource is *limited*: it feeds both activities and neither feeds anything back into it.
+    addConstant(model, { name: "Budget", value: 3, pos: { x: 0, y: 0 } });
+    addAuxiliary(model, { name: "Share A", equation: "Success A / (Success A + Success B)", pos: { x: 200, y: 0 } });
+    addAuxiliary(model, { name: "Success A", equation: "Activity A", pos: { x: 300, y: 0 } });
+    addAuxiliary(model, { name: "Activity A", equation: "Budget * Share A", pos: { x: 100, y: 0 } });
+    addAuxiliary(model, { name: "Share B", equation: "Success B / (Success A + Success B)", pos: { x: 200, y: 100 } });
+    addAuxiliary(model, { name: "Success B", equation: "Activity B", pos: { x: 300, y: 100 } });
+    addAuxiliary(model, { name: "Activity B", equation: "Budget * Share B", pos: { x: 100, y: 100 } });
+    addConnector(model, { from: "Budget", to: "Activity A" });
+    addConnector(model, { from: "Budget", to: "Activity B" });
+    addConnector(model, { from: "Success A", to: "Share A" });
+    addConnector(model, { from: "Success B", to: "Share A" });
+    addConnector(model, { from: "Share A", to: "Activity A" });
+    addConnector(model, { from: "Activity A", to: "Success A" });
+    addConnector(model, { from: "Success B", to: "Share B" });
+    addConnector(model, { from: "Success A", to: "Share B" });
+    addConnector(model, { from: "Share B", to: "Activity B" });
+    addConnector(model, { from: "Activity B", to: "Success B" });
+
+    const matches = matchesOf(detectArchetypes(model), "success-to-the-successful");
+    expect(matches.length).toBeGreaterThan(0);
+    expect(matches[0]!.summary).toContain("`Budget`");
+    expect(matches[0]!.nodeNames).toContain("Activity A");
+    expect(matches[0]!.nodeNames).toContain("Activity B");
+  });
+
+  test("Success to the Successful: a resource the two sides replenish is not limited", () => {
+    const model = createEmptyModel();
+    // The same diagram with one change: the pool is fed by the activities it divides. That is a
+    // different structure — the allocation cancels against the thing it allocates, and the lead
+    // stops compounding however the numbers are set — so it is deliberately not this archetype.
     addAuxiliary(model, { name: "Allocation", equation: "Success A + Success B", pos: { x: 0, y: 0 } });
     addAuxiliary(model, { name: "Activity A", equation: "Allocation", pos: { x: 100, y: 0 } });
     addAuxiliary(model, { name: "Success A", equation: "Activity A", pos: { x: 200, y: 0 } });
     addAuxiliary(model, { name: "Activity B", equation: "Allocation", pos: { x: 100, y: 100 } });
     addAuxiliary(model, { name: "Success B", equation: "Activity B", pos: { x: 200, y: 100 } });
-    addConnector(model, { from: "Allocation", to: "Activity A" });
-    addConnector(model, { from: "Activity A", to: "Success A" });
-    addConnector(model, { from: "Success A", to: "Allocation" });
-    addConnector(model, { from: "Allocation", to: "Activity B" });
-    addConnector(model, { from: "Activity B", to: "Success B" });
-    addConnector(model, { from: "Success B", to: "Allocation" });
-
-    const matches = detectArchetypes(model);
-    expect(shape(matches)).toEqual([
-      {
-        archetype: "success-to-the-successful",
-        confidence: "likely",
-        loops: ["R1", "R2"],
-        nodes: ["Allocation", "Activity A", "Success A", "Activity B", "Success B"],
-      },
-    ]);
-    expect(matches[0]!.summary).toContain("both draw on `Allocation`");
+    for (const [from, to] of [["Allocation", "Activity A"], ["Activity A", "Success A"], ["Success A", "Allocation"],
+      ["Allocation", "Activity B"], ["Activity B", "Success B"], ["Success B", "Allocation"]] as const) {
+      addConnector(model, { from, to });
+    }
+    expect(matchesOf(detectArchetypes(model), "success-to-the-successful")).toHaveLength(0);
   });
 
-  // The minimal shape: problem and fix wired straight to each other, with the unintended
-  // consequence riding on a third variable. The balancing loop has nothing of its own here, so
-  // requiring a detour on both sides would miss exactly the case this archetype is drawn as.
   test("Fixes that Fail: a balancing and a reinforcing path between the same two variables", () => {
     const model = createEmptyModel();
     addAuxiliary(model, { name: "Problem", equation: "Side Effect", pos: { x: 0, y: 0 } });
@@ -329,41 +345,32 @@ describe("archetype examples", () => {
   // the Successful had a success-feeds-allocation loop that, given equal access, left the two
   // activities at 1337.6 and 1335.6 — the loop did nothing, and a difference in access rates was
   // doing all the work. Both passed every structural test in this file.
+  // Each archetype is a causal claim, and a causal claim is testable: take the mechanism away and
+  // the outcome has to change. Structure alone turned out to be too weak a bar — a model can carry
+  // an archetype's loops and still be driven entirely by something else. The commons example had
+  // two farms drawing on one aquifer and lost the aquifer just as fast with one; Success to the
+  // Successful had a success-feeds-allocation loop that, given equal access, left the two
+  // activities at 1337.6 and 1335.6. Both passed every structural test in this file.
+  //
+  // These are the counterfactuals — the mechanism is load-bearing. The shape of each run is checked
+  // separately and automatically, by the archetype's own `curve` declaration.
   describe("archetype examples behave like the archetype", () => {
     test("Limits to Growth: the limit is what stops the growth", () => {
       const model = buildArchetypeExample("limits-to-growth");
-      // Births and deaths balance at 4000, so it climbs towards that and flattens.
-      expect(endOf(model, "Population")).toBeGreaterThan(3800);
-      expect(endOf(model, "Population")).toBeLessThan(4000);
+      expect(endOf(model, "Poblacion")).toBeGreaterThan(3900); // settles at the carrying capacity
+      expect(endOf(model, "Poblacion")).toBeLessThan(4000);
       // Remove the crowding term and nothing stops it.
-      expect(endOf(without(model, "Death Rate", "Base Death Rate"), "Population")).toBeGreaterThan(100_000);
+      const unlimited = without(model, "Capacidad de carga", "999999999");
+      expect(endOf(unlimited, "Poblacion")).toBeGreaterThan(100_000);
     });
 
     test("Tragedy of the Commons: the second farm is what drains it", () => {
       const model = buildArchetypeExample("tragedy-of-the-commons");
-      // One farm asks for 60,000 against a sustainable yield of 100,000, so it is fine forever —
-      // the aquifer even recovers from where it starts.
-      expect(endOf(without(model, "Demanda B", "0"), "Agua disponible")).toBeGreaterThan(700_000);
-      // The same farm twice asks for 120,000 against the same 100,000, and it drains to nothing.
-      expect(endOf(model, "Agua disponible")).toBeLessThan(1_000);
-    });
-
-    test("Tragedy of the Commons: the stock rises to a peak before it collapses", () => {
-      const model = buildArchetypeExample("tragedy-of-the-commons");
-      const result = simulate(model);
-      const water = result.series["Agua disponible"]!;
-      const peak = Math.max(...water);
-      const peakAt = water.indexOf(peak) / water.length;
-
-      // The curve this archetype is drawn with has three phases: abundant and rising, then a peak,
-      // then collapse. A stock that is over-drawn from the first day has only one — it falls away
-      // from wherever it started — and that is what this example did until the second farm was
-      // made to arrive part-way through rather than at full tilt. Checking the phases directly,
-      // because "it depletes" is satisfied by a straight line and this is not a straight line.
-      expect(peak).toBeGreaterThan(water[0]! * 1.1); // phase 1: it grows while only one farm draws
-      expect(peakAt).toBeGreaterThan(0.2); // the peak is neither at the start...
-      expect(peakAt).toBeLessThan(0.5); // ...nor at the end
-      expect(water.at(-1)!).toBeLessThan(peak * 0.01); // phase 3: it goes, and does not come back
+      // One farm takes under the regrowth rate, so it is fine forever — the aquifer even recovers
+      // from where it starts.
+      expect(endOf(without(model, "Tasa de extraccion B", "0"), "Agua disponible")).toBeGreaterThan(300_000);
+      // The same farm twice takes more than the aquifer regrows, and it drains to nothing.
+      expect(endOf(model, "Agua disponible")).toBeLessThan(20_000);
     });
 
     test("Success to the Successful: allocating by track record is what starves the loser", () => {
@@ -372,7 +379,7 @@ describe("archetype examples", () => {
       expect(endOf(model, "Actividad B")).toBeLessThan(1); // starved out entirely
       // Give both a fixed half of the budget instead and there is no winner at all — so the
       // allocation feedback, not the two-project head start, is what produces the outcome.
-      const flat = without(without(model, "Acceso A", "0.5"), "Acceso B", "0.5");
+      const flat = without(without(model, "Recursos para A", "1.5"), "Recursos para B", "1.5");
       expect(endOf(flat, "Actividad A")).toBeCloseTo(endOf(flat, "Actividad B"), 1);
     });
 
@@ -389,12 +396,12 @@ describe("archetype examples", () => {
       const model = buildArchetypeExample("shifting-the-burden");
       // The relief is a real improvement — the problem falls well below where it started.
       expect(endOf(model, "Problema")).toBeLessThan(200);
-      // And it is paid for out of the same effort budget: the capacity is never built, and decays.
-      expect(endOf(model, "Capacidad")).toBeLessThan(1);
+      // And it is paid for: the capacity it depends on is ground away.
+      expect(endOf(model, "Capacidad")).toBeLessThan(10);
       // Fund the cure instead and the capacity gets built and the problem ends up lower still —
       // after a much worse middle, which is the trade the archetype describes.
       const cureOnly = without(model, "Alivio rapido", "0");
-      expect(endOf(cureOnly, "Capacidad")).toBeGreaterThan(30);
+      expect(endOf(cureOnly, "Capacidad")).toBeGreaterThan(100);
       expect(endOf(cureOnly, "Problema")).toBeLessThan(endOf(model, "Problema"));
     });
 
@@ -409,54 +416,43 @@ describe("archetype examples", () => {
     });
   });
 
-  // Each archetype is also drawn with a characteristic curve, and the curve is a second,
-  // independent check on the example: "it depletes", "it grows" and "it goes up" are all satisfied
-  // by a straight line, and none of these are straight lines. Where the counterfactual tests above
-  // ask whether the *mechanism* is load-bearing, these ask whether the *shape* is the archetype's.
+  // The other half of the claim, and the automatic one: every archetype declares the shape its
+  // example has to produce (registry.ts), and this runs it. Adding an archetype gets curve
+  // verification for free rather than needing a test written for it.
   describe("archetype examples have the shape the archetype is drawn with", () => {
-    test("Limits to Growth: it climbs and then flattens", () => {
-      const p = simulate(buildArchetypeExample("limits-to-growth")).series["Population"]!;
-      const mid = Math.floor(p.length / 2);
-      expect(p.at(-1)! - p[mid]!).toBeLessThan(p[mid]! - p[0]!); // still rising, but slower
-      expect(p.at(-1)!).toBeLessThan(4000); // and inside the limit, not through it
+    for (const archetype of ARCHETYPES) {
+      test(`${archetype.label}: its own run has the shape`, () => {
+        const problems = verifyArchetypeExample(archetype.id);
+        expect(problems).toEqual([]);
+      });
+    }
+
+    // A verifier that can't fail is worth nothing, so these break the examples on purpose and
+    // check that it notices — including the exact way the commons example used to be wrong.
+    test("it catches an example that was over-drawn from the first day", () => {
+      const model = buildArchetypeExample("tragedy-of-the-commons");
+      const rushed = without(without(model, "Retraso de B", "0"), "Tiempo de llegada", "0.001");
+      expect(checkCurve(rushed, { "Agua disponible": collapses })).toEqual([
+        '"Agua disponible" never rose above where it started (0.0%)',
+      ]);
     });
 
-    test("Escalation: both sides run away, and neither settles", () => {
-      const a = simulate(buildArchetypeExample("escalation")).series["Misiles A"]!;
-      const quarter = Math.floor(a.length / 4);
-      // An exponential: the last quarter adds more than the first, which a settling curve can't do.
-      expect(a.at(-1)! - a[3 * quarter]!).toBeGreaterThan(a[quarter]! - a[0]!);
-      expect(a.at(-1)!).toBeGreaterThan(a[0]! * 5);
+    test("it catches a limit that doesn't limit", () => {
+      const model = buildArchetypeExample("limits-to-growth");
+      const unlimited = without(model, "Capacidad de carga", "999999999");
+      expect(checkCurve(unlimited, { Poblacion: plateaus })).toHaveLength(1);
     });
 
-    test("Success to the Successful: the loser rises, peaks, and is starved out", () => {
-      const result = simulate(buildArchetypeExample("success-to-the-successful"));
-      const a = result.series["Actividad A"]!;
-      const b = result.series["Actividad B"]!;
-      expect(a.at(-1)!).toBeGreaterThan(a[0]! * 3); // the winner runs away with it
-      expect(b.indexOf(Math.max(...b))).toBeGreaterThan(0); // the loser is not beaten from the start...
-      expect(b.at(-1)!).toBeLessThan(b[0]! * 0.1); // ...it is out-competed on the way
-    });
-
-    test("Fixes that Fail: the problem dips and then overshoots where it began", () => {
-      const p = simulate(buildArchetypeExample("fixes-that-fail")).series["Problema"]!;
-      expect(Math.min(...p)).toBeLessThan(p[0]! * 0.5); // the fix visibly works first
-      expect(p.at(-1)!).toBeGreaterThan(p[0]!); // and the problem ends worse than it started
-    });
-
-    test("Shifting the Burden: the relief's gain is given back as the capacity dies", () => {
-      const result = simulate(buildArchetypeExample("shifting-the-burden"));
-      const problem = result.series["Problema"]!;
-      const capacity = result.series["Capacidad"]!;
-      const low = Math.min(...problem);
-      expect(low).toBeLessThan(problem[0]! * 0.25); // the relief works, and fast
-      expect(problem.at(-1)!).toBeGreaterThan(low * 2); // then the gain is partly given back
-      // But never past where it started — that would be Fixes that Fail. What makes this its own
-      // archetype is that the problem settles at the level the *relief alone* can hold.
-      expect(problem.at(-1)!).toBeLessThan(problem[0]!);
-      expect(capacity.at(-1)!).toBeLessThan(capacity[0]! * 0.05); // because the capacity is gone
+    test("it treats a stock pinned near zero as depleted, spikes and all", () => {
+      // The tail is read as a median rather than as the final value, because a depleted resource
+      // does not sit still: whatever regrowth is left nudges it up and the harvest takes it back
+      // down. A run that ends on an up-spike is still a depleted run.
+      const spiky = { first: 100, peak: 120, peakAt: 0.3, low: 0.4, lowAt: 0.9, settled: 0.5 };
+      expect(eroded(spiky)).toBeNull();
+      expect(eroded({ ...spiky, settled: 40 })).toContain("still 40.0% of where it started");
     });
   });
+
 
   test("no two archetypes share an id", () => {
     const ids = ARCHETYPES.map((a) => a.id);
