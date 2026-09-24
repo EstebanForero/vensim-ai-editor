@@ -299,6 +299,11 @@ describe("archetype examples", () => {
       expect(result.time.length).toBeGreaterThan(1);
       for (const [name, values] of Object.entries(result.series)) {
         expect(values.every((v) => Number.isFinite(v))).toBe(true);
+        // Every series here is a count of something — people, water, missiles, cases — and none of
+        // them can go below zero. Not a hypothetical: the Shifting the Burden example ran its
+        // problem straight through zero, because the cure is delayed by eight months and kept
+        // working at the rate the problem *used* to justify after the problem had gone.
+        expect(values.every((v) => v >= 0)).toBe(true);
         expect(name.length).toBeGreaterThan(0);
       }
       expect(Object.keys(result.series).length).toBeGreaterThan(1);
@@ -343,6 +348,24 @@ describe("archetype examples", () => {
       expect(endOf(model, "Agua disponible")).toBeLessThan(1_000);
     });
 
+    test("Tragedy of the Commons: the stock rises to a peak before it collapses", () => {
+      const model = buildArchetypeExample("tragedy-of-the-commons");
+      const result = simulate(model);
+      const water = result.series["Agua disponible"]!;
+      const peak = Math.max(...water);
+      const peakAt = water.indexOf(peak) / water.length;
+
+      // The curve this archetype is drawn with has three phases: abundant and rising, then a peak,
+      // then collapse. A stock that is over-drawn from the first day has only one — it falls away
+      // from wherever it started — and that is what this example did until the second farm was
+      // made to arrive part-way through rather than at full tilt. Checking the phases directly,
+      // because "it depletes" is satisfied by a straight line and this is not a straight line.
+      expect(peak).toBeGreaterThan(water[0]! * 1.1); // phase 1: it grows while only one farm draws
+      expect(peakAt).toBeGreaterThan(0.2); // the peak is neither at the start...
+      expect(peakAt).toBeLessThan(0.5); // ...nor at the end
+      expect(water.at(-1)!).toBeLessThan(peak * 0.01); // phase 3: it goes, and does not come back
+    });
+
     test("Success to the Successful: allocating by track record is what starves the loser", () => {
       const model = buildArchetypeExample("success-to-the-successful");
       expect(endOf(model, "Actividad A")).toBeGreaterThan(30);
@@ -383,6 +406,55 @@ describe("archetype examples", () => {
       // And with a rival, both keep climbing — the loser included.
       expect(endOf(model, "Misiles A")).toBeGreaterThan(300);
       expect(endOf(model, "Misiles B")).toBeGreaterThan(200);
+    });
+  });
+
+  // Each archetype is also drawn with a characteristic curve, and the curve is a second,
+  // independent check on the example: "it depletes", "it grows" and "it goes up" are all satisfied
+  // by a straight line, and none of these are straight lines. Where the counterfactual tests above
+  // ask whether the *mechanism* is load-bearing, these ask whether the *shape* is the archetype's.
+  describe("archetype examples have the shape the archetype is drawn with", () => {
+    test("Limits to Growth: it climbs and then flattens", () => {
+      const p = simulate(buildArchetypeExample("limits-to-growth")).series["Population"]!;
+      const mid = Math.floor(p.length / 2);
+      expect(p.at(-1)! - p[mid]!).toBeLessThan(p[mid]! - p[0]!); // still rising, but slower
+      expect(p.at(-1)!).toBeLessThan(4000); // and inside the limit, not through it
+    });
+
+    test("Escalation: both sides run away, and neither settles", () => {
+      const a = simulate(buildArchetypeExample("escalation")).series["Misiles A"]!;
+      const quarter = Math.floor(a.length / 4);
+      // An exponential: the last quarter adds more than the first, which a settling curve can't do.
+      expect(a.at(-1)! - a[3 * quarter]!).toBeGreaterThan(a[quarter]! - a[0]!);
+      expect(a.at(-1)!).toBeGreaterThan(a[0]! * 5);
+    });
+
+    test("Success to the Successful: the loser rises, peaks, and is starved out", () => {
+      const result = simulate(buildArchetypeExample("success-to-the-successful"));
+      const a = result.series["Actividad A"]!;
+      const b = result.series["Actividad B"]!;
+      expect(a.at(-1)!).toBeGreaterThan(a[0]! * 3); // the winner runs away with it
+      expect(b.indexOf(Math.max(...b))).toBeGreaterThan(0); // the loser is not beaten from the start...
+      expect(b.at(-1)!).toBeLessThan(b[0]! * 0.1); // ...it is out-competed on the way
+    });
+
+    test("Fixes that Fail: the problem dips and then overshoots where it began", () => {
+      const p = simulate(buildArchetypeExample("fixes-that-fail")).series["Problema"]!;
+      expect(Math.min(...p)).toBeLessThan(p[0]! * 0.5); // the fix visibly works first
+      expect(p.at(-1)!).toBeGreaterThan(p[0]!); // and the problem ends worse than it started
+    });
+
+    test("Shifting the Burden: the relief's gain is given back as the capacity dies", () => {
+      const result = simulate(buildArchetypeExample("shifting-the-burden"));
+      const problem = result.series["Problema"]!;
+      const capacity = result.series["Capacidad"]!;
+      const low = Math.min(...problem);
+      expect(low).toBeLessThan(problem[0]! * 0.25); // the relief works, and fast
+      expect(problem.at(-1)!).toBeGreaterThan(low * 2); // then the gain is partly given back
+      // But never past where it started — that would be Fixes that Fail. What makes this its own
+      // archetype is that the problem settles at the level the *relief alone* can hold.
+      expect(problem.at(-1)!).toBeLessThan(problem[0]!);
+      expect(capacity.at(-1)!).toBeLessThan(capacity[0]! * 0.05); // because the capacity is gone
     });
   });
 

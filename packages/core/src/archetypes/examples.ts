@@ -59,6 +59,14 @@ function limitsToGrowth(): Model {
  * forever; the two together ask for 120,000 against a yield of 100,000, and that twenty per cent
  * is the whole story.
  *
+ * It also has to *look* like the archetype. The curve the pattern is drawn with has three phases
+ * — abundant and stable, then overuse and a peak, then collapse — and a stock that is over-drawn
+ * from the first day just falls away from its starting value, which is a different and much less
+ * interesting picture. So farm B is drilled part-way in rather than arriving at full tilt: farm A
+ * is alone and sustainable for the first three and a half years, and B builds up to full demand
+ * over the five after that. That gives +17% to a peak at 35% of the run, a gradual decline, then
+ * a collapse to nothing — the textbook shape, arising from the mechanism rather than drawn on.
+ *
  * The previous version failed that test twice over. It had no recharge at all and drew a
  * *proportional* share of whatever was left, so one farm alone ran the aquifer down to 21 m3 —
  * the tragedy happened either way, and the second farm changed nothing. A proportional draw also
@@ -71,7 +79,7 @@ function tragedyOfTheCommons(): Model {
   const model = createEmptyModel("Tragedy of the Commons — Two Farms, One Aquifer");
   const water = addStock(model, {
     name: "Agua disponible",
-    initialEquation: "800000",
+    initialEquation: "700000",
     units: "m3",
     comment: "The shared aquifer. It refills on its own — but only so fast.",
     pos: { x: 340, y: 200 },
@@ -97,12 +105,25 @@ function tragedyOfTheCommons(): Model {
   });
   addFlow(model, {
     name: "Extraccion B",
-    equation: "MIN(Demanda B, Agua disponible / Tiempo de bombeo)",
+    equation: "MIN(Demanda B, Agua disponible / Tiempo de bombeo) * Puesta en marcha B",
     from: water.id,
     units: "m3/Month",
     comment: "Identical in shape to A's — and just as reasonable read on its own.",
     pos: { x: 530, y: 200 },
   });
+  // The second farm does not arrive at full tilt: it is drilled and its irrigation is built up
+  // over three years. That ramp is what produces the shape the archetype is drawn with — a
+  // resource that is fine, then stretched, then gone — rather than a stock that was always
+  // over-drawn and simply falls from the first day.
+  addAuxiliary(model, {
+    name: "Puesta en marcha B",
+    equation: "MIN(MAX(0, Time - Retraso de B), Tiempo de llegada) / Tiempo de llegada",
+    units: "Dmnl",
+    comment: "Farm B's share of its eventual demand: nothing until it is drilled, then built up to full.",
+    pos: { x: 700, y: 320 },
+  });
+  addConstant(model, { name: "Retraso de B", value: 42, units: "Month", comment: "Farm B is drilled this far into the run. Until then the aquifer is only feeding one farm, and it is fine.", pos: { x: 860, y: 300 } });
+  addConstant(model, { name: "Tiempo de llegada", value: 60, units: "Month", comment: "How long farm B takes to reach full demand once it starts.", pos: { x: 880, y: 380 } });
   addConstant(model, { name: "Capacidad del acuifero", value: 1000000, units: "m3", pos: { x: 520, y: 60 } });
   addConstant(model, { name: "Tasa de recarga", value: 0.4, units: "1/Month", comment: "Peak recharge is Tasa * Capacidad / 4 — 100,000 m3/Month, the sustainable yield.", pos: { x: 700, y: 60 } });
   addConstant(model, { name: "Demanda A", value: 60000, units: "m3/Month", comment: "Under the 100,000 m3/Month yield, so this farm alone is sustainable.", pos: { x: 150, y: 320 } });
@@ -116,8 +137,11 @@ function tragedyOfTheCommons(): Model {
   addConnector(model, { from: "Tiempo de bombeo", to: "Extraccion A" });
   addConnector(model, { from: "Agua disponible", to: "Extraccion B" });
   addConnector(model, { from: "Demanda B", to: "Extraccion B" });
+  addConnector(model, { from: "Puesta en marcha B", to: "Extraccion B" });
+  addConnector(model, { from: "Retraso de B", to: "Puesta en marcha B" });
+  addConnector(model, { from: "Tiempo de llegada", to: "Puesta en marcha B" });
   addConnector(model, { from: "Tiempo de bombeo", to: "Extraccion B" });
-  model.simSpec = { ...YEARS, stopTime: 48, timeUnits: "Month" };
+  model.simSpec = { ...YEARS, stopTime: 120, timeUnits: "Month" };
   return model;
 }
 
@@ -275,25 +299,45 @@ function fixesThatFail(): Model {
  * return, it exploded to 677,485. The model was saying the quick fix was the only thing keeping
  * the problem down, which is the opposite of the archetype.
  *
- * Here the relief buys a real, visible improvement — the problem falls from 200 while the cure is
- * still ramping up — and it is paid for out of the same effort budget. Left alone the cure builds
- * the capacity to finish the job; used, it starves. Measured over the run: with the relief, the
- * problem settles around 125 with the capacity ground to nothing; without it, the problem
- * overshoots while the cure builds and then comes down to about 83, with the capacity at 40.
- * The relief looks better for the first two years and worse forever after. */
+ * Here the relief buys a real, visible improvement — the problem falls from 200 to about 30 while
+ * the cure is still ramping up — and it is paid for out of the same effort budget. Left alone the
+ * cure builds the capacity to finish the job; used, it starves, and the gain goes back: with the
+ * relief the problem drifts back up to 123 with the capacity at nothing, where without it the
+ * problem comes down steadily to 83 with the capacity at 40. The relief looks better for a year
+ * and worse forever after.
+ *
+ * That rebound is the archetype, not Fixes that Fail wearing its coat: the problem never returns
+ * past where it started, because nothing is feeding it — it settles at the level the relief alone
+ * can hold. What distinguishes this pattern is the second line. The capacity is destroyed, and the
+ * shape that shows it is the *capacity* curve, which is why it starts at 50 rather than at
+ * nothing. (It has to be small enough that the cure can't out-run the relief: a capacity large
+ * enough to finish the job pulls the problem down until the relief weakens, the effort budget
+ * frees up, and the capacity rebuilds itself. The trap only holds while the cure is unbuilt, which
+ * is the whole point.) */
 function shiftingTheBurden(): Model {
   const model = createEmptyModel("Shifting the Burden — Relief vs Rebuilding");
   const problem = addStock(model, { name: "Problema", initialEquation: "200", units: "Cases", comment: "Held down by whichever solution is doing the work.", pos: { x: 380, y: 200 } });
   const capacity = addStock(model, {
     name: "Capacidad",
-    initialEquation: "2",
+    initialEquation: "50",
     units: "Cases/Month",
     comment: "How fast the fundamental solution can work — and what the relief quietly starves.",
     pos: { x: 760, y: 380 },
   });
   addFlow(model, { name: "Aparicion", equation: "Casos nuevos", to: problem.id, units: "Cases/Month", comment: "New cases arrive at a steady rate, whether or not anything is being done about them.", pos: { x: 180, y: 200 } });
   addFlow(model, { name: "Alivio rapido", equation: "Problema * Intensidad del paliativo", from: problem.id, units: "Cases/Month", comment: "The quick fix: immediate, proportional to the problem, and hungry for effort.", pos: { x: 560, y: 120 } });
-  addFlow(model, { name: "Solucion fundamental", equation: "Movimiento", from: problem.id, units: "Cases/Month", pos: { x: 560, y: 300 } });
+  // The MIN is not decoration. `Movimiento` is delayed by eight months, so while the problem is
+  // collapsing the cure is still working at the rate the problem *used* to justify — and without
+  // a floor that unlagged throughput runs the stock straight through zero and out the other side.
+  // "No more than what is there" is the same guard the aquifer uses.
+  addFlow(model, {
+    name: "Solucion fundamental",
+    equation: "MIN(Movimiento, Problema / Tiempo de tratamiento)",
+    from: problem.id,
+    units: "Cases/Month",
+    comment: "The cure, capped at the cases that actually exist.",
+    pos: { x: 560, y: 300 },
+  });
   addAuxiliary(model, {
     name: "Movimiento",
     // Written on its own node rather than inlined, so the delay sits on a variable the loop
@@ -332,7 +376,8 @@ function shiftingTheBurden(): Model {
   });
   addConstant(model, { name: "Tasa de cobertura", value: 0.3, units: "1/Month", comment: "What the cure could cover per case, once there is capacity to cover it with.", pos: { x: 760, y: 140 } });
   addConstant(model, { name: "Tasa de desarrollo", value: 2, units: "Cases/Month/Month", comment: "Capacity built per month, with the full effort budget behind it.", pos: { x: 1040, y: 520 } });
-  addConstant(model, { name: "Tasa de erosion", value: 0.15, units: "1/Month", comment: "How much of that budget the relief takes for itself, per case it handles.", pos: { x: 440, y: 540 } });
+  addConstant(model, { name: "Tasa de erosion", value: 0.4, units: "1/Month", comment: "How much of that budget the relief takes for itself, per case it handles. High enough that the relief consumes all of it at any level the problem settles at.", pos: { x: 440, y: 540 } });
+  addConstant(model, { name: "Tiempo de tratamiento", value: 1, units: "Month", comment: "The fastest the cure could work through the whole backlog — there is no treating cases that aren't there.", pos: { x: 380, y: 380 } });
   addConstant(model, { name: "Tasa de deterioro", value: 0.05, units: "1/Month", pos: { x: 460, y: 620 } });
   addConnector(model, { from: "Casos nuevos", to: "Aparicion" });
   addConnector(model, { from: "Problema", to: "Alivio rapido" });
@@ -341,6 +386,8 @@ function shiftingTheBurden(): Model {
   addConnector(model, { from: "Capacidad", to: "Movimiento" });
   addConnector(model, { from: "Tasa de cobertura", to: "Movimiento" });
   addConnector(model, { from: "Movimiento", to: "Solucion fundamental" });
+  addConnector(model, { from: "Problema", to: "Solucion fundamental" });
+  addConnector(model, { from: "Tiempo de tratamiento", to: "Solucion fundamental" });
   addConnector(model, { from: "Tasa de desarrollo", to: "Desarrollo" });
   addConnector(model, { from: "Alivio rapido", to: "Desarrollo", polarity: "-" });
   addConnector(model, { from: "Tasa de erosion", to: "Desarrollo", polarity: "-" });
