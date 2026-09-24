@@ -1,0 +1,19 @@
+{
+  "name": "@vensim-ai/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "vensim-ai-generate": "src/cli.ts" },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vensim-ai/agent": "workspace:*",
+    "@vensim-ai/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.2"
+  }
+}

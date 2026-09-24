@@ -4,8 +4,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { createAgentSession, isRetriableConnectionError, runAgentTurn, type AgentSession } from "@/lib/agent";
-import { PROVIDER_PRESETS } from "@/lib/providerPresets";
+import { createAgentSession, isRetriableConnectionError, PROVIDER_PRESETS, runAgentTurn, type AgentSession } from "@vensim-ai/agent";
+import { executeToolCall } from "@/lib/agentTools";
+
 import { useModelStore, type ReasoningEffort } from "@/state/modelStore";
 
 /** Shared by the active-profile settings panel and the add-profile form — most models ignore or
@@ -268,8 +269,7 @@ export function ChatPanel() {
             });
           },
         },
-        undefined,
-        controller.signal,
+        { signal: controller.signal, executeToolCall },
       );
     } catch (err) {
       // The partial reply is kept (it may be all the model managed to say about what it was

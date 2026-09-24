@@ -13,18 +13,24 @@ or an AI can both edit through the same structured model API — in the spirit o
   `add_auxiliary`, `add_constant`, `add_relation`, `set_relation_polarity`, `set_equation`,
   `rename_variable`, `move_element`, `delete_element`, `list_model`, `run_simulation`,
   `list_loops`) and an executor that applies them to a `core` model.
+- `packages/agent` — the AI agent itself: the tool-calling loop, the OpenAI-compatible and
+  Gemini backends, the system prompt, and the provider presets. Shared by the app and the CLI, so
+  neither owns a second implementation of how a turn works.
 - `apps/web` — the editor itself: React + React Flow diagram canvas with inline rename,
   manually-curvable relations, comment annotations, auto-detected feedback-loop badges, a
   simulation chart panel, and an AI chat panel that drives the model via `ai-tools` over any
   OpenAI-compatible chat-completions API.
+- `apps/cli` — the same agent without the editor: one prompt in, one model file out. See
+  [its README](apps/cli/README.md).
 
 ## Getting started
 
 ```bash
 bun install
 bun run dev        # starts apps/web on http://localhost:5173
-bun test            # runs packages/core and packages/ai-tools test suites
-bun run typecheck   # tsc --noEmit across all packages
+bun test           # every package's test suite
+bun run typecheck  # tsc --noEmit across all packages
+bun run generate   # the CLI — see apps/cli/README.md
 ```
 
 To use the AI chat panel, paste an API key into the field at the top of the "AI Chat" tab —

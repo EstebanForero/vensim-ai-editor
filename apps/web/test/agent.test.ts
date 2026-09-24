@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createAgentSession, isRetriableConnectionError, runAgentTurn, type AgentSession } from "../src/lib/agent.js";
+import { createAgentSession, isRetriableConnectionError, runAgentTurn, type AgentSession } from "@vensim-ai/agent";
 import { createEmptyModel, type Model } from "@vensim-ai/core";
 
 /**
@@ -151,9 +151,7 @@ describe("runAgentTurn: a round that loses its connection", () => {
         onRoundRetry: (attempt) => retries.push(attempt),
         onAssistantTextDelta: (_id, d) => deltas.push(d),
       },
-      undefined,
-      undefined,
-      { maxAttempts: 3, delaysMs: [0, 0] },
+      { retry: { maxAttempts: 3, delaysMs: [0, 0] } },
     );
 
     expect(retries).toEqual([1]);
@@ -175,9 +173,7 @@ describe("runAgentTurn: a round that loses its connection", () => {
       "Build something",
       createEmptyModel,
       { onRoundRetry: (attempt) => retries.push(attempt) },
-      undefined,
-      undefined,
-      { maxAttempts: 3, delaysMs: [0, 0] },
+      { retry: { maxAttempts: 3, delaysMs: [0, 0] } },
     ).catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(Error);
@@ -204,11 +200,12 @@ describe("runAgentTurn: a round that loses its connection", () => {
         },
         onRoundRetry: () => controller.abort(),
       },
-      undefined,
-      // A long delay that the abort must cut short — if it doesn't, this test hangs rather than
-      // failing, which is exactly the UI behaviour this guards (a frozen spinner after Stop).
-      controller.signal,
-      { maxAttempts: 5, delaysMs: [30_000, 30_000] },
+      {
+        // A long delay that the abort must cut short — if it doesn't, this test hangs rather than
+        // failing, which is exactly the UI behaviour this guards (a frozen spinner after Stop).
+        signal: controller.signal,
+        retry: { maxAttempts: 5, delaysMs: [30_000, 30_000] },
+      },
     );
 
     await done;
@@ -230,9 +227,7 @@ describe("runAgentTurn: a round that loses its connection", () => {
         "hi",
         createEmptyModel,
         { onRoundRetry: (a) => retries.push(a) },
-        undefined,
-        undefined,
-        { maxAttempts: 3, delaysMs: [0, 0] },
+        { retry: { maxAttempts: 3, delaysMs: [0, 0] } },
       ).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(Error);
       expect(retries).toEqual([]);
@@ -258,9 +253,7 @@ describe("runAgentTurn: a retried round still executes its tool calls", () => {
       "Add a stock",
       () => model,
       { onToolCall: (name, _input, result) => calls.push({ name, ok: result.ok }) },
-      undefined,
-      undefined,
-      { maxAttempts: 3, delaysMs: [0, 0] },
+      { retry: { maxAttempts: 3, delaysMs: [0, 0] } },
     );
 
     expect(calls.map((c) => c.name)).toEqual(["list_model"]);

@@ -1,0 +1,21 @@
+{
+  "name": "@vensim-ai/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^2.22.0",
+    "@vensim-ai/ai-tools": "workspace:*",
+    "@vensim-ai/core": "workspace:*",
+    "openai": "^7.9.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.2"
+  }
+}

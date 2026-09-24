@@ -8,8 +8,9 @@
   "scripts": {
     "dev": "bun run --cwd apps/web dev",
     "build": "bun run --cwd apps/web build",
+    "generate": "bun run --cwd apps/cli start",
     "test": "bun test",
-    "typecheck": "bun run --cwd packages/core typecheck && bun run --cwd packages/ai-tools typecheck && bun run --cwd apps/web typecheck"
+    "typecheck": "bun run --cwd packages/core typecheck && bun run --cwd packages/ai-tools typecheck && bun run --cwd packages/agent typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/cli typecheck"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

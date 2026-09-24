@@ -185,6 +185,13 @@ export function parseMdl(text: string): Model {
     }
 
     for (const term of terms) {
+      // A net flow of literally zero is not a flow. The writer emits `INTEG(0, …)` for a stock
+      // with nothing connected to it, and materializing that as an anonymous flow made a stock
+      // with no flows come back from a save/reopen carrying one called "<Stock> Flow 1" — a
+      // variable that exists, sums to nothing, and wasn't there before. Only the literal is
+      // skipped: `INTEG(5, …)` really is a constant inflow, and dropping it would change the
+      // model's behaviour on a round-trip rather than merely tidying it.
+      if (term.expr.type === "num" && term.expr.value === 0) continue;
       if (term.expr.type === "var" && plainByName.has(term.expr.name)) {
         const sides = flowSides.get(term.expr.name) ?? { from: null, to: null };
         if (term.sign === -1) sides.from = s.name;

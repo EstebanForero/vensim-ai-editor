@@ -6,7 +6,6 @@
 
 import { allVariables, simulate, type Model } from "@vensim-ai/core";
 import { executeTool, VENSIM_AI_TOOLS } from "@vensim-ai/ai-tools";
-import { runPython } from "../pyodide.js";
 import type { ToolCallResult } from "./types.js";
 
 export const SYSTEM_PROMPT = `You are an assistant embedded in a system-dynamics (Vensim-style) stock-and-flow / causal-loop
@@ -74,12 +73,16 @@ export interface NeutralTool {
 }
 
 // Not part of @vensim-ai/ai-tools (packages/core's model-mutation tools, portable/synchronous
-// JS) since this one runs a real Python interpreter client-side via Pyodide — a browser-only,
-// async capability with nothing to do with the model-mutation API surface.
+// JS) since this one runs a real Python interpreter, which is a capability the host has to
+// supply rather than something the model API surface can promise: the browser has Pyodide, a
+// terminal has whatever `python3` resolves to, and neither is available in the other. The
+// description is deliberately silent about *where* the code runs — the model's job is the same
+// either way, and only one of the two sentences the browser could truthfully write would be true
+// in a CLI.
 const RUN_PYTHON_TOOL: NeutralTool = {
   name: "run_python",
   description:
-    "Runs Python code in a real (client-side, sandboxed, nothing leaves the browser) interpreter to numerically validate the model's behavior — e.g. checking a stock's trajectory is monotonic where it should be, staying within an expected range, converging to a sensible equilibrium, or matching a hand-computed value. Two globals are pre-populated before your code runs: `sim` (the FULL-precision simulation result — `sim['time']` is a list of every timestep, `sim['series']` maps each variable's exact name to its full list of values, not the downsampled-to-50-points version run_simulation returns for readability) and `model` (a list of every stock/flow/auxiliary as `{name, kind, equation, units}`). Print whatever you want to see — stdout is returned to you. Use this after run_simulation to actually check the result is right, not just skim the final values; system dynamics equations are easy to get subtly wrong (a sign flipped, a rate misapplied) in ways that still \"run\" without error.",
+    "Runs Python code in a real interpreter to numerically validate the model's behavior — e.g. checking a stock's trajectory is monotonic where it should be, staying within an expected range, converging to a sensible equilibrium, or matching a hand-computed value. Two globals are pre-populated before your code runs: `sim` (the FULL-precision simulation result — `sim['time']` is a list of every timestep, `sim['series']` maps each variable's exact name to its full list of values, not the downsampled-to-50-points version run_simulation returns for readability) and `model` (a list of every stock/flow/auxiliary as `{name, kind, equation, units}`). Print whatever you want to see — stdout is returned to you. Use this after run_simulation to actually check the result is right, not just skim the final values; system dynamics equations are easy to get subtly wrong (a sign flipped, a rate misapplied) in ways that still \"run\" without error.",
   parameters: {
     type: "object",
     properties: { code: { type: "string", description: "Python source to execute." } },
@@ -92,7 +95,9 @@ export const NEUTRAL_TOOLS: NeutralTool[] = [
   RUN_PYTHON_TOOL,
 ];
 
-function pythonGlobals(model: Model) {
+/** The globals `run_python` hands the model's code, as plain JSON-able data — the host turns this
+ * into whatever its interpreter wants. */
+export function pythonGlobals(model: Model) {
   const sim = simulate(model);
   return {
     sim: { time: sim.time, series: sim.series },
@@ -105,20 +110,33 @@ function pythonGlobals(model: Model) {
   };
 }
 
-async function runPythonTool(code: string, model: Model): Promise<ToolCallResult> {
-  const run = await runPython(code, pythonGlobals(model));
-  // stdout is worth returning either way (a failing check's prints, or a traceback's context up
-  // to the point it failed), not just on success.
-  if (run.ok) return { ok: true, result: { stdout: run.stdout } };
-  return { ok: false, error: run.stdout ? `${run.error}\n\nstdout so far:\n${run.stdout}` : (run.error ?? "Unknown error") };
+/**
+ * Runs Python for `run_python`, against the model as it stands right now. Supplied by the host:
+ * the app passes one backed by Pyodide, the CLI one backed by a local interpreter.
+ *
+ * Whatever it does, it returns a ToolCallResult rather than throwing — a failing check is one of
+ * the normal outcomes of asking the agent to validate something, and the traceback is worth
+ * handing back as the tool's result instead of killing the run.
+ */
+export type PythonRunner = (code: string, model: Model) => Promise<ToolCallResult>;
+
+/** Executes one tool call by name: `run_python` through the host's runner, everything else
+ * through @vensim-ai/ai-tools' synchronous model-mutation executor. */
+export type ToolExecutor = (getModel: () => Model, name: string, args: Record<string, unknown>) => Promise<ToolCallResult>;
+
+export function makeToolExecutor(python: PythonRunner): ToolExecutor {
+  return async (getModel, name, args) => {
+    if (name !== "run_python") return executeTool(getModel(), name, args);
+    return python(typeof args.code === "string" ? args.code : "", getModel());
+  };
 }
 
-/** Executes one tool call by name, dispatching run_python to Pyodide and everything else to
- * @vensim-ai/ai-tools' synchronous model-mutation executor. The one place both backends route
- * a parsed tool call through, so neither duplicates this dispatch logic. */
-export async function executeToolCall(getModel: () => Model, name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
-  if (name === "run_python") {
-    return runPythonTool(typeof args.code === "string" ? args.code : "", getModel());
-  }
-  return executeTool(getModel(), name, args);
-}
+/**
+ * The executor for a host with no Python at all. `run_python` still *works* as far as the model
+ * is concerned — it gets a tool result saying what happened, which is a thing it can react to —
+ * rather than the run dying on a missing capability mid-turn.
+ */
+export const defaultToolExecutor: ToolExecutor = makeToolExecutor(async () => ({
+  ok: false,
+  error: "run_python is not available in this environment. Validate with run_simulation and check_units instead.",
+}));

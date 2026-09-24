@@ -178,6 +178,22 @@ TIME STEP  = 0.25
     expect(again.auxiliaries.length).toBe(reparsed.auxiliaries.length);
   });
 
+  // A stock with nothing connected to it is written as `INTEG(0, …)`, and reading that back
+  // used to invent a flow for the literal zero — so a save/reopen turned a stock with no flows
+  // into a stock with one called "<Stock> Flow 1", summing to nothing and named after its stock.
+  test("a stock with no flows survives a round-trip without gaining one", () => {
+    const model = createEmptyModel("NoFlows");
+    addStock(model, { name: "Spare", initialEquation: "7", units: "Widgets" });
+    addStock(model, { name: "Connected", initialEquation: "0" });
+    addFlow(model, { name: "Fill", equation: "5", to: "Connected" });
+
+    const back = parseMdl(writeMdl(model));
+    expect(back.flows.map((f) => f.name)).toEqual(["Fill"]);
+    // The literal-5 term on the *other* stock is a real inflow and must still be materialized —
+    // only the zero is dropped, or the round-trip would silently change the model's behaviour.
+    expect(simulate(back).series["Connected"]?.at(-1)).toBeCloseTo(simulate(model).series["Connected"]!.at(-1)!, 6);
+  });
+
   test("round-trips a flow connecting two real stocks without duplicating it", () => {
     // A flow between two actual stocks (not a cloud on either end) appears in *both* stocks'
     // INTEG net-flow expressions on write — "-Flow" in the source stock, "+Flow" in the sink

@@ -5,13 +5,14 @@
 // provider-shaped lives in one of the two backend files; this file only orchestrates.
 
 import type { Model } from "@vensim-ai/core";
-import { openaiBackend, DEFAULT_BASE_URL, DEFAULT_MODEL } from "./agent/openaiBackend.js";
-import { geminiBackend, GEMINI_DEFAULT_MODEL } from "./agent/geminiBackend.js";
-import { executeToolCall } from "./agent/tools.js";
-import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, StreamedRound } from "./agent/types.js";
+import { openaiBackend, DEFAULT_BASE_URL, DEFAULT_MODEL } from "./openaiBackend.js";
+import { geminiBackend, GEMINI_DEFAULT_MODEL } from "./geminiBackend.js";
+import { defaultToolExecutor, type ToolExecutor } from "./tools.js";
+import type { ToolCallResult } from "./types.js";
+import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, StreamedRound } from "./types.js";
 
-export { createAgentSession } from "./agent/types.js";
-export type { AgentSession, AgentConnection, AgentCallbacks } from "./agent/types.js";
+export { createAgentSession } from "./types.js";
+export type { AgentSession, AgentConnection, AgentCallbacks } from "./types.js";
 export { DEFAULT_BASE_URL, DEFAULT_MODEL };
 
 /** Picks the backend by base URL rather than model name — a Gemini API key/model can still be
@@ -148,6 +149,31 @@ async function streamRoundWithRetry(
   }
 }
 
+/**
+ * Everything about a turn that isn't the conversation itself. Grouped rather than positional
+ * because there are now four of them and the list had grown past the point where a caller could
+ * tell `runAgentTurn(a, b, c, d, e, 40, signal, retry, execute)` apart at the call site.
+ */
+export interface AgentRunOptions {
+  /** Each round is one full model response, which can itself batch multiple tool calls — but a
+   * model that calls tools one at a time (common) only makes one call of progress per round, and
+   * a modest diagram (several stocks/flows plus their connectors) can easily need more than a
+   * handful of individual tool calls. The cap exists purely as a runaway-loop safety net.
+   * Default 40. */
+  maxToolRounds?: number;
+  /** Checked between rounds and between individual tool executions (not just passed to the network
+   * call) — a long tool loop with no in-flight network request at all still needs to be
+   * interruptible mid-round, not just while actually waiting on the model. */
+  signal?: AbortSignal;
+  /** Overridable so tests don't have to sit through real backoff; production callers use the
+   * defaults. See ROUND_RETRY_ATTEMPTS/DELAYS_MS for why these are as short as they are. */
+  retry?: { maxAttempts: number; delaysMs: number[] };
+  /** How a tool call actually runs — the host supplies one so `run_python` can go through
+   * whatever interpreter it has (Pyodide in the app, a local `python3` in the CLI), or none at
+   * all. See tools.ts. */
+  executeToolCall?: ToolExecutor;
+}
+
 export async function runAgentTurn(
   connection: AgentConnection,
   session: AgentSession,
@@ -159,18 +185,12 @@ export async function runAgentTurn(
   // the first commit and every subsequent tool call would silently be lost.
   getModel: () => Model,
   callbacks: AgentCallbacks = {},
-  // Each round is one full model response, which can itself batch multiple tool calls — but a
-  // model that calls tools one at a time (common) only makes one call of progress per round, and
-  // a modest diagram (several stocks/flows plus their connectors) can easily need more than a
-  // handful of individual tool calls. The cap exists purely as a runaway-loop safety net.
-  maxToolRounds = 40,
-  // Checked between rounds and between individual tool executions (not just passed to the network
-  // call) — a long tool loop with no in-flight network request at all still needs to be
-  // interruptible mid-round, not just while actually waiting on the model.
-  signal?: AbortSignal,
-  // Overridable so tests don't have to sit through real backoff; production callers use the
-  // defaults. See ROUND_RETRY_ATTEMPTS/DELAYS_MS for why these are as short as they are.
-  retry = { maxAttempts: ROUND_RETRY_ATTEMPTS, delaysMs: ROUND_RETRY_DELAYS_MS },
+  {
+    maxToolRounds = 40,
+    signal,
+    retry = { maxAttempts: ROUND_RETRY_ATTEMPTS, delaysMs: ROUND_RETRY_DELAYS_MS },
+    executeToolCall = defaultToolExecutor,
+  }: AgentRunOptions = {},
 ): Promise<void> {
   const backend = backendFor(connection);
 
@@ -203,7 +223,7 @@ export async function runAgentTurn(
         toolResults.push({ id: call.id, name: call.name, content: JSON.stringify({ error: "Cancelled by user." }) });
         continue;
       }
-      const callResult = await executeToolCall(getModel, call.name, call.args);
+      const callResult = await runTool(executeToolCall, getModel, call);
       callbacks.onToolCall?.(call.name, call.args, callResult);
       toolResults.push({
         id: call.id,
@@ -223,4 +243,26 @@ export async function runAgentTurn(
   // other path above returns from inside the loop. The model was actively mid-task, not finished,
   // so this must be surfaced rather than left to look like a normal, silent finish.
   callbacks.onStoppedEarly?.("max_tool_rounds", maxToolRounds);
+}
+
+/**
+ * Runs a tool call, turning a throw into a failed *tool call* rather than a dead turn.
+ *
+ * Tools describe what a model can do to a model diagram, and some of them can genuinely throw:
+ * `run_python` simulates the model before handing it over, so it throws on a model that doesn't
+ * compile — which is precisely the state a model is in the moment after an equation is typed
+ * wrong, and precisely when the agent needs to be told so it can fix it. A crashed turn reports
+ * nothing and leaves the user to guess; a tool result saying what broke is the same information
+ * in the one place the model will actually read it.
+ */
+async function runTool(
+  executeToolCall: ToolExecutor,
+  getModel: () => Model,
+  call: { name: string; args: Record<string, unknown> },
+): Promise<ToolCallResult> {
+  try {
+    return await executeToolCall(getModel, call.name, call.args);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }

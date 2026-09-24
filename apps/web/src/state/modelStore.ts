@@ -14,7 +14,7 @@ import {
   type ValidationIssue,
 } from "@vensim-ai/core";
 import { create } from "zustand";
-import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "@/lib/agent";
+import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "@vensim-ai/agent";
 
 export interface ChatMessage {
   id: string;
