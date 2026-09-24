@@ -1,8 +1,10 @@
 import {
   checkUnits,
   createEmptyModel,
+  detectArchetypes,
   simulate,
   validateModel,
+  type ArchetypeMatch,
   type Model,
   type SimResult,
   type UnitIssue,
@@ -105,6 +107,11 @@ interface ModelStoreState {
    * itself, not a live-updating badge. */
   unitIssues: UnitIssue[] | null;
   unitsDialogOpen: boolean;
+  /** null = the archetype report hasn't been run this session; [] = it ran and matched nothing.
+   * On-demand rather than live, for the same reason as `unitIssues`: it's a deliberate report
+   * over the whole model, not a badge that should re-evaluate on every keystroke. */
+  archetypeMatches: ArchetypeMatch[] | null;
+  archetypeDialogOpen: boolean;
   chatMessages: ChatMessage[];
   isAgentRunning: boolean;
 
@@ -145,6 +152,8 @@ interface ModelStoreState {
   runSimulation: () => void;
   runUnitsCheck: () => void;
   setUnitsDialogOpen: (open: boolean) => void;
+  runArchetypeCheck: () => void;
+  setArchetypeDialogOpen: (open: boolean) => void;
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
   setAiModel: (name: string) => void;
@@ -192,6 +201,8 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   issues: [],
   unitIssues: null,
   unitsDialogOpen: false,
+  archetypeMatches: null,
+  archetypeDialogOpen: false,
   chatMessages: [],
   isAgentRunning: false,
 
@@ -241,6 +252,12 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
     set({ unitIssues: checkUnits(model), unitsDialogOpen: true });
   },
   setUnitsDialogOpen: (open) => set({ unitsDialogOpen: open }),
+
+  runArchetypeCheck: () => {
+    const { model } = get();
+    set({ archetypeMatches: detectArchetypes(model), archetypeDialogOpen: true });
+  },
+  setArchetypeDialogOpen: (open) => set({ archetypeDialogOpen: open }),
 
   // Legacy single-value keys are kept written too — never the only copy, but harmless, and it
   // means a downgrade (or anything else still reading them directly) keeps working.

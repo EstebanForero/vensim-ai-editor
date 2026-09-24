@@ -10,6 +10,7 @@ import {
   Ruler,
   RotateCw,
   Save,
+  Shapes,
   Square,
   Table2,
   Waves,
@@ -21,6 +22,7 @@ import { downloadMdl, downloadXmile, openMdlFilePicker } from "@/lib/fileIO";
 import { uniqueName } from "@/lib/naming";
 import { SAMPLE_MODELS } from "@/lib/sampleModels";
 import { useModelStore } from "@/state/modelStore";
+import { ArchetypeDialog } from "./ArchetypeDialog";
 import { UnitsCheckDialog } from "./UnitsCheckDialog";
 
 export function Toolbar() {
@@ -35,6 +37,7 @@ export function Toolbar() {
   const showLoops = useModelStore((s) => s.showLoops);
   const toggleShowLoops = useModelStore((s) => s.toggleShowLoops);
   const runUnitsCheck = useModelStore((s) => s.runUnitsCheck);
+  const runArchetypeCheck = useModelStore((s) => s.runArchetypeCheck);
   const [fileError, setFileError] = useState<string | null>(null);
   const { fitView } = useReactFlow();
 
@@ -168,6 +171,14 @@ export function Toolbar() {
       >
         <Ruler className="size-4" /> Check Units
       </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={runArchetypeCheck}
+        title="Archetypes — which classic systems archetypes (Limits to Growth, Tragedy of the Commons, Escalation, ...) this model's loop structure matches. Reports candidates naming the loops and variables behind each, not a verdict on what the model is."
+      >
+        <Shapes className="size-4" /> Archetypes
+      </Button>
 
       <div className="mx-1 h-5 w-px bg-border" />
       <select
@@ -212,6 +223,7 @@ export function Toolbar() {
       </div>
 
       <UnitsCheckDialog />
+      <ArchetypeDialog />
     </div>
   );
 }
