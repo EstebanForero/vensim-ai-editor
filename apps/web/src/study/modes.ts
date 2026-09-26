@@ -66,11 +66,13 @@ export type ModeInput =
 /**
  * What a mode does when its subject isn't there yet.
  *
- * Every mode that reads *the model on the canvas* has a hole in it when the canvas is empty, and
- * the hole has to be filled by the mode rather than by the panel, because only the mode knows what
- * its subject is for. Two shapes of answer, and both are in this table: build one and hand it over
- * as something to work on (the modes whose subject is a model to be inspected), or say plainly
- * that there is nothing to look at and where to get some (the ones that judge an answer).
+ * Every mode whose own turn needs something on the canvas has a hole in it when the canvas is
+ * empty, and the hole has to be filled by the mode rather than by the panel, because only the mode
+ * knows what its subject is for. Three shapes of answer, all three in this table: build one and
+ * hand it over as something to work on (the modes whose subject is a model to be inspected); say
+ * plainly that there is nothing to look at and where to get some (the ones that judge an answer);
+ * and build the structure the description implies before doing the job at all (the mode that
+ * writes equations, which has nowhere to put them until the variables exist).
  *
  * `tools` is separate from the mode's own because setting a subject up is a different job from
  * reviewing it — and it is the one case where a reading mode may write: there is nothing on the
@@ -103,9 +105,10 @@ export interface StudyMode {
   system: string;
   /** Shown before the first turn, so the panel is never a blank box with no idea what to ask. */
   starters: string[];
-  /** What to do when this mode's subject isn't on the canvas. Absent means the mode works
-   * whatever is there — which a test checks against `input`, so a new mode can't quietly have
-   * the hole this one fills. */
+  /** What to do when the canvas is empty and this mode's own turn would have nothing to work on.
+   * Absent means the mode can start from nothing and is the same turn either way. Which modes have
+   * one, and which ones must, is pinned by a test — so a new mode has to make the call explicitly
+   * rather than land on a side of it by accident. */
   whenEmpty?: Setup;
 }
 
@@ -201,6 +204,20 @@ took — a stated assumption is useful, a question back is not.`,
     tools: EDITING_TOOLS,
     placeholder: "e.g. Demand falls as price rises, and restocking takes two weeks…",
     starters: ["Add these relationships to the model as equations."],
+    // This mode's subject — the description — is never missing, but its *product* has nowhere to
+    // go until the variables exist. So the hole here is at the other end from the reading modes':
+    // not "there is nothing to look at" but "there is nothing to write on".
+    whenEmpty: {
+      starter: "Build the model this describes, then write the equations.",
+      note: "No model yet — this will build the structure, then write the equations.",
+      tools: EDITING_TOOLS,
+      system: `There is no model on the canvas yet, so there is nothing to write equations onto.
+Read the description and work out *what accumulates* — which quantities are levels that only
+change through a rate — and build those as stocks, with the rates as flows, before you write a
+single equation. A set of auxiliaries with no stock in it has no behaviour to run, and equations
+written onto one would be describing a model rather than being one. Then write the equations, give
+each rate the units its own words imply, and run it and say what it does.`,
+    },
     system: `Your job this turn is to turn described relationships into equations. Use set_equation
 for variables that already exist and add the ones that don't, keeping names in the vocabulary of
 the description. Give every rate the units its own words imply, and check them afterwards. Where

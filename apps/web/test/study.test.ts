@@ -10,8 +10,19 @@ import { EDITING_TOOLS, MUTATING_TOOL_NAMES, MODES, READ_ONLY_TOOLS, findMode, p
 const withModel = (mode: StudyMode) => planTurn(mode, { hasModel: true });
 const emptyCanvas = (mode: StudyMode) => planTurn(mode, { hasModel: false });
 
-/** Modes whose subject is the model on the canvas — the ones with a hole in them when it is empty. */
-const modelSubject = () => MODES.filter((m) => m.input === "model" || m.input === "context+model");
+/**
+ * The modes whose own turn cannot be run against an empty canvas, by id.
+ *
+ * Pinned rather than derived from `input`, because the boundary is a judgement about each mode
+ * rather than a property of where its subject comes from: "Write the equations" takes its subject
+ * from a pasted description, which is never missing, but has nowhere to put the equations until
+ * the variables exist. Pinned so that a new mode has to make that call explicitly instead of
+ * landing on one side of it by accident.
+ */
+const NEEDS_A_CANVAS = ["equations-from-context", "find-errors", "find-the-loops", "is-it-right", "name-the-archetype"];
+
+/** The modes with a hole in them when the canvas is empty — see NEEDS_A_CANVAS. */
+const needsCanvas = () => MODES.filter((m) => m.whenEmpty);
 
 describe("the tool split", () => {
   // The guarantee a "judge this model" mode rests on is that it is not *offered* the tools that
@@ -80,22 +91,36 @@ describe("the modes", () => {
 
 describe("planning a turn", () => {
   // The bug this exists for: "Find the mistakes" on an empty canvas told the agent to look through
-  // a model that wasn't there, and the agent dutifully went looking. A mode whose subject is the
-  // model has to say what to do when there isn't one.
-  test("a mode whose subject is the model has somewhere to go when there isn't one", () => {
-    for (const mode of modelSubject()) {
+  // a model that wasn't there, and the agent dutifully went looking. A mode whose own turn has
+  // nothing to work on has to say what to do instead.
+  test("the modes that cannot run on an empty canvas are exactly the ones that say so", () => {
+    expect(needsCanvas().map((m) => m.id).sort()).toEqual([...NEEDS_A_CANVAS].sort());
+  });
+
+  test("every one of them has somewhere to go, and it is not the mode's own job", () => {
+    for (const mode of needsCanvas()) {
       const plan = emptyCanvas(mode);
+      const setup = mode.whenEmpty!;
       expect({ id: mode.id, note: typeof plan.note }).toEqual({ id: mode.id, note: "string" });
-      expect({ id: mode.id, starters: plan.starters }).toEqual({ id: mode.id, starters: [mode.whenEmpty!.starter] });
-      expect(plan.system).toContain(mode.whenEmpty!.system);
+      expect({ id: mode.id, starters: plan.starters }).toEqual({ id: mode.id, starters: [setup.starter] });
+      expect(plan.system).toContain(setup.system);
       // And the mode's own instructions are *not* in it: "find what is wrong with the model on the
       // canvas" is exactly the instruction that made the agent look for one.
       expect(plan.system).not.toContain(mode.system);
     }
   });
 
-  test("a mode that doesn't need a model runs as itself either way", () => {
-    for (const mode of MODES.filter((m) => m.input === "context")) {
+  // The same guarantee from the other direction, and the one that does not rest on the pinned
+  // list: whatever `input` says, a mode whose subject is the model on the canvas always has the
+  // hole, so it can never arrive without something to fill it.
+  test("a mode whose subject is the model always has somewhere to go without one", () => {
+    for (const mode of MODES.filter((m) => m.input === "model" || m.input === "context+model")) {
+      expect({ id: mode.id, hasWhenEmpty: Boolean(mode.whenEmpty) }).toEqual({ id: mode.id, hasWhenEmpty: true });
+    }
+  });
+
+  test("a mode that can start from nothing runs as itself either way", () => {
+    for (const mode of MODES.filter((m) => !m.whenEmpty)) {
       const empty = emptyCanvas(mode);
       // Only the preamble differs — it says there is no model, which is true and worth saying to
       // any turn. The mode's own brief, tools and starters are the mode's own in both states.
