@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xmile version="1.0" xmlns="http://docs.oasis-open.org/xmile/ns/XMILE/v1.0" xmlns:isee="http://iseesystems.com/XMILE" xmlns:simlin="https://simlin.com/XMILE/v1.0">
+    <header>
+        <name>test</name>
+        <vendor>Simlin</vendor>
+        <product version="0.1.0" lang="en">Simlin</product>
+    </header>
+    <sim_specs method="euler">
+        <start>0</start>
+        <stop>100</stop>
+        <dt>1</dt>
+    </sim_specs>
+    <model>
+        <variables>
+            <stock name="Inventario">
+                <inflow>new_flow</inflow>
+                <outflow>new_flow_1</outflow>
+            </stock>
+            <flow name="New Flow">
+            </flow>
+            <flow name="New Flow 1">
+            </flow>
+        </variables>
+        <views>
+            <view isee:show_pages="false" page_width="800" page_height="600" view_type="stock_flow">
+                <stock name="Inventario" x="1167.796875" y="591.796875" label_side="bottom"></stock>
+                <flow name="New Flow" x="954.796875" y="596.796875" label_side="bottom">
+                    <pts>
+                        <pt x="741.796875" y="596.796875"></pt>
+                        <pt x="1145.296875" y="596.796875"></pt>
+                    </pts>
+                </flow>
+                <flow name="New Flow 1" x="1200.296875" y="591.796875" label_side="bottom">
+                    <pts>
+                        <pt x="1190.296875" y="591.796875"></pt>
+                        <pt x="1646.796875" y="591.796875"></pt>
+                    </pts>
+                </flow>
+            </view>
+        </views>
+    </model>
+</xmile>

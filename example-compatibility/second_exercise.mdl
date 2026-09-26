@@ -1,0 +1,112 @@
+{UTF-8}
+Suscriptores= INTEG (
+	"Adquisicion de suscriptores" -"Cancelacion de suscriptores",
+		1000)
+	~	suscriptores
+	~	
+	|
+
+Adquisicion de suscriptores= Efecto de recomendación + Efectividad de marketing
+	~	suscriptores/mes
+	~	
+	|
+
+Cancelacion de suscriptores= Suscriptores * Tasa de cancelación
+	~	suscriptores/mes
+	~	
+	|
+
+Tasa de recomendacion= 0.02
+	~	1/mes
+	~	
+	|
+
+Tasa de cancelacion= 0.05
+	~	1/mes
+	~	
+	|
+
+Presupuesto de marketing= 5000
+	~	um/mes
+	~	
+	|
+
+Efecto de recomendacion= Suscriptores * Tasa de recomendación
+	~	suscriptores/mes
+	~	
+	|
+
+Efectividad de marketing= Presupuesto de marketing / Costo de adquisición por suscriptor
+	~	suscriptores/mes
+	~	
+	|
+
+Costo de adquisicion por suscriptor= 50
+	~	um/suscriptores
+	~	
+	|
+
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+
+FINAL TIME= 100
+	~	Month
+	~	The final time for the simulation.
+	|
+
+INITIAL TIME= 0
+	~	Month
+	~	The initial time for the simulation.
+	|
+
+SAVEPER= TIME STEP
+	~	Month
+	~	The frequency with which output is stored.
+	|
+
+TIME STEP= 0.25
+	~	Month
+	~	The time step for the simulation.
+	|
+
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*View 1
+$192-192-192,0,Times New Roman|12||0-0-0|0-0-0|0-0-255|-1--1--1|-1--1--1|96,96,100,0
+10,1,Suscriptores,717,168,45,23,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,2,Tasa de recomendacion,85,63,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,3,Tasa de cancelacion,717,273,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,4,Presupuesto de marketing,85,273,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,5,Efecto de recomendacion,295,63,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,6,Efectividad de marketing,295,220,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,7,Costo de adquisicion por suscriptor,485,253,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+11,8,0,506,176,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,9,Adquisicion de suscriptores,506,210,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,10,48,406,180,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,11,8,10,100,0,0,22,0,192,0,-1--1--1,,1|(456,178)|
+1,12,8,1,4,0,0,22,0,192,0,-1--1--1,,1|(612,172)|
+11,13,0,928,186,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,14,Cancelacion de suscriptores,928,220,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,15,13,1,100,0,0,22,0,192,0,-1--1--1,,1|(823,177)|
+12,16,48,1028,195,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,17,13,16,4,0,0,22,0,192,0,-1--1--1,,1|(978,190)|
+1,18,1,5,1,0,43,0,0,192,0,-1--1--1,,1|(492,173)|
+1,19,2,5,1,0,43,0,0,192,0,-1--1--1,,1|(190,115)|
+1,20,4,6,1,0,43,0,0,192,0,-1--1--1,,1|(203,299)|
+1,21,5,8,1,0,43,0,0,192,0,-1--1--1,,1|(366,185)|
+1,22,6,8,1,0,43,0,0,192,0,-1--1--1,,1|(398,162)|
+1,23,1,13,1,0,43,0,0,192,0,-1--1--1,,1|(809,247)|
+1,24,3,13,1,0,43,0,0,192,0,-1--1--1,,1|(809,194)|
+1,25,7,6,1,0,45,0,0,192,0,-1--1--1,,1|(382,284)|
+12,26,0,777,170,27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B1
+12,27,0,521,83,27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0
+R1
+12,28,0,777,230,80,30,8,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B1 loop: Suscriptores → Cancelación de suscriptores → Suscriptores
+12,29,0,521,143,80,30,8,7,0,0,-1,0,0,0,0,0,0,0,0,0
+R1 loop: Suscriptores → Efecto de recomendación → Adquisición de suscriptores → Suscriptores
+///---\\\
