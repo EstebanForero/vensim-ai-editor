@@ -30,7 +30,7 @@ bun install
 bun run dev        # starts apps/web on http://localhost:5173
 bun test           # every package's test suite
 bun run typecheck  # tsc --noEmit across all packages
-bun run generate   # the CLI — see apps/cli/README.md
+bun run generate   # the CLI — see below
 ```
 
 To use the AI chat panel, paste an API key into the field at the top of the "AI Chat" tab —
@@ -39,6 +39,40 @@ configure, never to any other server. The gear icon next to the key field lets y
 Base URL and Model, so it works with OpenAI itself or any server that exposes an
 OpenAI-compatible `/chat/completions` route (Azure OpenAI, OpenRouter, vLLM, Ollama, LM
 Studio, …). Defaults to `https://api.openai.com/v1` and `gpt-4o`.
+
+## CLI
+
+Generate a model from a description without opening the editor. It runs the same agent the chat
+panel runs — same loop, same tools, same providers — and writes the result to a `.mdl` (or XMILE)
+file.
+
+```bash
+bun run generate make a model of a coffee shop queue     # the prompt is every bare word
+bun run generate "the commons: three farms on one aquifer" -o aquifer.mdl
+bun run generate "add a delay to the hiring loop" --from hiring.mdl -o hiring-2.mdl
+cat idea.txt | bun run generate                          # or pipe the prompt in
+bun run generate --help                                  # every flag, provider and format
+```
+
+It needs an API key, in the environment rather than in the app's settings:
+
+```bash
+export VENSIM_AI_API_KEY=sk-...              # or OPENAI_API_KEY / DEEPSEEK_API_KEY / GEMINI_API_KEY / …
+export VENSIM_AI_PROVIDER=deepseek           # optional; OpenAI is the default
+```
+
+Stdout is the result and stderr the progress, so `> file` and `| jq` do the obvious thing:
+
+```
+/build/aquifer.mdl
+  1 stock, 3 flows, 5 auxiliaries, 9 relations
+  3 feedback loops (R1, B1, B2)
+  archetypes: Tragedy of the Commons
+  12.4s
+```
+
+[`apps/cli/README.md`](apps/cli/README.md) is the full guide — the flows with their output, exit
+codes, how the pipeline works, and where to add a flag, a format or a provider.
 
 ## Study tab
 

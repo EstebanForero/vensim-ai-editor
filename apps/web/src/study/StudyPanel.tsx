@@ -13,7 +13,9 @@ import { Eraser, Send, Sparkles, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Transcript } from "@/components/chat/Transcript";
-import { DEFAULT_MODE, MODES, type StudyMode } from "./modes";
+import { allVariables } from "@vensim-ai/core";
+import { useModelStore } from "@/state/modelStore";
+import { DEFAULT_MODE, MODES, planTurn, type StudyMode } from "./modes";
 import { useStudySession } from "./useStudySession";
 
 /** A mode chip in the picker. Small enough that all of them fit at once — a dropdown would hide
@@ -51,11 +53,17 @@ export function StudyPanel() {
   const state = session.stateFor(mode);
   const needsContext = mode.input === "context" || mode.input === "context+model";
 
+  // What is actually on the canvas decides which turn a mode would run — its own, or the one that
+  // fills an empty canvas first. Everything the panel shows about the turn comes from the plan, so
+  // the badge, the starters and the note cannot describe something other than what will happen.
+  const hasModel = useModelStore((s) => allVariables(s.model).length > 0);
+  const plan = planTurn(mode, { hasModel });
+
   const send = () => {
     const text = prompt.trim();
     if ((!text && !state.context.trim()) || state.running) return;
     setPrompt("");
-    void session.run(mode, text);
+    void session.run(mode, text, plan);
   };
 
   return (
@@ -69,7 +77,7 @@ export function StudyPanel() {
         <p className="text-xs text-muted-foreground">
           <Sparkles className="mr-1 inline size-3" />
           {mode.blurb}
-          <span className="ml-1 opacity-70">{mode.writes ? "· can change the model on the canvas" : "· reads the model, never changes it"}</span>
+          <span className="ml-1 opacity-70">{plan.writes ? "· can change the model on the canvas" : "· reads the model, never changes it"}</span>
         </p>
 
         {needsContext && (
@@ -89,11 +97,16 @@ export function StudyPanel() {
         pendingToolName={session.pendingToolName}
         retryNotice={session.retryNotice}
         workingNote="Reading the model…"
-        emptyHint={mode.starters[0]}
+        emptyHint={plan.starters[0]}
       />
 
       <div className="shrink-0 border-t p-2">
-        <StarterRow mode={mode} onPick={setPrompt} disabled={state.running} />
+        {/* Only once there is a conversation. Before that the transcript's own hint and the
+            starter chip already say what this turn will do, and a third copy of it is noise. */}
+        {plan.note && !state.running && state.messages.length > 0 && (
+          <p className="mb-1.5 px-1 text-[11px] text-muted-foreground">{plan.note}</p>
+        )}
+        <StarterRow starters={plan.starters} onPick={setPrompt} disabled={state.running || state.messages.length > 0} />
         <div className="flex items-end gap-2">
           <Textarea
             ref={textareaRef}
@@ -137,11 +150,11 @@ export function StudyPanel() {
 
 /** The mode's own opening line, offered as a button — a blank box with no idea what to ask is the
  * usual reason a feature like this goes unused. */
-function StarterRow({ mode, onPick, disabled }: { mode: StudyMode; onPick: (text: string) => void; disabled: boolean }) {
+function StarterRow({ starters, onPick, disabled }: { starters: string[]; onPick: (text: string) => void; disabled: boolean }) {
   if (disabled) return null;
   return (
     <div className="mb-2 flex flex-wrap gap-1.5">
-      {mode.starters.map((starter) => (
+      {starters.map((starter) => (
         <button
           key={starter}
           type="button"

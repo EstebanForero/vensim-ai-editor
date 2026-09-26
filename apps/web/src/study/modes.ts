@@ -63,6 +63,30 @@ export type ModeInput =
   /** Nothing: the agent is asked to produce the exercise itself. */
   | "none";
 
+/**
+ * What a mode does when its subject isn't there yet.
+ *
+ * Every mode that reads *the model on the canvas* has a hole in it when the canvas is empty, and
+ * the hole has to be filled by the mode rather than by the panel, because only the mode knows what
+ * its subject is for. Two shapes of answer, and both are in this table: build one and hand it over
+ * as something to work on (the modes whose subject is a model to be inspected), or say plainly
+ * that there is nothing to look at and where to get some (the ones that judge an answer).
+ *
+ * `tools` is separate from the mode's own because setting a subject up is a different job from
+ * reviewing it — and it is the one case where a reading mode may write: there is nothing on the
+ * canvas, so there is nothing to protect, and a turn that could only report "there is no model"
+ * would waste the user's click.
+ */
+export interface Setup {
+  /** Offered in place of the mode's own starters, so the panel never suggests something the
+   * current canvas can't do. */
+  starter: string;
+  /** Shown above the composer while this is the turn that would run. */
+  note: string;
+  system: string;
+  tools: NeutralTool[];
+}
+
 export interface StudyMode {
   id: string;
   /** Short name for the picker. */
@@ -70,9 +94,8 @@ export interface StudyMode {
   /** One line saying what it does, shown with the label. */
   blurb: string;
   input: ModeInput;
-  /** Whether a turn may change the model. Kept beside `tools` so the two can't disagree — a test
-   * asserts they don't. */
-  writes: boolean;
+  /** The tools the mode's own turn may use. Whether that means it can change the model is read
+   * off this list rather than declared beside it — see `planTurn`. */
   tools: NeutralTool[];
   /** Placeholder for the context box, in this mode's own voice. */
   placeholder?: string;
@@ -80,6 +103,10 @@ export interface StudyMode {
   system: string;
   /** Shown before the first turn, so the panel is never a blank box with no idea what to ask. */
   starters: string[];
+  /** What to do when this mode's subject isn't on the canvas. Absent means the mode works
+   * whatever is there — which a test checks against `input`, so a new mode can't quietly have
+   * the hole this one fills. */
+  whenEmpty?: Setup;
 }
 
 /**
@@ -88,10 +115,17 @@ export interface StudyMode {
  * what the tools are, that the model on the canvas is the real one, and that a claim about
  * behaviour should be checked by running it rather than asserted.
  */
-const PREAMBLE = `You are helping someone learn system dynamics, working alongside a Vensim-style
-stock-and-flow editor. The model on the canvas is a real model you can read with list_model, run
-with run_simulation, and measure with run_python — do that rather than reasoning about what the
-equations would do if you ran them.
+function preamble(hasModel: boolean): string {
+  return `You are helping someone learn system dynamics, working alongside a Vensim-style
+stock-and-flow editor. ${
+    hasModel
+      ? `The model on the canvas is a real model you can read with list_model, run with
+run_simulation, and measure with run_python — do that rather than reasoning about what the
+equations would do if you ran them.`
+      : `The canvas is empty: there is no model yet, and nothing can be read, run or measured
+until one exists. Do not describe the behaviour of a model that isn't there, and do not go looking
+for one before you have built it.`
+  }
 
 Keep equations in Vensim syntax ("Population * Birth rate", "IF THEN ELSE(x > 10, 1, 0)"). Time is
 the built-in clock and is already available in any equation. A stock accumulates through flows;
@@ -101,24 +135,47 @@ makes a loop reinforcing or balancing.
 Be concrete and brief. When you are checking something, say what you checked and what it showed,
 the way you would show your working — a claim about a model's behaviour that you did not simulate
 is a guess, and should be labelled as one.`;
+}
+
+/** Added to any turn whose tools cannot change the model — generated rather than written into each
+ * mode's text, because it has to be true of every such turn and the tool list is what makes it
+ * true. A model that knows it cannot change anything reports what it found; one that doesn't
+ * spends the turn offering to. */
+const CANNOT_EDIT = `This turn you have no tools that change the model — you can read it, run it and
+measure it, and that is all. Report what you find and what you would change; the user makes the
+changes. Do not promise to fix anything, and do not describe an edit as if you had made it.`;
 
 /**
- * A mode's system prompt: the shared preamble, the mode's own instructions, and — for a mode that
- * cannot edit — a line saying so.
+ * The turn that would run for this mode against a canvas in this state: what to say, what to
+ * allow, and what the panel should offer and warn about.
  *
- * The last part is generated rather than written into each mode's text, because it has to be true
- * of every read-only mode and the tool list is what makes it true. A model that knows it cannot
- * change anything reports what it found; one that doesn't spends the turn offering to.
+ * One function rather than four, because these four answers have to agree with each other, and
+ * every way of getting them wrong is a way the panel can lie: a starter the canvas can't carry
+ * out, a badge promising an edit the turn can't make, a prompt that describes a model that isn't
+ * there. Everything the panel knows about a turn it reads from here.
  */
-export function systemPromptFor(mode: StudyMode): string {
-  const cannotEdit = mode.writes
-    ? ""
-    : `
+export interface PlannedTurn {
+  system: string;
+  tools: NeutralTool[];
+  /** What to offer as the opening line — the mode's own, or the one for filling an empty canvas. */
+  starters: string[];
+  /** Set only when this is the empty-canvas setup rather than the mode's own job. */
+  note: string | null;
+  /** Whether this turn can change the model. Read off `tools`, never declared. */
+  writes: boolean;
+}
 
-This turn you have no tools that change the model — you can read it, run it and measure it, and
-that is all. Report what you find and what you would change; the user makes the changes. Do not
-promise to fix anything, and do not describe an edit as if you had made it.`;
-  return `${PREAMBLE}\n\n${mode.system}${cannotEdit}`;
+export function planTurn(mode: StudyMode, { hasModel }: { hasModel: boolean }): PlannedTurn {
+  const setup = hasModel ? undefined : mode.whenEmpty;
+  const tools = setup?.tools ?? mode.tools;
+  const writes = tools.some((t) => MUTATING_TOOL_NAMES.has(t.name));
+  return {
+    system: [preamble(hasModel), setup?.system ?? mode.system, writes ? "" : CANNOT_EDIT].filter(Boolean).join("\n\n"),
+    tools,
+    starters: setup ? [setup.starter] : mode.starters,
+    note: setup?.note ?? null,
+    writes,
+  };
 }
 
 export const MODES: StudyMode[] = [
@@ -127,7 +184,6 @@ export const MODES: StudyMode[] = [
     label: "Build a model",
     blurb: "Describe a situation; get it as stocks, flows and loops.",
     input: "context",
-    writes: true,
     tools: EDITING_TOOLS,
     placeholder: "e.g. A clinic where patients queue for a single doctor. Arrivals rise in winter…",
     starters: ["Build the model for this, then run it and tell me what it settles at."],
@@ -142,7 +198,6 @@ took — a stated assumption is useful, a question back is not.`,
     label: "Write the equations",
     blurb: "Describe how parts relate; get the equations.",
     input: "context",
-    writes: true,
     tools: EDITING_TOOLS,
     placeholder: "e.g. Demand falls as price rises, and restocking takes two weeks…",
     starters: ["Add these relationships to the model as equations."],
@@ -157,10 +212,19 @@ it as one rather than smoothing it into a straight line.`,
     label: "Is the model right?",
     blurb: "Check the model against a description of what it should be.",
     input: "context+model",
-    writes: false,
     tools: READ_ONLY_TOOLS,
     placeholder: "e.g. The model should show the backlog shrinking once capacity exceeds arrivals…",
     starters: ["Does the model on the canvas match this description? Say what doesn't."],
+    whenEmpty: {
+      starter: "There's no model yet — what should I do?",
+      note: "Nothing on the canvas to check yet.",
+      tools: READ_ONLY_TOOLS,
+      system: `There is no model on the canvas, so there is nothing to check against the
+description. Say that in one line, then give the two ways to get something to judge: the "Build a
+model" mode turns this description into a model, and "Give me an exercise" sets one to work on.
+Two short lines and stop — do not build anything here, and do not review a model you have
+imagined.`,
+    },
     system: `Your job this turn is to judge the model on the canvas against the user's description
 of what it should be. Read the model, run it, and check the described behaviour against what
 actually happens — the result of a run, not the shape of the equations. For each part of the
@@ -173,10 +237,21 @@ is the one who should decide what to change.`,
     label: "Find the mistakes",
     blurb: "Hunt down wrong equations, signs and units.",
     input: "model",
-    writes: false,
     tools: READ_ONLY_TOOLS,
     placeholder: "Optional: what should it be doing? e.g. the population should level off, not collapse",
     starters: ["Look through this model and find anything that is wrong."],
+    whenEmpty: {
+      starter: "Build me a model with mistakes in it, and set it as an exercise.",
+      note: "No model yet — this will build one with mistakes in it to work on.",
+      tools: EDITING_TOOLS,
+      system: `There is no model on the canvas, so there is nothing to look through. Build one
+small enough to read at a glance, and put exactly one kind of fault in it — a sign that makes a
+loop balance when it should reinforce, a rate that cannot be sustained, a flow draining something
+it shouldn't, a stock that can run negative. Run it and confirm the behaviour that fault produces
+is actually wrong, then hand it over as an exercise: say what the model is meant to do and what
+they should work out. Do not name the fault, and do not list the answers. Stop there — the point
+is that they find it.`,
+    },
     system: `Your job this turn is to find what is wrong with the model on the canvas. Work through
 the equations the way a marker would: signs that point the wrong way, flows that drain something
 they shouldn't, rates with the wrong units or the wrong denominator, accumulations that can go
@@ -191,10 +266,18 @@ is in, what is wrong, and how you know; rank them by how much they matter. Do no
     label: "Which archetype?",
     blurb: "Recognize the pattern from its structure or its story.",
     input: "context+model",
-    writes: false,
     tools: READ_ONLY_TOOLS,
     placeholder: "e.g. Two teams competing for the same budget, where the bigger team keeps getting more of it…",
     starters: ["What archetype is this? Explain why, and what it implies."],
+    whenEmpty: {
+      starter: "Which archetype does this situation describe?",
+      note: "No model yet — this will answer from the description alone.",
+      tools: READ_ONLY_TOOLS,
+      system: `There is no model on the canvas, so this is a question about the situation the user
+described and nothing else. Answer from the description, say plainly that you are reading the
+situation rather than a model, and finish by naming the structures a model of it would have to
+contain for the pattern to be there — that is what they would build to test it.`,
+    },
     system: `Your job this turn is to say which system-dynamics archetype the situation or the
 model on the canvas is an instance of — Limits to Growth, Tragedy of the Commons, Escalation,
 Success to the Successful, Fixes that Fail, Shifting the Burden, Eroding Goals — or that it is not
@@ -211,10 +294,19 @@ of the structure its name implies, that gap is the interesting part — point at
     label: "Find the loops",
     blurb: "Identify the feedback loops and what each one does.",
     input: "model",
-    writes: false,
     tools: READ_ONLY_TOOLS,
     placeholder: "Optional: which loops do you think drive the behaviour?",
     starters: ["List the feedback loops in this model and explain each one."],
+    whenEmpty: {
+      starter: "Build a model with interesting loops, and have me find them.",
+      note: "No model yet — this will build one with loops to find.",
+      tools: EDITING_TOOLS,
+      system: `There is no model on the canvas, so there are no loops to find. Build a small model
+with two or three feedback loops that do different things — one reinforcing, one balancing, one
+that only matters late — using the tools, connect the relations so the structure is visible, and
+run it. Then hand it over as an exercise: say what the model is for and ask them which loops
+explain its behaviour. Do not list the loops yourself. Stop there.`,
+    },
     system: `Your job this turn is to explain the feedback structure of the model on the canvas.
 For each loop: its variables in order, whether it is reinforcing or balancing, and what it does to
 the model's behaviour — which is a question about the run, so run it and point at what changes.
@@ -228,7 +320,6 @@ the equations can disagree, and that is worth knowing.`,
     label: "Give me an exercise",
     blurb: "Generate something to practise on — optionally with the answer.",
     input: "context",
-    writes: true,
     tools: EDITING_TOOLS,
     placeholder: "e.g. something on delays, or a commons, at the level of a first course",
     starters: ["Give me an exercise on this, with a model to work on."],

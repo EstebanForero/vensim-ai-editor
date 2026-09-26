@@ -15,7 +15,7 @@ import { createAgentSession, isRetriableConnectionError, runAgentTurn, type Agen
 import { executeToolCall } from "@/lib/agentTools";
 import { message, type ChatMessage } from "@/components/chat/message";
 import { useModelStore } from "@/state/modelStore";
-import { systemPromptFor, type StudyMode } from "./modes";
+import type { PlannedTurn, StudyMode } from "./modes";
 
 /** How many attempts a round gets, and how long between them — the agent's defaults, which the
  * chat panel uses too. */
@@ -36,7 +36,10 @@ export interface StudySession {
   setContext(mode: StudyMode, context: string): void;
   pendingToolName: string | null;
   retryNotice: string | null;
-  run(mode: StudyMode, prompt: string): Promise<void>;
+  /** Runs one turn for `mode` against `plan` — which is what `planTurn` decided the turn should
+   * be, given what is on the canvas. The session never works that out for itself: it is the one
+   * place that would then disagree with what the panel told the user was about to happen. */
+  run(mode: StudyMode, prompt: string, plan: PlannedTurn): Promise<void>;
   stop(): void;
   clear(mode: StudyMode): void;
 }
@@ -93,7 +96,7 @@ export function useStudySession({ onModelChanged, onFinished }: StudySessionOpti
   }, []);
 
   const run = useCallback(
-    async (mode: StudyMode, prompt: string) => {
+    async (mode: StudyMode, prompt: string, plan: PlannedTurn) => {
       const id = mode.id;
       if (running.current.has(id)) return;
       if (!apiKey) {
@@ -166,7 +169,7 @@ export function useStudySession({ onModelChanged, onFinished }: StudySessionOpti
               say(message("warning", "Stopped."));
             },
           },
-          { signal: controller.signal, system: systemPromptFor(mode), tools: mode.tools, retry: RETRY, executeToolCall },
+          { signal: controller.signal, system: plan.system, tools: plan.tools, retry: RETRY, executeToolCall },
         );
       } catch (err) {
         settleStream();
