@@ -1,5 +1,5 @@
 import { useReactFlow } from "@xyflow/react";
-import { Bot, KeyRound, Loader2, MessageSquareX, Plus, RotateCcw, Send, Settings2, Square, Trash2, TriangleAlert, Wrench } from "lucide-react";
+import { KeyRound, MessageSquareX, Plus, Send, Settings2, Square, Trash2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { createAgentSession, isRetriableConnectionError, PROVIDER_PRESETS, runAg
 import { executeToolCall } from "@/lib/agentTools";
 
 import { useModelStore, type ReasoningEffort } from "@/state/modelStore";
+import { Transcript } from "./Transcript";
 
 /** Shared by the active-profile settings panel and the add-profile form — most models ignore or
  * reject an unrecognized field, so "Default" deliberately means "send nothing," never a guess. */
@@ -397,59 +398,15 @@ export function ChatPanel() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-3 text-sm">
-        {messages.length === 0 && (
-          <p className="text-muted-foreground">
-            Ask me to build or edit the model, e.g. "Add a stock called Inventory with an inflow Production and
-            outflow Shipping" or "Build a causal loop diagram for a simple sales funnel."
-          </p>
-        )}
-        <div className="flex flex-col gap-3">
-          {messages.map((m, i) => {
-            // The indicator right below the last message is the only "did this actually
-            // finish?" signal otherwise — surfacing it right on the final assistant reply too
-            // (not just a transient banner that vanishes when isAgentRunning flips) means
-            // scrolling back through history still shows clearly which turns completed.
-            const isLastAssistant = m.role === "assistant" && i === messages.length - 1 && !isAgentRunning;
-            return (
-              <div key={m.id} className={m.role === "user" ? "text-right" : ""}>
-                <div
-                  className={
-                    "inline-block max-w-[90%] rounded-lg px-3 py-1.5 text-left " +
-                    (m.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : m.role === "tool"
-                        ? "bg-muted font-mono text-[11px] text-muted-foreground"
-                        : m.role === "warning"
-                          ? "border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                          : "bg-secondary text-secondary-foreground")
-                  }
-                >
-                  {m.role === "tool" && <Wrench className="mr-1 inline size-3" />}
-                  {m.role === "assistant" && <Bot className="mr-1 inline size-3" />}
-                  {m.role === "warning" && <TriangleAlert className="mr-1 inline size-3" />}
-                  <span className="whitespace-pre-wrap">{m.text}</span>
-                  {m.streaming && <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current align-text-bottom" />}
-                </div>
-                {isLastAssistant && (
-                  <div className="mt-0.5 text-[10px] text-muted-foreground">Finished — nothing more queued.</div>
-                )}
-              </div>
-            );
-          })}
-          {isAgentRunning && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              {retryNotice ? <RotateCcw className="size-3.5 animate-spin" /> : <Loader2 className="size-3.5 animate-spin" />}
-              {retryNotice ??
-                (pendingToolName
-                  ? `Calling ${pendingToolName}…`
-                  : messages.some((m) => m.streaming)
-                    ? "Editing the diagram…"
-                    : "Thinking…")}
-            </div>
-          )}
-        </div>
-      </div>
+      <Transcript
+        messages={messages}
+        running={isAgentRunning}
+        pendingToolName={pendingToolName}
+        retryNotice={retryNotice}
+        workingNote="Editing the diagram…"
+        finishedNote="Finished — nothing more queued."
+        emptyHint={'Ask me to build or edit the model, e.g. "Add a stock called Inventory with an inflow Production and outflow Shipping" or "Build a causal loop diagram for a simple sales funnel."'}
+      />
 
       <div className="flex items-end gap-2 border-t p-2">
         <Textarea

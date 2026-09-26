@@ -13,20 +13,22 @@
 // `Content`/`Part` shape carries `thoughtSignature` directly.
 
 import { GoogleGenAI, ThinkingLevel, type Content, type Part } from "@google/genai";
-import { NEUTRAL_TOOLS, SYSTEM_PROMPT } from "./tools.js";
-import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, StreamedRound, ToolResultForHistory } from "./types.js";
+
+import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, NeutralTool, RoundSetup, StreamedRound, ToolResultForHistory } from "./types.js";
 
 export const GEMINI_DEFAULT_MODEL = "gemini-3.8-flash";
 
-const GEMINI_TOOLS = [
-  {
-    functionDeclarations: NEUTRAL_TOOLS.map((t) => ({
-      name: t.name,
-      description: t.description,
-      parametersJsonSchema: t.parameters,
-    })),
-  },
-];
+function geminiTools(tools: NeutralTool[]) {
+  return [
+    {
+      functionDeclarations: tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        parametersJsonSchema: t.parameters,
+      })),
+    },
+  ];
+}
 
 function history(session: AgentSession): Content[] {
   return session.history as Content[];
@@ -59,14 +61,15 @@ async function streamRound(
   callbacks: AgentCallbacks,
   signal: AbortSignal | undefined,
   streamId: string,
+  setup: RoundSetup,
 ): Promise<StreamedRound | "aborted"> {
   const level = thinkingLevel(connection.reasoningEffort);
   const stream = await client(connection).models.generateContentStream({
     model: connection.model || GEMINI_DEFAULT_MODEL,
     contents: history(session),
     config: {
-      systemInstruction: SYSTEM_PROMPT,
-      tools: GEMINI_TOOLS,
+      systemInstruction: setup.system,
+      tools: geminiTools(setup.tools),
       abortSignal: signal,
       ...(level ? { thinkingConfig: { thinkingLevel: level } } : {}),
     },

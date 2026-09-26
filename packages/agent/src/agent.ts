@@ -7,8 +7,8 @@
 import type { Model } from "@vensim-ai/core";
 import { openaiBackend, DEFAULT_BASE_URL, DEFAULT_MODEL } from "./openaiBackend.js";
 import { geminiBackend, GEMINI_DEFAULT_MODEL } from "./geminiBackend.js";
-import { defaultToolExecutor, type ToolExecutor } from "./tools.js";
-import type { ToolCallResult } from "./types.js";
+import { defaultToolExecutor, NEUTRAL_TOOLS, SYSTEM_PROMPT, type ToolExecutor } from "./tools.js";
+import type { NeutralTool, RoundSetup, ToolCallResult } from "./types.js";
 import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, StreamedRound } from "./types.js";
 
 export { createAgentSession } from "./types.js";
@@ -132,10 +132,11 @@ async function streamRoundWithRetry(
   callbacks: AgentCallbacks,
   signal: AbortSignal | undefined,
   { maxAttempts, delaysMs }: { maxAttempts: number; delaysMs: number[] },
+  setup: RoundSetup,
 ): Promise<StreamedRound | "aborted"> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await backend.streamRound(connection, session, callbacks, signal, crypto.randomUUID());
+      return await backend.streamRound(connection, session, callbacks, signal, crypto.randomUUID(), setup);
     } catch (err) {
       // A user-initiated Stop can surface as a thrown error too (rather than the backends' own
       // "aborted" return) — that's never something to retry.
@@ -172,6 +173,13 @@ export interface AgentRunOptions {
    * whatever interpreter it has (Pyodide in the app, a local `python3` in the CLI), or none at
    * all. See tools.ts. */
   executeToolCall?: ToolExecutor;
+  /** The instructions this turn is framed by. Default: the editor's own system prompt. A caller
+   * with a narrower job — a study mode that is only judging an answer, say — passes its own. */
+  system?: string;
+  /** The tools this turn may use. Default: every tool. Narrowing it is how a caller makes a turn
+   * *read* a model rather than rewrite it: a tool the model is never offered is one it cannot
+   * call, which is a stronger guarantee than asking it not to. */
+  tools?: NeutralTool[];
 }
 
 export async function runAgentTurn(
@@ -190,6 +198,8 @@ export async function runAgentTurn(
     signal,
     retry = { maxAttempts: ROUND_RETRY_ATTEMPTS, delaysMs: ROUND_RETRY_DELAYS_MS },
     executeToolCall = defaultToolExecutor,
+    system = SYSTEM_PROMPT,
+    tools = NEUTRAL_TOOLS,
   }: AgentRunOptions = {},
 ): Promise<void> {
   const backend = backendFor(connection);
@@ -205,7 +215,7 @@ export async function runAgentTurn(
       return;
     }
 
-    const result = await streamRoundWithRetry(backend, connection, session, callbacks, signal, retry);
+    const result = await streamRoundWithRetry(backend, connection, session, callbacks, signal, retry, { system, tools });
     if (result === "aborted") {
       callbacks.onAborted?.();
       return;

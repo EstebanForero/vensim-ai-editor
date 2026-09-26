@@ -6,7 +6,7 @@
 
 import { allVariables, simulate, type Model } from "@vensim-ai/core";
 import { executeTool, VENSIM_AI_TOOLS } from "@vensim-ai/ai-tools";
-import type { ToolCallResult } from "./types.js";
+import type { NeutralTool, ToolCallResult } from "./types.js";
 
 export const SYSTEM_PROMPT = `You are an assistant embedded in a system-dynamics (Vensim-style) stock-and-flow / causal-loop
 diagram editor. You edit the model exclusively through the provided tools — never by describing changes in prose
@@ -66,11 +66,7 @@ feedback loop or a nonlinear term (MIN/MAX, IF THEN ELSE, a ratio) where a sign 
 run without any error and look plausible at a glance. After you finish making changes, reply with a short
 plain-text summary of what you did, including what you verified and how.`;
 
-export interface NeutralTool {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}
+export type { NeutralTool };
 
 // Not part of @vensim-ai/ai-tools (packages/core's model-mutation tools, portable/synchronous
 // JS) since this one runs a real Python interpreter, which is a capability the host has to

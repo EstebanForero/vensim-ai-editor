@@ -2,6 +2,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { FlowCanvas } from "@/components/canvas/FlowCanvas";
 import { SimChart } from "@/components/charts/SimChart";
+import { StudyPanel } from "@/study";
 import { Inspector } from "@/components/inspector/Inspector";
 import { LookupEditorHost } from "@/components/lookup/LookupEditorHost";
 import { TextView } from "@/components/textview/TextView";
@@ -28,6 +29,7 @@ function App() {
                 <TabsTrigger value="chat">AI Chat</TabsTrigger>
                 <TabsTrigger value="sim">Simulation</TabsTrigger>
                 <TabsTrigger value="text">Text</TabsTrigger>
+                <TabsTrigger value="study">Study</TabsTrigger>
               </TabsList>
               <TabsContent value="inspector" className="min-h-0 flex-1 overflow-y-auto">
                 <Inspector />
@@ -40,6 +42,9 @@ function App() {
               </TabsContent>
               <TabsContent value="text" className="min-h-0 flex-1">
                 <TextView />
+              </TabsContent>
+              <TabsContent value="study" className="min-h-0 flex-1">
+                <StudyPanel />
               </TabsContent>
             </Tabs>
           </aside>

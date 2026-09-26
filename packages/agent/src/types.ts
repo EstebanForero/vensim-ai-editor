@@ -8,6 +8,31 @@
 // schema (which is exactly what broke tool calling against Gemini's thinking models: OpenAI's
 // tool_calls schema has no field for Gemini's required thought_signature at all).
 
+/**
+ * One tool, described once and independently of any provider's schema: each backend translates
+ * this into its own protocol's tool-declaration format (OpenAI's `{type,function}`, Gemini's
+ * `functionDeclarations`) rather than each provider keeping its own copy of what tools exist.
+ */
+export interface NeutralTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+/**
+ * What one round is allowed to do, and how it is framed. Per round rather than per process: the
+ * editor's chat gets every tool and the editor's system prompt, while a study mode that only reads
+ * a model must not be able to rewrite it — and a mode that asks the model to judge an answer needs
+ * different instructions from one asking it to build.
+ *
+ * A backend that fixed either at module load would have made both a property of the process, which
+ * is fine right up until a second caller wants something else.
+ */
+export interface RoundSetup {
+  system: string;
+  tools: NeutralTool[];
+}
+
 export interface AgentSession {
   history: unknown[];
 }
@@ -105,6 +130,7 @@ export interface AgentBackend {
     callbacks: AgentCallbacks,
     signal: AbortSignal | undefined,
     streamId: string,
+    setup: RoundSetup,
   ): Promise<StreamedRound | "aborted">;
 
   /** Appends this round's tool RESULTS into session.history, in this backend's native shape

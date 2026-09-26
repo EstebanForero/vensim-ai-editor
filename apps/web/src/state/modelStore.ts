@@ -16,14 +16,9 @@ import {
 import { create } from "zustand";
 import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "@vensim-ai/agent";
 
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "tool" | "warning";
-  text: string;
-  /** True while an assistant message is still being streamed in — lets the UI show a "still
-   * typing" indicator on this specific bubble, cleared once the message completes. */
-  streaming?: boolean;
-}
+import type { ChatMessage } from "@/components/chat/message";
+
+export type { ChatMessage };
 
 function readLocalStorage(key: string, fallback: string): string {
   if (typeof localStorage === "undefined") return fallback;

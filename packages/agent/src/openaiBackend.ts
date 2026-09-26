@@ -6,16 +6,18 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool, ChatCompletionToolMessageParam } from "openai/resources/chat/completions";
 import { getProviderAdapter } from "./providerAdapters.js";
-import { NEUTRAL_TOOLS, SYSTEM_PROMPT } from "./tools.js";
-import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, StreamedRound, ToolResultForHistory } from "./types.js";
+
+import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, NeutralTool, RoundSetup, StreamedRound, ToolResultForHistory } from "./types.js";
 
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 export const DEFAULT_MODEL = "gpt-4o";
 
-const OPENAI_TOOLS: ChatCompletionTool[] = NEUTRAL_TOOLS.map((t) => ({
-  type: "function",
-  function: { name: t.name, description: t.description, parameters: t.parameters },
-}));
+function openaiTools(tools: NeutralTool[]): ChatCompletionTool[] {
+  return tools.map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+}
 
 function history(session: AgentSession): ChatCompletionMessageParam[] {
   return session.history as ChatCompletionMessageParam[];
@@ -63,13 +65,14 @@ async function streamRound(
   callbacks: AgentCallbacks,
   signal: AbortSignal | undefined,
   streamId: string,
+  setup: RoundSetup,
 ): Promise<StreamedRound | "aborted"> {
   const c = client(connection);
   const stream = await c.chat.completions.create(
     {
       model: connection.model || DEFAULT_MODEL,
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history(session)],
-      tools: OPENAI_TOOLS,
+      messages: [{ role: "system", content: setup.system }, ...history(session)],
+      tools: openaiTools(setup.tools),
       tool_choice: "auto",
       stream: true,
       // Not in every provider's request schema (it's an OpenAI reasoning-model concept,

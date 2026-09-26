@@ -40,6 +40,28 @@ Base URL and Model, so it works with OpenAI itself or any server that exposes an
 OpenAI-compatible `/chat/completions` route (Azure OpenAI, OpenRouter, vLLM, Ollama, LM
 Studio, …). Defaults to `https://api.openai.com/v1` and `gpt-4o`.
 
+## Study tab
+
+A fifth panel beside Inspector / AI Chat / Simulation / Text, for practising on models rather than
+editing them: build one from a described situation, write the equations for it, judge a model
+against what it was supposed to be, hunt for wrong signs and units, name the archetype, list the
+loops, or have an exercise set for you.
+
+It is the same agent as the chat panel — same loop, same tools, same connection — with a different
+brief. Each mode is a row in `apps/web/src/study/modes.ts`: a system prompt, the tools the turn may
+use, and what the mode expects you to bring. Adding one is adding a row; the panel has no idea what
+any particular mode does.
+
+The modes that *judge* a model are not given the tools that change it. That is the difference
+between asking a model not to rewrite your work and leaving it no way to — the tool list is what
+the turn is offered, so a "find the mistakes" turn can be pointed at the model you are actually
+working on without risk. A test asserts every tool the agent has is classified as one or the other,
+so a tool added later can't slip into a read-only mode unclassified.
+
+`apps/web/src/study/` is self-contained and the dependency runs one way: it uses the editor (the
+store, the canvas, the shared chat rendering), and the editor imports exactly one thing back —
+`StudyPanel`, rendered as one more tab. Deleting the folder costs two lines in `App.tsx`.
+
 ## Vensim compatibility
 
 The `.mdl` codec covers the core arithmetic/equation subset Vensim uses for stocks (`INTEG`),
