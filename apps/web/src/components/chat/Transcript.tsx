@@ -5,8 +5,13 @@
 // that renders a tool call one way in one tab and another way in the other would make them read as
 // two different assistants. Everything it draws is a prop: it knows nothing about the store, the
 // connection, or who is running the turn.
+//
+// An assistant reply is markdown and is drawn as such; every other role is drawn as the literal
+// text it is. The split is by role rather than by content because that is what the difference
+// actually is — see `Markdown`.
 
 import { Bot, Loader2, RotateCcw, TriangleAlert, Wrench } from "lucide-react";
+import { Markdown } from "./Markdown";
 import type { ChatMessage } from "./message";
 
 export type { ChatMessage };
@@ -61,10 +66,20 @@ export function Transcript({
                 }
               >
                 {m.role === "tool" && <Wrench className="mr-1 inline size-3" />}
-                {m.role === "assistant" && <Bot className="mr-1 inline size-3" />}
+                {/* Floated, not inline: the reply below is markdown and therefore block-level, and
+                    an inline icon ahead of a block lands on a line of its own above it. Floating
+                    keeps it at the head of the first line, where it has always been. */}
+                {m.role === "assistant" && <Bot className="float-left mt-0.5 mr-1 size-3" />}
                 {m.role === "warning" && <TriangleAlert className="mr-1 inline size-3" />}
-                <span className="whitespace-pre-wrap">{m.text}</span>
-                {m.streaming && <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current align-text-bottom" />}
+                {/* The reply is markdown; everything else is literal. A tool line is
+                    `add_stock({...})`, where the underscores would become emphasis, and the user's
+                    own words are not markup in the first place. The caret while streaming comes
+                    from the markdown wrapper, which hangs it off the last block. */}
+                {m.role === "assistant" ? (
+                  <Markdown streaming={m.streaming}>{m.text}</Markdown>
+                ) : (
+                  <span className="whitespace-pre-wrap">{m.text}</span>
+                )}
               </div>
               {isLastAssistant && finishedNote && <div className="mt-0.5 text-[10px] text-muted-foreground">{finishedNote}</div>}
             </div>

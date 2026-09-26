@@ -179,3 +179,32 @@
   outline-offset: 2px;
   border-radius: 9999px;
 }
+
+/* The caret that marks an assistant reply as still arriving. It hangs off the *last block* of the
+   rendered markdown rather than sitting beside it, because that block could be a paragraph, a
+   list item or a fenced code block — a sibling element would drop below all of them, onto a line
+   of its own, instead of trailing the text. Written here rather than as utilities on the wrapper
+   because the selector, not the property list, is the whole point.
+   A list gets the caret on its last item rather than after the list, or it would sit below the
+   final bullet on a line of its own — which is the thing this rule exists to avoid. */
+.reply-streaming > *:last-child:not(ul, ol)::after,
+.reply-streaming > ul:last-child > li:last-child::after,
+.reply-streaming > ol:last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.375rem;
+  height: 0.75rem;
+  margin-left: 0.125rem;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: reply-caret 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes reply-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
