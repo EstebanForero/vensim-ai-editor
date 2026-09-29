@@ -71,7 +71,11 @@ const DEFAULT_ROUNDS = 40;
 
 export const HELP = `Generate a system-dynamics model from a description.
 
-  vensim-ai-generate <prompt> [options]
+  bun run generate <prompt> [options]        from the repository root
+  bun start <prompt> [options]               from apps/cli
+
+The package declares a \`vensim-ai-generate\` bin, but nothing links it — this is a private
+package inside a workspace, so it is not on your PATH. Use one of the two above.
 
   ${"<prompt>".padEnd(20)}What to build. "-" reads it from stdin.
 ${FLAGS.map((f) => `  ${(f.names.join(", ") + (f.arg ? ` ${f.arg}` : "")).padEnd(20)}${f.help}`).join("\n")}

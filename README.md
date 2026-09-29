@@ -54,6 +54,10 @@ cat idea.txt | bun run generate                          # or pipe the prompt in
 bun run generate --help                                  # every flag, provider and format
 ```
 
+From `apps/cli` itself it is `bun start`, and the two are the only ways in: `apps/cli/package.json`
+declares a `vensim-ai-generate` bin, but a private package inside a workspace does not have its bin
+linked, so that name is not on your PATH.
+
 It needs an API key, in the environment rather than in the app's settings:
 
 ```bash

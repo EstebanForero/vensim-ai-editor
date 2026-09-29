@@ -88,7 +88,12 @@ describe("usage, before any network call", () => {
   test("--help explains itself and exits clean", async () => {
     const { code, stdout } = await cli(["--help"]);
     expect(code).toBe(0);
-    expect(stdout).toContain("vensim-ai-generate <prompt>");
+    // The usage line names the commands you can actually run. It used to say
+    // `vensim-ai-generate`, which is the package's declared bin and is not on anyone's PATH —
+    // a private workspace package's bin is not linked — so the help advertised a command that
+    // only produced "command not found".
+    expect(stdout).toContain("bun run generate <prompt>");
+    expect(stdout).toContain("bun start <prompt>");
     expect(stdout).toContain("--provider");
   });
 
