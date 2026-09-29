@@ -15,6 +15,7 @@
 import { GoogleGenAI, ThinkingLevel, type Content, type Part } from "@google/genai";
 
 import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, NeutralTool, RoundSetup, StreamedRound, ToolResultForHistory } from "./types.js";
+import { DEFAULT_HISTORY_CHARS, DROPPED_NOTE } from "./types.js";
 
 export const GEMINI_DEFAULT_MODEL = "gemini-3.8-flash";
 
@@ -139,8 +140,8 @@ function appendToolResults(session: AgentSession, results: ToolResultForHistory[
 
 // Character-count heuristic, matching openaiBackend's — see that file for why it's not a real
 // token count.
-const SUMMARIZE_THRESHOLD_CHARS = 60_000;
-const SUMMARIZE_KEEP_RECENT = 12;
+
+const KEEP_RECENT = 24;
 
 /** Finds the latest safe split boundary — a `role: "model"` turn that has NO function calls
  * (i.e. a plain text reply), since only that shape reliably follows a genuine prior user message
@@ -161,35 +162,33 @@ function safeSplitIndex(msgs: Content[], beforeIndex: number): number {
   return -1;
 }
 
-async function summarizeHistoryIfNeeded(connection: AgentConnection, session: AgentSession): Promise<number | null> {
+async function compactHistoryIfNeeded(connection: AgentConnection, session: AgentSession): Promise<number | null> {
   const msgs = history(session);
   const size = msgs.reduce((n, m) => n + JSON.stringify(m).length, 0);
-  if (size < SUMMARIZE_THRESHOLD_CHARS) return null;
+  if (size < (connection.historyChars ?? DEFAULT_HISTORY_CHARS)) return null;
 
-  const splitIndex = safeSplitIndex(msgs, msgs.length - SUMMARIZE_KEEP_RECENT);
+  const splitIndex = safeSplitIndex(msgs, msgs.length - KEEP_RECENT);
   if (splitIndex <= 0) return null;
 
   const older = msgs.slice(0, splitIndex);
   const recent = msgs.slice(splitIndex);
 
-  let summaryText: string;
-  try {
-    const response = await client(connection).models.generateContent({
-      model: connection.model || GEMINI_DEFAULT_MODEL,
-      contents: older,
-      config: {
-        systemInstruction:
-          "Summarize this conversation between a user and an AI assistant building a system-dynamics (Vensim-style) model. Preserve: what the model currently contains (stocks/flows/auxiliaries/relations and their equations, at least by name), what decisions were made and why, and anything the user asked for that isn't done yet. Be concise — this replaces the full history to save tokens, not a transcript.",
-      },
-    });
-    summaryText = response.text || "(no summary content returned)";
-  } catch {
-    return null;
-  }
+  // The same split as the OpenAI backend — what the user asked for and what the agent said are
+  // kept, the tool traffic is dropped — but Gemini carries a tool result as a "user" turn and a
+  // tool call as a "model" turn, so each has to be told apart by its parts rather than by its role.
+  const kept = older.filter((m) => {
+    const parts = m.parts ?? [];
+    if (m.role === "user") return !parts.some((p) => p.functionResponse !== undefined);
+    // A model turn that called a tool cannot be kept on its own: its functionCall would be left
+    // with no matching functionResponse.
+    return parts.every((p) => p.functionCall === undefined) && parts.some((p) => p.text !== undefined);
+  });
 
   session.history = [
-    { role: "user", parts: [{ text: `[Summary of earlier conversation, to save tokens]\n${summaryText}` }] } satisfies Content,
-    { role: "model", parts: [{ text: "Understood — continuing from that context." }] } satisfies Content,
+    { role: "user", parts: [{ text: DROPPED_NOTE }] } satisfies Content,
+    { role: "model", parts: [{ text: "Understood — continuing from that." }] } satisfies Content,
+    // Then the user's own messages, in the order they were sent, before the recent tail.
+    ...kept,
     ...recent,
   ];
   return older.length;
@@ -201,5 +200,5 @@ export const geminiBackend: AgentBackend = {
   },
   streamRound,
   appendToolResults,
-  summarizeHistoryIfNeeded,
+  compactHistoryIfNeeded,
 };

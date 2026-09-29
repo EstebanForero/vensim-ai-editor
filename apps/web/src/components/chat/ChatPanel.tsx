@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { createAgentSession, isRetriableConnectionError, PROVIDER_PRESETS, runAgentTurn, type AgentSession } from "@vensim-ai/agent";
+import { DEFAULT_HISTORY_CHARS, PROVIDER_PRESETS, createAgentSession, isRetriableConnectionError, runAgentTurn, type AgentSession } from "@vensim-ai/agent";
 import { executeToolCall } from "@/lib/agentTools";
 
 import { useModelStore, type ReasoningEffort } from "@/state/modelStore";
@@ -30,6 +30,42 @@ function ReasoningEffortSelect({ value, onChange }: { value: ReasoningEffort; on
   );
 }
 
+/**
+ * How much conversation the connection carries before older turns are summarised away.
+ *
+ * Offered as sizes rather than as a number, because "240000 characters" is not a thing anyone
+ * knows the right value of, while "how big is my model's context" is. The default was 15k tokens
+ * for every model alike — careful on a small one and destructive on a large one, which is how a
+ * build of thirty tool calls ended up as a single paragraph.
+ */
+const HISTORY_PRESETS = [
+  { label: "Compact — 60k tokens", chars: 240_000 },
+  { label: "Standard — 300k tokens", chars: DEFAULT_HISTORY_CHARS },
+  { label: "Large — 600k tokens", chars: 2_400_000 },
+  { label: "Maximum — 1M tokens", chars: 4_000_000 },
+];
+
+function HistorySelect({ value, onChange }: { value: number; onChange: (chars: number) => void }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-muted-foreground">Conversation memory</span>
+      <select
+        className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      >
+        {HISTORY_PRESETS.map((p) => (
+          <option key={p.chars} value={p.chars}>
+            {p.label}
+          </option>
+        ))}
+        {/* A value saved before this existed, or set by hand, still has to be selectable. */}
+        {HISTORY_PRESETS.every((p) => p.chars !== value) && <option value={value}>{value.toLocaleString()} characters</option>}
+      </select>
+    </label>
+  );
+}
+
 /** The "+ Add profile" form — a provider preset just fills in a starting base URL/model; the
  * key is always typed here, never bundled with a preset. */
 function AddProfileForm({ onDone }: { onDone: () => void }) {
@@ -39,6 +75,7 @@ function AddProfileForm({ onDone }: { onDone: () => void }) {
   const [model, setModel] = useState(PROVIDER_PRESETS[0]!.model);
   const [apiKey, setApiKey] = useState("");
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>("");
+  const [historyChars, setHistoryChars] = useState(DEFAULT_HISTORY_CHARS);
   const [presetNote, setPresetNote] = useState<string | undefined>(undefined);
 
   const applyPreset = (presetName: string) => {
@@ -52,7 +89,7 @@ function AddProfileForm({ onDone }: { onDone: () => void }) {
 
   const submit = () => {
     if (!baseUrl.trim() || !model.trim()) return;
-    addConnectionProfile({ name: name.trim() || "New profile", apiKey, baseUrl: baseUrl.trim(), model: model.trim(), reasoningEffort });
+    addConnectionProfile({ name: name.trim() || "New profile", apiKey, baseUrl: baseUrl.trim(), model: model.trim(), reasoningEffort, historyChars });
     onDone();
   };
 
@@ -89,7 +126,10 @@ function AddProfileForm({ onDone }: { onDone: () => void }) {
         <span className="text-muted-foreground">API key</span>
         <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="h-7 text-xs" />
       </label>
-      <ReasoningEffortSelect value={reasoningEffort} onChange={setReasoningEffort} />
+      <div className="flex gap-3">
+        <ReasoningEffortSelect value={reasoningEffort} onChange={setReasoningEffort} />
+        <HistorySelect value={historyChars} onChange={setHistoryChars} />
+      </div>
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onDone}>
           Cancel
@@ -133,6 +173,8 @@ export function ChatPanel() {
   const setAiModel = useModelStore((s) => s.setAiModel);
   const aiReasoningEffort = useModelStore((s) => s.aiReasoningEffort);
   const setAiReasoningEffort = useModelStore((s) => s.setAiReasoningEffort);
+  const aiHistoryChars = useModelStore((s) => s.aiHistoryChars);
+  const setAiHistoryChars = useModelStore((s) => s.setAiHistoryChars);
   const connections = useModelStore((s) => s.connections);
   const activeConnectionId = useModelStore((s) => s.activeConnectionId);
   const selectConnectionProfile = useModelStore((s) => s.selectConnectionProfile);
@@ -208,7 +250,7 @@ export function ChatPanel() {
     // reference after the very first tool ran and silently drop every mutation after it.
     try {
       await runAgentTurn(
-        { apiKey, baseUrl, model: aiModel, reasoningEffort: aiReasoningEffort || undefined },
+        { apiKey, baseUrl, model: aiModel, reasoningEffort: aiReasoningEffort || undefined, historyChars: aiHistoryChars },
         sessionRef.current,
         text,
         () => useModelStore.getState().model,
@@ -262,11 +304,15 @@ export function ChatPanel() {
               text: "Stopped. Whatever was already applied stays — send another message to continue or redirect it.",
             });
           },
-          onHistorySummarized: (messagesSummarized) => {
+          onHistoryCompacted: (messagesDropped) => {
+            // Says what actually happened. It used to say "nothing you did was lost, just
+            // condensed", which was true when the old middle was summarised into a paragraph and
+            // is not true now that it is dropped — the agent's own tool calls are gone from the
+            // conversation, and the model on the canvas is not.
             addChatMessage({
               id: crypto.randomUUID(),
               role: "tool",
-              text: `Compacted ${messagesSummarized} earlier messages into a summary to save tokens — nothing you did was lost, just condensed.`,
+              text: `Context was getting long, so ${messagesDropped} earlier messages were dropped. Your own requests are kept in full, the model on the canvas is untouched, and the assistant can read it again with list_model.`,
             });
           },
         },
@@ -383,7 +429,10 @@ export function ChatPanel() {
                 <span className="text-muted-foreground">Model</span>
                 <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="h-7 text-xs" />
               </label>
-              <ReasoningEffortSelect value={aiReasoningEffort} onChange={setAiReasoningEffort} />
+              <div className="flex gap-3">
+                <ReasoningEffortSelect value={aiReasoningEffort} onChange={setAiReasoningEffort} />
+                <HistorySelect value={aiHistoryChars} onChange={setAiHistoryChars} />
+              </div>
               <p className="text-muted-foreground">
                 Works with OpenAI itself, or any server exposing an OpenAI-compatible <code>/chat/completions</code>{" "}
                 route (Azure OpenAI, DeepSeek, Gemini, OpenRouter, vLLM, Ollama, LM Studio, …).

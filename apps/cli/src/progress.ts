@@ -41,7 +41,7 @@ export function createReporter(quiet: boolean): Reporter {
       },
       onRoundRetry: (attempt, maxAttempts, err, delayMs) =>
         say(`  ! connection dropped (${describe(err)}) — retrying in ${Math.round(delayMs / 1000)}s (${attempt + 1} of ${maxAttempts})`),
-      onHistorySummarized: (messages) => say(`  · compacted ${messages} earlier messages`),
+      onHistoryCompacted: (messages) => say(`  · dropped ${messages} earlier messages to save context`),
       onStoppedEarly: (_reason, rounds) => {
         stopped = true;
         say(`  ! stopped after ${rounds} tool-call rounds without finishing — the file is what got built`);

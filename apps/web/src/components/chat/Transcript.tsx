@@ -10,6 +10,7 @@
 // text it is. The split is by role rather than by content because that is what the difference
 // actually is — see `Markdown`.
 
+import { memo } from "react";
 import { Bot, Loader2, RotateCcw, TriangleAlert, Wrench } from "lucide-react";
 import { Markdown } from "./Markdown";
 import type { ChatMessage } from "./message";
@@ -32,6 +33,59 @@ export interface TranscriptProps {
   workingNote?: string;
 }
 
+/**
+ * One message.
+ *
+ * Memoised, and it matters: a streaming reply re-renders the transcript on every delta, and the
+ * store keeps the untouched messages by reference so only the one being written to is a new
+ * object. Without this, every earlier message is reconciled again for every token that arrives —
+ * and an assistant reply is a markdown tree, so on a long conversation that is the difference
+ * between a transcript that costs nothing to keep open and one that makes the whole window stutter.
+ */
+const MessageRow = memo(function MessageRow({
+  message,
+  isLastAssistant,
+  finishedNote,
+}: {
+  message: ChatMessage;
+  isLastAssistant: boolean;
+  finishedNote?: string;
+}) {
+  return (
+    <div className={message.role === "user" ? "text-right" : ""}>
+      <div
+        className={
+          "inline-block max-w-[90%] rounded-lg px-3 py-1.5 text-left " +
+          (message.role === "user"
+            ? "bg-primary text-primary-foreground"
+            : message.role === "tool"
+              ? "bg-muted font-mono text-[11px] text-muted-foreground"
+              : message.role === "warning"
+                ? "border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                : "bg-secondary text-secondary-foreground")
+        }
+      >
+        {message.role === "tool" && <Wrench className="mr-1 inline size-3" />}
+        {/* Floated, not inline: the reply below is markdown and therefore block-level, and an
+            inline icon ahead of a block lands on a line of its own above it. Floating keeps it at
+            the head of the first line, where it has always been. */}
+        {message.role === "assistant" && <Bot className="float-left mt-0.5 mr-1 size-3" />}
+        {message.role === "warning" && <TriangleAlert className="mr-1 inline size-3" />}
+        {/* The reply is markdown; everything else is literal. A tool line is `add_stock({...})`,
+            where the underscores would become emphasis, and the user's own words are not markup
+            in the first place. The caret while streaming comes from the markdown wrapper, which
+            hangs it off the last block. */}
+        {message.role === "assistant" ? (
+          <Markdown streaming={message.streaming}>{message.text}</Markdown>
+        ) : (
+          <span className="whitespace-pre-wrap">{message.text}</span>
+        )}
+      </div>
+      {isLastAssistant && finishedNote && <div className="mt-0.5 text-[10px] text-muted-foreground">{finishedNote}</div>}
+    </div>
+  );
+});
+
 export function Transcript({
   messages,
   running,
@@ -45,46 +99,13 @@ export function Transcript({
     <div className="flex-1 overflow-y-auto p-3 text-sm">
       {messages.length === 0 && emptyHint && <p className="text-muted-foreground">{emptyHint}</p>}
       <div className="flex flex-col gap-3">
-        {messages.map((m, i) => {
+        {messages.map((m, i) => (
           // The indicator right below the last message is the only "did this actually finish?"
           // signal otherwise — surfacing it right on the final assistant reply too (not just a
           // transient banner that vanishes when the turn ends) means scrolling back through
           // history still shows clearly which turns completed.
-          const isLastAssistant = m.role === "assistant" && i === messages.length - 1 && !running;
-          return (
-            <div key={m.id} className={m.role === "user" ? "text-right" : ""}>
-              <div
-                className={
-                  "inline-block max-w-[90%] rounded-lg px-3 py-1.5 text-left " +
-                  (m.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : m.role === "tool"
-                      ? "bg-muted font-mono text-[11px] text-muted-foreground"
-                      : m.role === "warning"
-                        ? "border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                        : "bg-secondary text-secondary-foreground")
-                }
-              >
-                {m.role === "tool" && <Wrench className="mr-1 inline size-3" />}
-                {/* Floated, not inline: the reply below is markdown and therefore block-level, and
-                    an inline icon ahead of a block lands on a line of its own above it. Floating
-                    keeps it at the head of the first line, where it has always been. */}
-                {m.role === "assistant" && <Bot className="float-left mt-0.5 mr-1 size-3" />}
-                {m.role === "warning" && <TriangleAlert className="mr-1 inline size-3" />}
-                {/* The reply is markdown; everything else is literal. A tool line is
-                    `add_stock({...})`, where the underscores would become emphasis, and the user's
-                    own words are not markup in the first place. The caret while streaming comes
-                    from the markdown wrapper, which hangs it off the last block. */}
-                {m.role === "assistant" ? (
-                  <Markdown streaming={m.streaming}>{m.text}</Markdown>
-                ) : (
-                  <span className="whitespace-pre-wrap">{m.text}</span>
-                )}
-              </div>
-              {isLastAssistant && finishedNote && <div className="mt-0.5 text-[10px] text-muted-foreground">{finishedNote}</div>}
-            </div>
-          );
-        })}
+          <MessageRow key={m.id} message={m} isLastAssistant={m.role === "assistant" && i === messages.length - 1 && !running} finishedNote={finishedNote} />
+        ))}
         {running && (
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {retryNotice ? <RotateCcw className="size-3.5 animate-spin" /> : <Loader2 className="size-3.5 animate-spin" />}

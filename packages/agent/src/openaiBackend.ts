@@ -8,6 +8,7 @@ import type { ChatCompletionMessageParam, ChatCompletionTool, ChatCompletionTool
 import { getProviderAdapter } from "./providerAdapters.js";
 
 import type { AgentBackend, AgentCallbacks, AgentConnection, AgentSession, NeutralTool, RoundSetup, StreamedRound, ToolResultForHistory } from "./types.js";
+import { DEFAULT_HISTORY_CHARS, DROPPED_NOTE } from "./types.js";
 
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 export const DEFAULT_MODEL = "gpt-4o";
@@ -171,12 +172,11 @@ function appendToolResults(session: AgentSession, results: ToolResultForHistory[
   history(session).push(...toolMessages);
 }
 
-// Character-count heuristic, not an actual token count (no tokenizer bundled client-side for
-// arbitrary providers) — conservative enough that even a dense-token language stays well under
-// most models' context windows before this trips. Once history exceeds this, everything except
-// the most recent SUMMARIZE_KEEP_RECENT messages gets folded into one summary message.
-const SUMMARIZE_THRESHOLD_CHARS = 60_000;
-const SUMMARIZE_KEEP_RECENT = 12;
+// Character-count heuristic, not an actual token count (no tokenizer is bundled for arbitrary
+// providers). Once history exceeds this, everything older than the most recent KEEP_RECENT
+// messages is dropped — except the user's own messages, which are kept verbatim. See
+// `compactHistoryIfNeeded` for why this drops rather than summarises.
+const KEEP_RECENT = 24;
 
 /** Finds the latest "user" message at or before `beforeIndex` — a genuine conversation-turn
  * boundary in the OpenAI message shape, since a user message never appears mid-tool-call-
@@ -191,40 +191,60 @@ function safeSplitIndex(msgs: ChatCompletionMessageParam[], beforeIndex: number)
   return -1;
 }
 
-async function summarizeHistoryIfNeeded(connection: AgentConnection, session: AgentSession): Promise<number | null> {
+/**
+ * Drops the middle of a long conversation — and does it without asking a model to help.
+ *
+ * This used to summarise: send everything older than the recent tail to the model and replace it
+ * with a paragraph it wrote back. That trade is the wrong way round. The input being discarded is
+ * input tokens, which are cheap and usually cached; the paragraph being written is output tokens,
+ * which are the expensive kind — so paying output prices to save input prices is a loss even
+ * before the summary loses anything, and what a summary loses is detail nobody chose to drop.
+ *
+ * And there is no need for it. The two things worth keeping are kept exactly:
+ *
+ *   - **What the user asked for**, word for word. It is the smallest part of the history and the
+ *     only part that says what was *wanted*; summarising it is how an agent ends up confidently
+ *     answering the question from three turns ago that the user has since changed.
+ *   - **The most recent exchanges**, where the work in progress lives.
+ *
+ * Everything dropped is the agent's own middle — its tool calls and their results — and that is
+ * the one thing it can get back for itself: `list_model` reports the current state of the canvas
+ * at any time. It cannot re-read the user's intent, which is why that is what survives.
+ */
+async function compactHistoryIfNeeded(connection: AgentConnection, session: AgentSession): Promise<number | null> {
   const msgs = history(session);
   const size = msgs.reduce((n, m) => n + JSON.stringify(m).length, 0);
-  if (size < SUMMARIZE_THRESHOLD_CHARS) return null;
+  if (size < (connection.historyChars ?? DEFAULT_HISTORY_CHARS)) return null;
 
-  const splitIndex = safeSplitIndex(msgs, msgs.length - SUMMARIZE_KEEP_RECENT);
-  if (splitIndex <= 0) return null; // nothing old enough (or no safe boundary) to fold away yet
+  const splitIndex = safeSplitIndex(msgs, msgs.length - KEEP_RECENT);
+  if (splitIndex <= 0) return null; // nothing old enough (or no safe boundary) to drop yet
 
   const older = msgs.slice(0, splitIndex);
   const recent = msgs.slice(splitIndex);
 
-  let summaryText: string;
-  try {
-    const response = await client(connection).chat.completions.create({
-      model: connection.model || DEFAULT_MODEL,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Summarize this conversation between a user and an AI assistant building a system-dynamics (Vensim-style) model. Preserve: what the model currently contains (stocks/flows/auxiliaries/relations and their equations, at least by name), what decisions were made and why, and anything the user asked for that isn't done yet. Be concise — this replaces the full history to save tokens, not a transcript.",
-        },
-        ...older,
-      ],
-    });
-    summaryText = response.choices[0]?.message?.content || "(no summary content returned)";
-  } catch {
-    // A failed summarization call must not break the actual turn the user is waiting on — just
-    // skip compacting this time and try again once history has grown further.
-    return null;
-  }
+  // Three things live in the dropped middle, and they are not worth the same.
+  //
+  //   - What the user asked for. Kept, word for word. It is the smallest part and the only part
+  //     that says what was *wanted*; summarising it is how an agent ends up confidently answering
+  //     the question from three turns ago that the user has since changed.
+  //   - What the agent said. Kept too. It is a line or two per turn, it is input tokens — cheap,
+  //     and usually cached — and writing a summary of it would mean paying output-token prices to
+  //     shorten input-token prices.
+  //   - What the agent *did*: the tool calls and their results, which are the bulk by an order of
+  //     magnitude. Dropped, because their outcome is not in the conversation, it is on the canvas.
+  const kept = older.filter((m) => {
+    if (m.role === "user") return true;
+    if (m.role !== "assistant") return false;
+    // A turn that called tools carries no prose of its own, and keeping it would leave its
+    // tool_calls with nothing following them — which most providers reject outright.
+    return !m.tool_calls?.length && typeof m.content === "string" && m.content.trim() !== "";
+  });
 
   session.history = [
-    { role: "user", content: `[Summary of earlier conversation, to save tokens]\n${summaryText}` } satisfies ChatCompletionMessageParam,
-    { role: "assistant", content: "Understood — continuing from that context." } satisfies ChatCompletionMessageParam,
+    { role: "user", content: DROPPED_NOTE } satisfies ChatCompletionMessageParam,
+    { role: "assistant", content: "Understood — continuing from that." } satisfies ChatCompletionMessageParam,
+    // Then what was said, in the order it was said in, before the recent tail.
+    ...kept,
     ...recent,
   ];
   return older.length;
@@ -236,5 +256,5 @@ export const openaiBackend: AgentBackend = {
   },
   streamRound,
   appendToolResults,
-  summarizeHistoryIfNeeded,
+  compactHistoryIfNeeded,
 };

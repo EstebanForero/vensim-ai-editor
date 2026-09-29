@@ -41,6 +41,29 @@ export function createAgentSession(): AgentSession {
   return { history: [] };
 }
 
+/**
+ * How much conversation history a connection carries before its middle is dropped, in characters
+ * (about four characters to the token, so this is the 300k-token budget).
+ *
+ * Deliberately far above what a summary-based scheme would use. Nothing is dropped to save money —
+ * what is dropped is input tokens, which are cheap and usually cached, and writing a summary to
+ * save them costs output tokens, which are the expensive kind. The budget exists for one reason:
+ * to stay inside the model's window.
+ */
+export const DEFAULT_HISTORY_CHARS = 1_200_000;
+
+/**
+ * What stands in for the dropped middle of a long conversation.
+ *
+ * It says what happened, and points at the one place the agent can recover the rest for itself:
+ * `list_model`. That is the whole argument for dropping the agent's operations rather than
+ * summarising them — their *result* is not in the conversation at all, it is on the canvas, and
+ * the agent can read the current state at any time. The user's intent cannot be recovered from
+ * anywhere, which is why that is what is kept word for word.
+ */
+export const DROPPED_NOTE =
+  "[The middle of this conversation was dropped to stay inside the context window: the tool calls and their results, and nothing else. What the user asked for and what you concluded are kept below, in order, followed by the most recent exchanges. Nothing about the model changed as a result — call list_model to see its current state.]";
+
 export interface AgentConnection {
   apiKey: string;
   baseUrl: string;
@@ -49,6 +72,16 @@ export interface AgentConnection {
    * don't support it, and some servers reject an unrecognized field outright rather than
    * ignoring it. */
   reasoningEffort?: "low" | "medium" | "high";
+  /**
+   * How much conversation history this connection may carry before the older part of it is folded
+   * into a written summary. Characters, not tokens, because no tokenizer is bundled for arbitrary
+   * providers — see `DEFAULT_HISTORY_CHARS`.
+   *
+   * Per connection rather than one number for everyone, because the right answer is a property of
+   * the model: folding a conversation away at 15k tokens is careful on an 8k model and destructive
+   * on one with a million.
+   */
+  historyChars?: number;
 }
 
 export interface ToolCallResult {
@@ -86,7 +119,7 @@ export interface AgentCallbacks {
   onRoundRetry?: (attempt: number, maxAttempts: number, error: unknown, delayMs: number) => void;
   /** Fired when the session's history was compacted before this turn — `messagesSummarized` is
    * how many old entries got folded into the summary that replaced them. */
-  onHistorySummarized?: (messagesSummarized: number) => void;
+  onHistoryCompacted?: (messagesDropped: number) => void;
 }
 
 /** One assistant turn's worth of streamed output: any text, plus any tool calls the model
@@ -144,5 +177,5 @@ export interface AgentBackend {
    * for OpenAI's shape, but NOT for Gemini's, where a role:"user" entry can just as easily be a
    * functionResponse turn instead of a real user message). Returns how many entries were folded
    * away, or null if nothing was compacted (history too small, or no safe split point yet). */
-  summarizeHistoryIfNeeded(connection: AgentConnection, session: AgentSession): Promise<number | null>;
+  compactHistoryIfNeeded(connection: AgentConnection, session: AgentSession): Promise<number | null>;
 }

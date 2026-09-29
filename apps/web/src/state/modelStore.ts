@@ -15,7 +15,7 @@ import {
   type ValidationIssue,
 } from "@vensim-ai/core";
 import { create } from "zustand";
-import { DEFAULT_BASE_URL, DEFAULT_MODEL } from "@vensim-ai/agent";
+import { DEFAULT_BASE_URL, DEFAULT_HISTORY_CHARS, DEFAULT_MODEL } from "@vensim-ai/agent";
 
 import type { ChatMessage } from "@/components/chat/message";
 
@@ -101,6 +101,9 @@ export interface ConnectionProfile {
   baseUrl: string;
   model: string;
   reasoningEffort: ReasoningEffort;
+  /** How much conversation this connection carries before older turns are summarised away. See
+   * `DEFAULT_HISTORY_CHARS` — the right number is a property of the model, so it lives here. */
+  historyChars: number;
 }
 
 const CONNECTIONS_KEY = "vensim-ai:connections";
@@ -131,12 +134,17 @@ function loadConnections(): { connections: ConnectionProfile[]; activeId: string
         baseUrl: readLocalStorage("vensim-ai:baseUrl", DEFAULT_BASE_URL),
         model: readLocalStorage("vensim-ai:model", DEFAULT_MODEL),
         reasoningEffort: "",
+        historyChars: DEFAULT_HISTORY_CHARS,
       },
     ];
   }
   // A profile saved before reasoningEffort existed won't have the field at all — default it
   // rather than leave it undefined, so every consumer can treat it as always present.
-  connections = connections.map((c) => ({ ...c, reasoningEffort: c.reasoningEffort ?? "" }));
+  connections = connections.map((c) => ({
+    ...c,
+    reasoningEffort: c.reasoningEffort ?? "",
+    historyChars: c.historyChars ?? DEFAULT_HISTORY_CHARS,
+  }));
   const savedActiveId = readLocalStorage(ACTIVE_CONNECTION_KEY, connections[0]!.id);
   const activeId = connections.some((c) => c.id === savedActiveId) ? savedActiveId : connections[0]!.id;
   return { connections, activeId };
@@ -182,6 +190,7 @@ interface ModelStoreState {
   baseUrl: string;
   aiModel: string;
   aiReasoningEffort: ReasoningEffort;
+  aiHistoryChars: number;
   connections: ConnectionProfile[];
   activeConnectionId: string;
 
@@ -227,6 +236,7 @@ interface ModelStoreState {
   setBaseUrl: (url: string) => void;
   setAiModel: (name: string) => void;
   setAiReasoningEffort: (effort: ReasoningEffort) => void;
+  setAiHistoryChars: (chars: number) => void;
   /** Adds a new profile (from a blank form or a provider preset) and switches to it. Never
    * touches any existing profile. */
   addConnectionProfile: (profile: Omit<ConnectionProfile, "id">) => void;
@@ -298,6 +308,7 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
       baseUrl: active.baseUrl,
       aiModel: active.model,
       aiReasoningEffort: active.reasoningEffort,
+      aiHistoryChars: active.historyChars,
     };
   })(),
 
@@ -385,6 +396,10 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
     set((s) => ({ aiReasoningEffort: effort, connections: updateActive(s, { reasoningEffort: effort }) }));
   },
 
+  setAiHistoryChars: (chars) => {
+    set((s) => ({ aiHistoryChars: chars, connections: updateActive(s, { historyChars: chars }) }));
+  },
+
   addConnectionProfile: (profile) => {
     const created: ConnectionProfile = { ...profile, id: crypto.randomUUID() };
     set((s) => {
@@ -398,6 +413,7 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
         baseUrl: created.baseUrl,
         aiModel: created.model,
         aiReasoningEffort: created.reasoningEffort,
+        aiHistoryChars: created.historyChars,
       };
     });
   },
@@ -413,6 +429,7 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
         baseUrl: profile.baseUrl,
         aiModel: profile.model,
         aiReasoningEffort: profile.reasoningEffort,
+        aiHistoryChars: profile.historyChars,
       };
     });
   },
@@ -432,6 +449,7 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
         baseUrl: next.baseUrl,
         aiModel: next.model,
         aiReasoningEffort: next.reasoningEffort,
+        aiHistoryChars: next.historyChars,
       };
     });
   },

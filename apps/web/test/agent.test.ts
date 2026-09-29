@@ -264,3 +264,59 @@ describe("runAgentTurn: a retried round still executes its tool calls", () => {
     expect(String((session.history[2] as { content: string }).content)).toContain("stocks");
   });
 });
+
+describe("a conversation that outgrows its budget", () => {
+  // Reported as "why is it forgetting things so fast". The old rule summarised everything older
+  // than the last twelve messages into one paragraph, as soon as the history passed 60k
+  // characters — about 15k tokens, which is 6% of a model with a million. A build of thirty tool
+  // calls became a paragraph, and the agent then said, correctly, that it did not have the earlier
+  // conversation.
+  //
+  // What survives now is chosen by kind rather than by age: the user's own requests and the
+  // agent's narration are kept, and the tool traffic — an order of magnitude more text, whose
+  // result is on the canvas rather than in the conversation — is dropped.
+  test("keeps the requests and the narration, and drops the tool traffic", async () => {
+    mode = "ok";
+    const session = createAgentSession();
+    const model: Model = createEmptyModel("Long conversation");
+
+    for (let turn = 0; turn < 40; turn++) {
+      session.history.push({ role: "user", content: `Request ${turn}` } as never);
+      session.history.push({ role: "assistant", content: `Done with request ${turn}.` } as never);
+      session.history.push({
+        role: "assistant",
+        content: null,
+        tool_calls: [{ id: `c${turn}`, type: "function", function: { name: "list_model", arguments: "{}" } }],
+      } as never);
+      session.history.push({ role: "tool", tool_call_id: `c${turn}`, content: `result ${turn} `.repeat(200) } as never);
+    }
+
+    await runAgentTurn({ apiKey: "k", baseUrl, model: "m", historyChars: 20_000 }, session, "one more", () => model, {}, { tools: [] });
+
+    const roles = session.history.map((m) => (m as { role: string }).role);
+    const text = JSON.stringify(session.history);
+
+    // The oldest turn is still there — both halves of it.
+    expect(text).toContain("Request 0");
+    expect(text).toContain("Done with request 0.");
+
+    // Its tool call and its tool's 1600-character result are not.
+    expect(text).not.toContain("result 0 result 0");
+    expect(roles.filter((r) => r === "tool").length).toBeLessThan(10);
+
+    // And the front of the conversation says what happened, so the agent is not left wondering.
+    expect((session.history[0] as { content: string }).content).toContain("dropped to stay inside the context window");
+    expect((session.history[0] as { content: string }).content).toContain("list_model");
+  });
+
+  test("leaves a conversation under its budget completely alone", async () => {
+    mode = "ok";
+    const session = createAgentSession();
+    const model: Model = createEmptyModel("Short");
+    session.history.push({ role: "user", content: "Build something" } as never);
+
+    await runAgentTurn({ apiKey: "k", baseUrl, model: "m", historyChars: 1_000_000 }, session, "and again", () => model, {}, { tools: [] });
+
+    expect(session.history[0]).toEqual({ role: "user", content: "Build something" });
+  });
+});

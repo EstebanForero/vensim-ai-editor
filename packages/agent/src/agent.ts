@@ -204,8 +204,8 @@ export async function runAgentTurn(
 ): Promise<void> {
   const backend = backendFor(connection);
 
-  const summarized = await backend.summarizeHistoryIfNeeded(connection, session);
-  if (summarized !== null) callbacks.onHistorySummarized?.(summarized);
+  const summarized = await backend.compactHistoryIfNeeded(connection, session);
+  if (summarized !== null) callbacks.onHistoryCompacted?.(summarized);
 
   backend.appendUserMessage(session, userText);
 
