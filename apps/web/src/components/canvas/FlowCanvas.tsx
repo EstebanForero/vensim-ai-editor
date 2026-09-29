@@ -1,4 +1,4 @@
-import { addConnector, addFlow, deleteElement, detectLoops, moveComment, moveElement, type Loop } from "@vensim-ai/core";
+import { addConnector, addFlow, deleteElement, detectLoops, moveComment, moveElement, type Loop, type Model } from "@vensim-ai/core";
 import {
   Background,
   Controls,
@@ -15,13 +15,14 @@ import {
   type NodeMouseHandler,
   type OnNodeDrag,
 } from "@xyflow/react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { uniqueName } from "@/lib/naming";
 import { useModelStore } from "@/state/modelStore";
 import { FlowPipeEdge } from "./FlowPipeEdge";
 import { buildGraph } from "./graph";
 import { AuxNode, CommentNode, FlowNode, LookupNode, LoopNode, StockNode } from "./nodes";
 import { RelationEdge } from "./RelationEdge";
+import { needsReframe } from "./visibility";
 
 const nodeTypes = { stock: StockNode, flow: FlowNode, aux: AuxNode, lookup: LookupNode, loop: LoopNode, comment: CommentNode };
 const edgeTypes = { relation: RelationEdge, pipe: FlowPipeEdge };
@@ -42,7 +43,7 @@ export function FlowCanvas() {
   const setEditingId = useModelStore((s) => s.setEditingId);
   const openLookupEditor = useModelStore((s) => s.openLookupEditor);
 
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getViewport, fitView } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
@@ -54,6 +55,45 @@ export function FlowCanvas() {
     setEdges(e);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, selectedId, loops, editingId]);
+
+  /**
+   * Keep the model reachable.
+   *
+   * The canvas must never show nothing while the model has something in it, because the two are
+   * indistinguishable to the person looking — a blank pane reads as "my model is gone", not as
+   * "the view is elsewhere". Until now the only guarantees were React Flow's own init fit, which
+   * fires when nodes first appear on a *empty* canvas, and a re-frame after a successful
+   * `auto_layout`. Everything after that was luck, and the ordinary case — an agent adding nodes
+   * to the canvas somebody has been working on, which is exactly the canvas that is not at the
+   * origin — was the one that broke.
+   *
+   * So the invariant is checked here, whenever the model changes, rather than in each caller that
+   * might move it. The panels keep their own re-frame after `auto_layout`, because re-framing after
+   * a deliberate relayout is the intended result even when some of it is still visible; this is the
+   * safety net for everything else.
+   *
+   * Only on a *change*: panning into empty space to think, with the model untouched, must not yank
+   * the view back.
+   */
+  const paneRef = useRef<HTMLDivElement>(null);
+  const framedFor = useRef<Model | null>(null);
+  useEffect(() => {
+    const previous = framedFor.current;
+    framedFor.current = model;
+    // The first model of a session is framed by React Flow's `fitView` prop as its nodes appear.
+    if (previous === null || previous === model) return;
+
+    const pane = paneRef.current;
+    if (!pane) return;
+
+    // After the nodes for this model have been committed — this effect is declared after the one
+    // that sets them, and the frame lets React Flow measure before it is asked to fit.
+    requestAnimationFrame(() => {
+      if (needsReframe(previous, model, pane.getBoundingClientRect(), getViewport())) {
+        fitView({ duration: 300, padding: 0.2 });
+      }
+    });
+  }, [model, fitView, getViewport]);
 
   const onNodeDoubleClick: NodeMouseHandler = (_evt, node) => {
     // A lookup opens its curve editor instead of the inline rename — see LookupNode, which also
@@ -172,7 +212,7 @@ export function FlowCanvas() {
   }, [selectedId, mutate, select]);
 
   return (
-    <div className="h-full w-full">
+    <div ref={paneRef} className="h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
