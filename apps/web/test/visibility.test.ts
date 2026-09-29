@@ -121,4 +121,31 @@ describe("whether the view has to follow a change", () => {
     const before = modelWith({ name: "Only", x: 4000, y: 4000 });
     expect(needsReframe(before, createEmptyModel("Cleared"), PANE, PANNED)).toBe(false);
   });
+
+  // "I can only see the comments, and nothing else." autoLayout packs every note into a column
+  // beside the diagram, so a model laid out while the view was elsewhere can end up beside the
+  // pane with only the notes still inside it — and a note is an annotation, not the model. This is
+  // the same report as a blank canvas: the thing you came to look at is not there.
+  test("re-frames a pane that is showing only the comments", () => {
+    const model = createEmptyModel("Notes only in view");
+    addStock(model, { name: "Population", pos: { x: 3000, y: 3000 }, size: { width: 90, height: 45 } });
+    addComment(model, { text: "a note", pos: { x: 500, y: 300 }, size: { width: 200, height: 60 } });
+    // The panned pane shows flow (400,250)-(900,650) — the note, and nothing else.
+    expect(needsReframe(model, structuredClone(model), PANE, PANNED)).toBe(true);
+  });
+
+  test("leaves the pane alone when a variable is on screen, however far the notes are", () => {
+    const model = createEmptyModel("Model in view");
+    addStock(model, { name: "Population", pos: { x: 500, y: 300 }, size: { width: 90, height: 45 } });
+    addComment(model, { text: "a note", pos: { x: 8000, y: 8000 }, size: { width: 200, height: 60 } });
+    expect(needsReframe(model, structuredClone(model), PANE, PANNED)).toBe(false);
+  });
+
+  // Zoomed into one part of a large diagram, most of it is off screen by definition — re-framing
+  // then would move the canvas every time an equation changed under someone who was reading.
+  test("does not fire merely because most of a large model is off screen", () => {
+    const spread = Array.from({ length: 10 }, (_, i) => ({ name: `V${i}`, x: 400 + i * 40, y: 300 }));
+    const model = modelWith(...spread);
+    expect(needsReframe(model, structuredClone(model), PANE, PANNED)).toBe(false);
+  });
 });

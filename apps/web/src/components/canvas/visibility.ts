@@ -43,13 +43,21 @@ export interface Placed {
   size: { width: number; height: number };
 }
 
+/** The elements that carry the model itself — what someone means by "the model" when they look at
+ * the canvas. */
+export function modelElements(model: Model): Placed[] {
+  return [...model.stocks, ...model.flows, ...model.auxiliaries];
+}
+
 /**
- * Everything with a position of its own. Connectors are deliberately absent: an arrow has no box,
- * and it is visible exactly when the things it joins are, so counting it would mean counting a
- * zero-sized nothing at the origin.
+ * Everything with a position of its own, notes included.
+ *
+ * Connectors are deliberately absent from both: an arrow has no box, and it is visible exactly
+ * when the things it joins are, so counting it would mean counting a zero-sized nothing at the
+ * origin.
  */
 export function placedElements(model: Model): Placed[] {
-  return [...model.stocks, ...model.flows, ...model.auxiliaries, ...model.comments];
+  return [...modelElements(model), ...model.comments];
 }
 
 /** What the given elements occupy, in flow coordinates. Null when there are none — the one case
@@ -95,27 +103,44 @@ export function intersects(a: Box, b: Box): boolean {
 }
 
 /**
- * Whether the model changed in a way the view has to follow: something was added, and not all of it
- * is on screen.
+ * Whether the model changed in a way the view has to follow. Two ways it can't be left alone:
  *
- * "Not all" rather than "none", because the point is to see what appeared — one new node visible
- * out of four is not showing the change, it is showing a corner of it. In practice this settles
- * after a single re-frame: new elements are auto-placed in a grid near the origin, so once the
- * origin is in view the rest of the change is too, and a long agent turn does not drag the canvas
- * around on every call.
+ *   - **Something was added and it is not all on screen.** You cannot see what appeared. "Not all"
+ *     rather than "none", because one new node visible out of four is not showing the change, it is
+ *     showing a corner of it. This settles after a single re-frame — new elements are auto-placed in
+ *     a grid near the origin, so once the origin is in view the rest of the change is too.
  *
- * A model replaced wholesale — a file opened, a template — has no ids in common with the old one,
- * so every element counts as added and it re-frames if any of it is out of view. That is the same
- * rule, and it is how those cases are covered without naming them.
+ *   - **No part of the model itself is on screen.** This is the one that catches a *move*, and it
+ *     is checked against the variables rather than against everything on the canvas: `autoLayout`
+ *     repositions the diagram absolutely, from its own origin, and packs every note into a column
+ *     beside it — so a model laid out while the view was somewhere else can land beside the pane
+ *     with only the notes still in it. That reads as "I can only see the comments", which is the
+ *     same report as a blank canvas: the thing you came to look at is not there. A note is an
+ *     annotation, and a pane of annotations is a pane with no model in it.
+ *
+ * Deliberately *not* "most of the model is off screen". That is the ordinary state of anyone zoomed
+ * into one part of a large diagram, so it would re-frame the canvas every time an equation changed
+ * while they were reading. The test has to be near-total to be safe.
+ *
+ * Both are checked on a *change* rather than on every render, or panning away to look at something —
+ * with the model untouched — would yank the view back.
+ *
+ * A model replaced wholesale — a file opened, a template — shares no ids with the old one, so every
+ * element counts as added and it is covered by the first rule without naming that case.
  */
 export function needsReframe(previous: Model, model: Model, pane: { width: number; height: number }, viewport: Viewport): boolean {
-  const before = new Set(placedElements(previous).map((element) => element.id));
-  const added = placedElements(model).filter((element) => !before.has(element.id));
-  if (added.length === 0) return false;
+  const placed = placedElements(model);
+  if (placed.length === 0) return false;
 
   const visible = visibleBounds(pane, viewport);
-  return !added.every((element) => {
+  const onScreen = (element: Placed) => {
     const box = boundsOf([element]);
     return box !== null && intersects(box, visible);
-  });
+  };
+
+  const before = new Set(placedElements(previous).map((element) => element.id));
+  const added = placed.filter((element) => !before.has(element.id));
+  if (added.length > 0 && !added.every(onScreen)) return true;
+
+  return !modelElements(model).some(onScreen);
 }

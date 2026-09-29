@@ -36,6 +36,8 @@ export function Toolbar() {
   const toggleFlowMode = useModelStore((s) => s.toggleFlowMode);
   const showLoops = useModelStore((s) => s.showLoops);
   const toggleShowLoops = useModelStore((s) => s.toggleShowLoops);
+  const relations = useModelStore((s) => s.relations);
+  const setRelations = useModelStore((s) => s.setRelations);
   const runUnitsCheck = useModelStore((s) => s.runUnitsCheck);
   const runArchetypeCheck = useModelStore((s) => s.runArchetypeCheck);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -147,6 +149,26 @@ export function Toolbar() {
       >
         <RotateCw className="size-4" /> Loops
       </Button>
+      {/* Two options rather than one toggle, because the difference is the point: straight is
+          what a relation writes as, and curved is what you get by dragging one. */}
+      <div
+        className="flex h-8 items-center rounded-md border border-input text-xs"
+        title="How relations are drawn, on the canvas and in the .mdl you save. Straight writes the midpoint of the line; Curved writes a control point offset to one side, which is what Vensim draws as a bow — drag a relation's +/- handle to place it."
+      >
+        {(["straight", "curved"] as const).map((style) => (
+          <button
+            key={style}
+            type="button"
+            onClick={() => setRelations(style)}
+            aria-pressed={relations === style}
+            className={`h-full px-2 capitalize transition-colors first:rounded-l-[5px] last:rounded-r-[5px] ${
+              relations === style ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
+            }`}
+          >
+            {style}
+          </button>
+        ))}
+      </div>
       <Button
         size="sm"
         variant="outline"
@@ -209,7 +231,7 @@ export function Toolbar() {
         >
           <FolderOpen className="size-4" /> Open .mdl
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => downloadMdl(model)}>
+        <Button size="sm" variant="ghost" onClick={() => downloadMdl(model, relations)}>
           <Save className="size-4" /> Save .mdl
         </Button>
         <Button

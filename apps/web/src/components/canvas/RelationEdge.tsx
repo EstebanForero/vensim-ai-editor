@@ -36,12 +36,19 @@ function controlPointForMidpoint(midpoint: Position, p0: Position, p2: Position)
 export function RelationEdge({ id, sourceX, sourceY, targetX, targetY, data, style, markerEnd }: EdgeProps) {
   const mutate = useModelStore((s) => s.mutate);
   const { screenToFlowPosition } = useReactFlow();
+  const relations = useModelStore((s) => s.relations);
   const connector = (data as { connector?: Connector } | undefined)?.connector;
   const source = { x: sourceX, y: sourceY };
   const target = { x: targetX, y: targetY };
+  // Straight is the default and the one that round-trips exactly: a curve needs a control point,
+  // and the only free source for one was the relation's own id — which carries a random suffix, so
+  // the same model curved differently on every save. See `writeMdl`'s `RelationStyle`.
+  const straight = relations === "straight";
   const control = connector?.bend ?? defaultControlPoint(sourceX, sourceY, targetX, targetY);
-  const handlePos = curveMidpoint(source, control, target);
-  const path = `M ${sourceX},${sourceY} Q ${control.x},${control.y} ${targetX},${targetY}`;
+  const handlePos = straight ? { x: (sourceX + targetX) / 2, y: (sourceY + targetY) / 2 } : curveMidpoint(source, control, target);
+  const path = straight
+    ? `M ${sourceX},${sourceY} L ${targetX},${targetY}`
+    : `M ${sourceX},${sourceY} Q ${control.x},${control.y} ${targetX},${targetY}`;
 
   const onHandlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -74,11 +81,15 @@ export function RelationEdge({ id, sourceX, sourceY, targetX, targetY, data, sty
       <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} />
       <EdgeLabelRenderer>
         <div
-          className="nodrag nopan absolute flex size-4 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border border-[var(--connector-color)] bg-background text-[10px] font-bold text-[var(--connector-color)] shadow active:cursor-grabbing"
+          className={`nodrag nopan absolute flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--connector-color)] bg-background text-[10px] font-bold text-[var(--connector-color)] shadow ${
+            straight ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+          }`}
           style={{ left: handlePos.x, top: handlePos.y, pointerEvents: "all" }}
-          onPointerDown={onHandlePointerDown}
-          onDoubleClick={onHandleDoubleClick}
-          title="Drag to curve this relation; double-click to reset"
+          // Straight relations have no curve to drag — the handle is the polarity badge and
+          // nothing more, rather than a grab that silently does nothing to what is written out.
+          onPointerDown={straight ? undefined : onHandlePointerDown}
+          onDoubleClick={straight ? undefined : onHandleDoubleClick}
+          title={straight ? "Relations are drawn straight — switch to Curved in the toolbar to bend this one" : "Drag to curve this relation; double-click to reset"}
         >
           {connector?.polarity}
         </div>

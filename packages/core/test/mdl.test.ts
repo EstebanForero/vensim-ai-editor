@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { addAuxiliary, addComment, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
 import { detectLoops } from "../src/loops/index.js";
-import { createEmptyModel } from "../src/model/types.js";
+import { createEmptyModel, type Model } from "../src/model/types.js";
 import { parseMdl } from "../src/mdl/parser.js";
 import { writeMdl } from "../src/mdl/writer.js";
 import { simulate } from "../src/sim/engine.js";
@@ -533,5 +533,60 @@ TIME STEP  = 0.25
     const labelId = Number(labelLine.split(",")[1]);
     const valveId = Number(valveLine.split(",")[1]);
     expect(labelId).toBe(valveId + 1);
+  });
+});
+
+describe("how relations are written", () => {
+  /** The single waypoint a `1,` arrow record carries, as `[x, y]`. */
+  function waypointOf(text: string, shapeId: string): [number, number] {
+    const arrow = text.split("\n").find((line) => line.startsWith("1,") && line.split(",")[1] === shapeId);
+    const point = /\|\((-?\d+),(-?\d+)\)\|/.exec(arrow ?? "");
+    if (!point) throw new Error(`no waypoint on the arrow from shape ${shapeId}`);
+    return [Number(point[1]), Number(point[2])];
+  }
+
+  function twoConnected(): Model {
+    const model = createEmptyModel("Two");
+    const a = addStock(model, { name: "A", pos: { x: 0, y: 0 }, size: { width: 90, height: 45 } });
+    const b = addStock(model, { name: "B", pos: { x: 200, y: 100 }, size: { width: 90, height: 45 } });
+    addConnector(model, { from: a.id, to: b.id, polarity: "+" });
+    return model;
+  }
+
+  // The bug this guards: the curve used to be seeded from the connector's own id, and an id
+  // carries a random suffix — so the same model written twice produced different arrow geometry,
+  // and Vensim drew the same model differently on two saves. Two runs in one process is enough.
+  test("the same model writes the same bytes twice, in both styles", () => {
+    const model = twoConnected();
+    expect(writeMdl(model)).toBe(writeMdl(model));
+    expect(writeMdl(model, { relations: "curved" })).toBe(writeMdl(model, { relations: "curved" }));
+  });
+
+  // Centres are (45,22.5) and (245,122.5), so the midpoint is (145,72.5), rounded to (145,73).
+  test("straight writes the midpoint of the line, and is the default", () => {
+    const model = twoConnected();
+    expect(writeMdl(model)).toBe(writeMdl(model, { relations: "straight" }));
+    const arrow = writeMdl(model).split("\n").find((line) => line.startsWith("1,"))!;
+    expect(waypointOf(writeMdl(model), arrow.split(",")[1]!)).toEqual([145, 73]);
+  });
+
+  test("curved writes a point beside the line rather than on it", () => {
+    const model = twoConnected();
+    const straight = writeMdl(model).split("\n").find((line) => line.startsWith("1,"))!.split(",")[1]!;
+    const [x, y] = waypointOf(writeMdl(model, { relations: "curved" }), straight);
+    // Perpendicular to (200,100), so displaced off the chord — never the midpoint.
+    expect([x, y]).not.toEqual([145, 73]);
+    expect(Math.hypot(x - 145, y - 73)).toBeGreaterThan(1);
+  });
+
+  // A bend the user dragged is a deliberate placement, and a style is only about what happens
+  // when there is nothing to honour.
+  test("a manual bend is written as given, whichever style is asked for", () => {
+    const model = twoConnected();
+    const connector = model.connectors[0]!;
+    connector.bend = { x: 300, y: 400 };
+    const id = writeMdl(model).split("\n").find((line) => line.startsWith("1,"))!.split(",")[1]!;
+    expect(waypointOf(writeMdl(model), id)).toEqual([300, 400]);
+    expect(waypointOf(writeMdl(model, { relations: "curved" }), id)).toEqual([300, 400]);
   });
 });

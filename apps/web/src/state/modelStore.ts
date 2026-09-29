@@ -9,6 +9,7 @@ import {
   type ArchetypeId,
   type ArchetypeMatch,
   type Model,
+  type RelationStyle,
   type SimResult,
   type UnitIssue,
   type ValidationIssue,
@@ -185,6 +186,8 @@ interface ModelStoreState {
   activeConnectionId: string;
 
   showLoops: boolean;
+  /** How relations are drawn on the canvas and written to a `.mdl`. */
+  relations: RelationStyle;
   /** When true, clicking two nodes in sequence on the canvas adds a relation between them. */
   relationMode: boolean;
   pendingRelationFrom: string | null;
@@ -247,6 +250,7 @@ interface ModelStoreState {
   setAgentRunning: (running: boolean) => void;
   clearChat: () => void;
   toggleShowLoops: () => void;
+  setRelations: (style: RelationStyle) => void;
   toggleRelationMode: () => void;
   setPendingRelationFrom: (id: string | null) => void;
   toggleFlowMode: () => void;
@@ -298,6 +302,10 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   })(),
 
   showLoops: true,
+  // Straight, because a curve has to come from somewhere and the only free source was the
+  // relation's own id — which carries a random suffix, so the same model saved twice curved
+  // differently and Vensim drew it differently. See writeMdl's RelationStyle.
+  relations: "straight",
   relationMode: false,
   pendingRelationFrom: null,
   flowMode: false,
@@ -456,6 +464,7 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
   clearChat: () => set({ chatMessages: [] }),
 
   toggleShowLoops: () => set((s) => ({ showLoops: !s.showLoops })),
+  setRelations: (style) => set({ relations: style }),
   toggleRelationMode: () =>
     set((s) => ({ relationMode: !s.relationMode, pendingRelationFrom: null, flowMode: false, pendingFlowFrom: null })),
   setPendingRelationFrom: (id) => set({ pendingRelationFrom: id }),

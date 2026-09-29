@@ -1,4 +1,4 @@
-import { parseMdl, writeMdl, writeXmile, type Model } from "@vensim-ai/core";
+import { parseMdl, writeMdl, writeXmile, type Model, type RelationStyle } from "@vensim-ai/core";
 
 function download(text: string, filename: string, mimeType: string): void {
   const blob = new Blob([text], { type: mimeType });
@@ -10,8 +10,8 @@ function download(text: string, filename: string, mimeType: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function downloadMdl(model: Model): void {
-  download(writeMdl(model), `${model.name || "model"}.mdl`, "text/plain");
+export function downloadMdl(model: Model, relations: RelationStyle = "straight"): void {
+  download(writeMdl(model, { relations }), `${model.name || "model"}.mdl`, "text/plain");
 }
 
 /** XMILE (the OASIS open standard) as an alternative export target — Vensim can open it

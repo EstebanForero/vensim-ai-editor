@@ -95,7 +95,13 @@ function rewriteEquationRefs(equation: string, nameMap: Map<string, string>): st
   return out;
 }
 
-export function writeMdl(model: Model): string {
+export interface WriteMdlOptions {
+  /** How relations with no bend of their own are written. Default `"straight"`. */
+  relations?: RelationStyle;
+}
+
+export function writeMdl(model: Model, options: WriteMdlOptions = {}): string {
+  const relations = options.relations ?? "straight";
   // Built once, up front, so every reference to an accented name — whether it's the name's own
   // definition line, a quoted reference inside another variable's equation text, a sketch label,
   // or the stock's own hand-built INTEG term list — resolves to the exact same ASCII spelling.
@@ -150,7 +156,7 @@ export function writeMdl(model: Model): string {
   out += variableRecord("SAVEPER", "TIME STEP", model.simSpec.timeUnits, "The frequency with which output is stored.");
   out += variableRecord("TIME STEP", String(model.simSpec.dt), model.simSpec.timeUnits, "The time step for the simulation.");
 
-  out += writeSketch(model);
+  out += writeSketch(model, relations);
 
   // Every real Vensim-saved .mdl this editor has as a reference (flow-diagram.mdl,
   // aitraining.mdl) uses CRLF line endings throughout, and so does Vensim's own xmutil
@@ -217,7 +223,7 @@ function halfSize(size: { width: number; height: number }): { width: number; hei
  * everything after it. */
 const VARIABLE_RECORD_TAIL = "0,0,-1,0,0,0,0,0,0,0,0,0";
 
-function writeSketch(model: Model): string {
+function writeSketch(model: Model, relations: RelationStyle): string {
   const vars = allVariables(model);
 
   // Every uid below is handed out from ONE counter, in the exact order its record is WRITTEN —
@@ -313,7 +319,7 @@ function writeSketch(model: Model): string {
   let arrowId = nextId;
   for (const c of model.connectors) {
     arrowId += 1;
-    out += connectorArrowRecord(model, c, arrowId, idIndex, valveIdByFlow);
+    out += connectorArrowRecord(model, c, arrowId, idIndex, valveIdByFlow, relations);
   }
 
   let commentId = arrowId;
@@ -362,18 +368,52 @@ function graphPadNames(model: Model): string[] {
   return model.pinnedGraphs;
 }
 
+/**
+ * How a relation with no bend of its own is drawn on the canvas and written to the file.
+ *
+ * `"straight"` writes the chord's midpoint, which Vensim draws as a straight line; `"curved"`
+ * writes a point offset perpendicular to the chord, which is what a Vensim user gets by dragging
+ * an arrow. A bend the user dragged is honoured either way — a style is about what happens when
+ * there is nothing to honour.
+ */
+export type RelationStyle = "straight" | "curved";
+
+/**
+ * The single waypoint an arrow carries.
+ *
+ * The curved default used to be seeded from `c.id` — and an id carries a random suffix, so **the
+ * same model saved twice produced different arrow geometry**, and Vensim drew it differently.
+ * That is not a curve anyone asked for: it is a curve that changes between two saves a second
+ * apart. Seeding from the endpoints' *names* makes it the same every time a model is written, and
+ * `"straight"` — the default — has nothing to vary at all.
+ */
+function relationWaypoint(
+  c: Connector,
+  fromVar: Variable | undefined,
+  toVar: Variable | undefined,
+  fromCenter: Position | undefined,
+  toCenter: Position | undefined,
+  relations: RelationStyle,
+): Position {
+  if (c.bend) return c.bend;
+  if (!fromCenter || !toCenter) return { x: 0, y: 0 };
+  if (relations === "straight") return { x: (fromCenter.x + toCenter.x) / 2, y: (fromCenter.y + toCenter.y) / 2 };
+  return curveWaypoint(fromCenter, toCenter, `${fromVar?.name ?? ""}->${toVar?.name ?? ""}`);
+}
+
 function connectorArrowRecord(
   model: Model,
   c: Connector,
   arrowId: number,
   idIndex: Map<string, number>,
   valveIdByFlow: Map<string, number>,
+  relations: RelationStyle,
 ): string {
   const fromVar = findVariable(model, c.from);
   const toVar = findVariable(model, c.to);
   const fromCenter = fromVar && center(fromVar.pos, fromVar.size);
   const toCenter = toVar && center(toVar.pos, toVar.size);
-  const bend = c.bend ?? (fromCenter && toCenter ? curveWaypoint(fromCenter, toCenter, c.id) : { x: 0, y: 0 });
+  const bend = relationWaypoint(c, fromVar, toVar, fromCenter, toCenter, relations);
   // Field codes (shape=1, thick=0, ..., dtype=192) match a real causal/info-link arrow (see
   // example-compatibility/flow-diagram.mdl's `1,12,1,5,1,0,43,0,0,192,...` records). The "43"
   // there is specifically the `pol` field — per Vensim's own sketch-format reference, this is
