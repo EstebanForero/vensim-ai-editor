@@ -1,4 +1,4 @@
-import { addAuxiliary, addComment, addLookup, addStock, annotateLoops, autoLayout } from "@vensim-ai/core";
+import { addAuxiliary, addComment, addLookup, addStock, allVariables, annotateLoops, autoLayout, clearModel } from "@vensim-ai/core";
 import { useReactFlow } from "@xyflow/react";
 import {
   Droplet,
@@ -13,6 +13,7 @@ import {
   Shapes,
   Square,
   Table2,
+  Trash2,
   Waves,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -64,6 +65,15 @@ export function Toolbar() {
   };
 
   const onAnnotateLoops = () => mutate((m) => annotateLoops(m));
+
+  // Clearing throws away everything on the canvas and there is no undo, so it asks first — the
+  // same contract the Archetypes dialog's "Open example" and the drop-down's sample models do not
+  // have, and should: the difference is that this one cannot be mistaken for a view change.
+  const isEmpty = allVariables(model).length === 0 && model.comments.length === 0;
+  const onClearModel = () => {
+    if (!window.confirm("Clear the model? Every stock, flow, variable, relation and comment is removed, and there is no undo — save it first with Save .mdl if you want to keep it.")) return;
+    mutate((m) => clearModel(m));
+  };
 
   const onAddStock = () =>
     addNamed((m) => {
@@ -227,7 +237,17 @@ export function Toolbar() {
         <Button
           size="sm"
           variant="ghost"
+          onClick={onClearModel}
+          disabled={isEmpty}
+          title="Clear the model — every stock, flow, variable, relation and comment goes. There is no undo: save it first if you want to keep it."
+        >
+          <Trash2 className="size-4" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
           onClick={() => openMdlFilePicker((m) => setModel(m), (err) => setFileError(err))}
+          title="Open a .mdl — replaces what is on the canvas"
         >
           <FolderOpen className="size-4" />
         </Button>
