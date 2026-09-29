@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { NEUTRAL_TOOLS } from "@vensim-ai/agent";
+import { buildArchetypeExample, createEmptyModel, generateQuestions, type DrillSkill } from "@vensim-ai/core";
 import { EDITING_TOOLS, MUTATING_TOOL_NAMES, MODES, READ_ONLY_TOOLS, findMode, planTurn, type StudyMode } from "../src/study/modes.js";
+import { DEFAULT_DRILL, DRILLS, findDrill } from "../src/study/drill/modes.js";
 
 /**
  * The mode table is the study tab's whole design, so it is the thing worth pinning: what a turn is
@@ -175,5 +177,56 @@ describe("planning a turn", () => {
 
   test("an unknown id falls back to the first mode rather than throwing", () => {
     expect(findMode("no-such-mode").id).toBe(MODES[0]!.id);
+  });
+});
+
+describe("the drills", () => {
+  test("ids are unique, and none collides with a mode's", () => {
+    const ids = DRILLS.map((d) => d.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.filter((id) => MODES.some((m) => m.id === id))).toEqual([]);
+  });
+
+  test("every drill says what it drills, how much of it, and what to do with nothing to practise on", () => {
+    for (const drill of DRILLS) {
+      expect({ id: drill.id, label: drill.label.length > 0, blurb: drill.blurb.length > 20, count: drill.count > 0, hint: drill.hint.length > 20 }).toEqual({
+        id: drill.id,
+        label: true,
+        blurb: true,
+        count: true,
+        hint: true,
+      });
+      expect(drill.skills.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("an unknown drill id falls back to the first rather than throwing", () => {
+    expect(findDrill("no-such-drill").id).toBe(DEFAULT_DRILL.id);
+    expect(DRILLS).toContain(DEFAULT_DRILL);
+  });
+
+  test("every drill can fill a sitting of the size it advertises", () => {
+    // Only true where there is something to ask about — an empty model is checked below. This is
+    // the other half: on a real model, a drill must not advertise eight questions and produce two.
+    const model = buildArchetypeExample("tragedy-of-the-commons");
+    for (const drill of DRILLS.filter((d) => !d.skills.includes("archetypes"))) {
+      const questions = generateQuestions(model, { skills: drill.skills, count: drill.count, seed: 0 });
+      expect({ id: drill.id, full: questions.length >= drill.count }).toEqual({ id: drill.id, full: true });
+    }
+  });
+
+  // The complaint this was built for: with an empty canvas, "Which archetype?" had nothing to show
+  // and nothing to say. A situation needs no model, so this drill is the one that works from cold.
+  test("the archetype drill works on an empty canvas, because a situation needs no model", () => {
+    const questions = generateQuestions(createEmptyModel("Empty"), { skills: ["archetypes"], count: 6, seed: 0 });
+    expect(questions.length).toBeGreaterThanOrEqual(6);
+    expect(questions.every((q) => q.situation !== undefined && q.kind === "choice")).toBe(true);
+  });
+
+  test("a model-based drill produces nothing on an empty canvas rather than an error or a guess", () => {
+    const empty = createEmptyModel("Empty");
+    for (const skill of ["loops", "equations"] as DrillSkill[]) {
+      expect({ skill, questions: generateQuestions(empty, { skills: [skill] }) }).toEqual({ skill, questions: [] });
+    }
   });
 });

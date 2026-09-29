@@ -92,6 +92,37 @@ the turn is offered, so a "find the mistakes" turn can be pointed at the model y
 working on without risk. A test asserts every tool the agent has is classified as one or the other,
 so a tool added later can't slip into a read-only mode unclassified.
 
+### Drills
+
+Asking an expert is not practice at being one. Every mode above *answers* — "Which archetype?"
+names it, "Find the mistakes" finds them — and none of them ever asks you anything, which left the
+obvious gap: the mode for recognising an archetype had nothing to recognise, and on an empty canvas
+nothing to say at all.
+
+So the tab has a second row of chips, **Practise**, above the modes. A drill is a question the app
+asks and marks itself. No API key, no agent, and the mark is a *comparison* rather than a judgement:
+every question carries the answer an analyser produced — `detectLoops`, `detectArchetypes`,
+`checkUnits`, `equationDependencies`, `simulate` — and records which one, so a wrong mark can be
+traced back to the thing that produced it rather than to a sentence somebody wrote.
+
+- **Identify the archetype** — reads you a short situation and asks which pattern it is. Situations
+  need no model, so this is the one drill that works from a cold start.
+- **Read the loops** — how many, reinforcing or balancing, which way round on the canvas, and what is
+  in each one.
+- **Numbers and units** — what depends on what, what a stock reaches by the end of the run, whether
+  it goes negative, and which variable has a units problem.
+- **Mixed practice** — all three, interleaved. Blocking by skill feels better and retains worse.
+
+A sitting is questions from one pool in turn, marked as you go, with the explanation shown whatever
+you answered. Where a model's structure is ambiguous — and most are, since `detectArchetypes`
+reports candidates rather than verdicts — the drill stays quiet rather than marking a defensible
+reading wrong.
+
+The questions and the marking live in `packages/core/src/drills/`, so they are testable without a
+browser and usable by anything that has a model. A drill is a row in
+`apps/web/src/study/drill/modes.ts`. Nothing in there can change what is on the canvas: practising
+cannot alter what the editor does.
+
 `apps/web/src/study/` is self-contained and the dependency runs one way: it uses the editor (the
 store, the canvas, the shared chat rendering), and the editor imports exactly one thing back —
 `StudyPanel`, rendered as one more tab. Deleting the folder costs two lines in `App.tsx`.
