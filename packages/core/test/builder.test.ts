@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { buildArchetypeExample } from "../src/archetypes/examples.js";
+import { autoLayout } from "../src/layout/autoLayout.js";
 import {
   addAuxiliary,
   addComment,
   addConnector,
+  addConstant,
   addFlow,
   addStock,
   clearModel,
@@ -12,7 +15,7 @@ import {
   setFlowEndpoint,
   setSimSpec,
 } from "../src/model/builder/index.js";
-import { createEmptyModel } from "../src/model/types.js";
+import { allVariables, createEmptyModel, type Model, type Variable } from "../src/model/types.js";
 import { validateModel } from "../src/model/validate.js";
 
 describe("builder", () => {
@@ -244,5 +247,45 @@ describe("reserved names", () => {
     const a = addAuxiliary(m, { name: "Placeholder", equation: "7" });
     a.name = "Time"; // as an imported .mdl could carry it
     expect(validateModel(m).some((i) => i.elementId === a.id)).toBe(true);
+  });
+});
+
+describe("where a new element lands", () => {
+  /** Whether two elements' boxes overlap — the same test the canvas makes visually. */
+  function overlaps(a: Variable, b: Variable): boolean {
+    return (
+      a.pos.x < b.pos.x + b.size.width &&
+      b.pos.x < a.pos.x + a.size.width &&
+      a.pos.y < b.pos.y + b.size.height &&
+      b.pos.y < a.pos.y + a.size.height
+    );
+  }
+
+  function clashes(model: Model, element: Variable): string[] {
+    return allVariables(model)
+      .filter((v) => v.id !== element.id && overlaps(v, element))
+      .map((v) => v.name);
+  }
+
+  // The grid slot is named by how many elements already exist, and that is only a guess. It is a
+  // bad one as soon as anything has moved the model: `autoLayout` repositions everything
+  // absolutely, from the diagram's own origin, so the slot the count names is already occupied and
+  // the new element was drawn *underneath* an existing one. Reported as "I added a variable and I
+  // cannot see it" — which is the one thing this placement exists to prevent.
+  test("it does not land on top of a laid-out model", () => {
+    const model = buildArchetypeExample("limits-to-growth");
+    autoLayout(model);
+    const added = addConstant(model, { name: "Nueva", value: 7, units: "Second" });
+    expect(clashes(model, added)).toEqual([]);
+  });
+
+  // And not on top of the one added a moment before it, which the count alone also cannot see.
+  test("nor on top of the element added just before it", () => {
+    const model = buildArchetypeExample("tragedy-of-the-commons");
+    autoLayout(model);
+    for (let i = 0; i < 3; i++) {
+      const added = addConstant(model, { name: `Nueva ${i}`, value: 7, units: "Second" });
+      expect({ i, clashes: clashes(model, added) }).toEqual({ i, clashes: [] });
+    }
   });
 });

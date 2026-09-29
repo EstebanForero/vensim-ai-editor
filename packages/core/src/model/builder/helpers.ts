@@ -23,9 +23,31 @@ import {
  */
 export function autoPlacePosition(model: Model): Position {
   const count = allVariables(model).length + model.comments.length;
-  const col = count % 6;
-  const row = Math.floor(count / 6);
-  return { x: 120 + col * 160, y: 120 + row * 110 };
+  const slot = (i: number) => ({ x: 120 + (i % 6) * 160, y: 120 + Math.floor(i / 6) * 110 });
+
+  // Walk the grid until a slot is actually clear, rather than taking the one the count happens to
+  // name. The count is only a starting guess, and it is a bad one as soon as anything has moved
+  // the model somewhere else: after an `autoLayout` — which repositions everything absolutely,
+  // from the diagram's own origin — the slot that count names is already occupied, so the new
+  // element was drawn underneath an existing one and the report was "I added a variable and I
+  // cannot see it". Which is the exact thing this function exists to prevent, one layout call
+  // away from not doing it.
+  const placed: { pos: Position; size: { width: number; height: number } }[] = [...allVariables(model), ...model.comments];
+  for (let i = count; i < count + 1000; i++) {
+    const position = slot(i);
+    const clear = !placed.some(
+      (e) =>
+        position.x < e.pos.x + e.size.width &&
+        e.pos.x < position.x + 160 &&
+        position.y < e.pos.y + e.size.height &&
+        e.pos.y < position.y + 110,
+    );
+    if (clear) return position;
+  }
+
+  // A thousand slots is far past any real diagram; if every one is taken, restarting the grid is
+  // better than refusing to place the element at all.
+  return slot(count);
 }
 
 /** Strips accents/diacritics (e.g. "Recepción" -> "Recepcion") — applied at every point free
