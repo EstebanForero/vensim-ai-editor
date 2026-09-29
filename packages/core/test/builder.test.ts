@@ -9,6 +9,7 @@ import {
   addFlow,
   addStock,
   clearModel,
+  setCommentText,
   deleteElement,
   renameVariable,
   setEquation,
@@ -287,5 +288,35 @@ describe("where a new element lands", () => {
       const added = addConstant(model, { name: `Nueva ${i}`, value: 7, units: "Second" });
       expect({ i, clashes: clashes(model, added) }).toEqual({ i, clashes: [] });
     }
+  });
+});
+
+describe("a comment's box", () => {
+  // A comment's text is drawn with `whitespace-pre-wrap` and nothing clips it, so a box smaller
+  // than the text does not hide the text — it draws it over whatever is beside it. Every comment
+  // used to be 160x60 whatever it said: a loop annotation is a sentence and an agent's note is a
+  // paragraph, and the paragraph measured 190 units of text inside a 60-unit box. That is what
+  // "everything disappeared" looked like — the note was on top of the model — and it also made
+  // autoLayout stack a column of them 60 apart while each was really three times that.
+  test("is tall enough for its text", () => {
+    const model = createEmptyModel("Notes");
+    const short = addComment(model, { text: "ok" });
+    const long = addComment(model, { text: "x".repeat(300) });
+    expect(long.size.height).toBeGreaterThan(short.size.height);
+    expect(long.size.height).toBeGreaterThanOrEqual(Math.ceil(300 / 24) * 18);
+  });
+
+  test("grows when the text it holds grows", () => {
+    const model = createEmptyModel("Notes");
+    const comment = addComment(model, { text: "one line" });
+    const before = comment.size.height;
+    setCommentText(model, comment.id, "much longer ".repeat(30));
+    expect(comment.size.height).toBeGreaterThan(before);
+  });
+
+  // Never smaller than the default: a two-word comment should not end up in a sliver.
+  test("never shrinks below the default for a short one", () => {
+    const model = createEmptyModel("Notes");
+    expect(addComment(model, { text: "" }).size).toEqual({ width: 160, height: 60 });
   });
 });
