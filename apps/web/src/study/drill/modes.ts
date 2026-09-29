@@ -24,6 +24,16 @@ export interface Drill {
   count: number;
   /** Shown before the first question — in particular when there is nothing to ask about yet. */
   hint: string;
+  /**
+   * True when every question is about the model on the canvas, so an empty canvas means no
+   * questions at all rather than fewer. That is what the panel offers to fix — by having the agent
+   * build something to practise on, which is the one thing a learner cannot reasonably do for
+   * themselves before they have learned it.
+   */
+  needsModel: boolean;
+  /** True when the agent can be asked for a fresh *situation* to identify. Only the archetype
+   * questions work that way: the app picks the archetype, so the answer stays exact. */
+  canAskForSituation: boolean;
 }
 
 export const DRILLS: Drill[] = [
@@ -34,6 +44,8 @@ export const DRILLS: Drill[] = [
     skills: ["archetypes"],
     count: 6,
     hint: "You will get a short situation to read. Work out which archetype it is — no model needed, so this one works on an empty canvas.",
+    needsModel: false,
+    canAskForSituation: true,
   },
   {
     id: "read-the-loops",
@@ -41,7 +53,9 @@ export const DRILLS: Drill[] = [
     blurb: "How many, which way, and what is in each one.",
     skills: ["loops"],
     count: 6,
-    hint: "Questions about the feedback loops in the model on the canvas. Draw something with a loop in it, or open an example from the Archetypes dialog.",
+    hint: "Questions about the feedback loops in the model on the canvas.",
+    needsModel: true,
+    canAskForSituation: false,
   },
   {
     id: "numbers-and-units",
@@ -49,7 +63,9 @@ export const DRILLS: Drill[] = [
     blurb: "What depends on what, what it runs to, and what is dimensionally wrong.",
     skills: ["equations"],
     count: 6,
-    hint: "Questions about the model's equations and its run. They come from the model on the canvas, so there is nothing here until there is a model.",
+    hint: "Questions about the model's equations and its run.",
+    needsModel: true,
+    canAskForSituation: false,
   },
   {
     id: "mixed-practice",
@@ -58,6 +74,8 @@ export const DRILLS: Drill[] = [
     skills: ["loops", "equations", "archetypes"],
     count: 8,
     hint: "Questions from all three skills in turn. Interleaving them is deliberate — recognising which kind of question you are being asked is part of the skill.",
+    needsModel: false,
+    canAskForSituation: true,
   },
 ];
 

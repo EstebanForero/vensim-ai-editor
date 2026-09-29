@@ -113,10 +113,37 @@ traced back to the thing that produced it rather than to a sentence somebody wro
   it goes negative, and which variable has a units problem.
 - **Mixed practice** — all three, interleaved. Blocking by skill feels better and retains worse.
 
+The archetypes are the four the course covers — Limits to Growth, Shifting the Burden, Tragedy of the
+Commons, Eroding Goals — not the seven the detector knows. The Archetypes dialog still reports
+against all seven: what a detector can find and what you are being examined on are different
+questions, and offering the other three as options would spend attention on vocabulary outside the
+material. Those four are declared once, in `packages/core/src/drills/situations.ts`, which is also
+where each one's *tell* lives — the feature that separates it from its nearest neighbour, shown after
+a wrong answer, because the definition is not what a wrong answer needs.
+
 A sitting is questions from one pool in turn, marked as you go, with the explanation shown whatever
 you answered. Where a model's structure is ambiguous — and most are, since `detectArchetypes`
 reports candidates rather than verdicts — the drill stays quiet rather than marking a defensible
 reading wrong.
+
+#### The agent's half
+
+A drill that cannot produce a question is not much use, and two cases need the agent to get there.
+Both are arranged so that the *app* decides what is being asked, which is what keeps the marking a
+comparison rather than a judgement:
+
+- **Nothing to practise on.** Every question in "Read the loops" and "Numbers and units" is about the
+  model on the canvas, so on an empty canvas there are none — and being told to go and draw the
+  diagram first is nonsense, because drawing it is the thing being learned. The panel offers to have
+  the agent build something instead, from a topic you can name or one it picks. It builds with the
+  same tools the chat panel uses, so what lands on the canvas is a model the editor could have
+  produced; the questions afterwards come from *analysing* it, never from anything the model said
+  about its own work.
+- **Situation fatigue.** The curated situations run out, so "Identify the archetype" offers `✦` — a
+  fresh one written on the spot. The archetype is chosen here, and never the one just answered, so
+  the answer never comes from the model's own account of what it wrote. The reply is checked for the
+  things that would give it away — naming the archetype, or describing which loop does what — and one
+  that fails is discarded in favour of a curated situation rather than shipped.
 
 The questions and the marking live in `packages/core/src/drills/`, so they are testable without a
 browser and usable by anything that has a model. A drill is a row in

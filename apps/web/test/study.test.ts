@@ -205,6 +205,26 @@ describe("the drills", () => {
     expect(DRILLS).toContain(DEFAULT_DRILL);
   });
 
+  // `needsModel` is what decides between "nothing here yet" and "let me build you something to
+  // practise on", and getting it wrong is how the tab ends up telling someone to go and draw the
+  // diagram they were trying to learn. The only way to check it is to ask the generator.
+  test("a drill that says it needs a model produces nothing without one — and one that doesn't still does", () => {
+    const empty = createEmptyModel("Empty");
+    for (const drill of DRILLS) {
+      const questions = generateQuestions(empty, { skills: drill.skills, seed: 0 });
+      expect({ id: drill.id, asked: questions.length > 0 }).toEqual({ id: drill.id, asked: !drill.needsModel });
+    }
+  });
+
+  test("only a drill that asks about archetypes offers to have the agent write one", () => {
+    for (const drill of DRILLS) {
+      expect({ id: drill.id, canAsk: drill.canAskForSituation }).toEqual({
+        id: drill.id,
+        canAsk: drill.skills.includes("archetypes"),
+      });
+    }
+  });
+
   test("every drill can fill a sitting of the size it advertises", () => {
     // Only true where there is something to ask about — an empty model is checked below. This is
     // the other half: on a real model, a drill must not advertise eight questions and produce two.

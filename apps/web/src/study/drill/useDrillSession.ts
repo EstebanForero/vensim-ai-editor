@@ -27,6 +27,9 @@ export interface DrillSession {
   /** Answer a choice question. Picking the option *is* the answer, so this marks it in the same
    * step — there is no separate confirm for something that was clicked. */
   choose(option: string): void;
+  /** Swap the current question for one supplied from elsewhere — an AI-written situation, whose
+   * archetype the caller chose, so the answer is still the app's and the marking unchanged. */
+  replaceQuestion(question: DrillQuestion): void;
   next(): void;
   restart(): void;
   score: { asked: number; correct: number };
@@ -71,6 +74,22 @@ export function useDrillSession(drill: Drill): DrillSession {
     [mark],
   );
 
+  const replaceQuestion = useCallback(
+    (replacement: DrillQuestion) => {
+      setSitting((s) => {
+        const questions = [...s.questions];
+        // Appended when the sitting had run out, so asking for a fresh one at the end extends it
+        // rather than silently doing nothing.
+        if (index < questions.length) questions[index] = replacement;
+        else questions.push(replacement);
+        return { questions };
+      });
+      setResponse("");
+      setVerdict(null);
+    },
+    [index],
+  );
+
   const next = useCallback(() => {
     setResponse("");
     setVerdict(null);
@@ -95,6 +114,7 @@ export function useDrillSession(drill: Drill): DrillSession {
     setResponse,
     submit,
     choose,
+    replaceQuestion,
     next,
     restart,
     score,

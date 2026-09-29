@@ -17,13 +17,14 @@
 // a cold start.
 
 import { ARCHETYPES, detectArchetypes } from "../archetypes/registry.js";
+import type { ArchetypeId } from "../archetypes/types.js";
 import { detectLoops } from "../loops/detect.js";
 import type { Loop } from "../loops/types.js";
 import { equationDependencies } from "../model/derived.js";
 import { allVariables, findVariable, type Model, type Variable } from "../model/types.js";
 import { checkUnits } from "../model/units.js";
 import { simulate } from "../sim/engine.js";
-import { SITUATIONS } from "./situations.js";
+import { isStudyArchetype, SITUATIONS, STUDY_ARCHETYPES, studyArchetype } from "./situations.js";
 import type { DrillQuestion, DrillSkill } from "./types.js";
 
 export interface GenerateOptions {
@@ -258,56 +259,105 @@ function runQuestions(model: Model): DrillQuestion[] {
 // ---------------------------------------------------------------------------------------------
 // Archetypes
 
+/** The registry's label for an archetype — the one the Archetypes dialog shows, so a drill and a
+ * report never use two names for the same thing. */
+function labelOf(id: ArchetypeId): string | undefined {
+  return ARCHETYPES.find((a) => a.id === id)?.label;
+}
+
+/** What the study material covers, as option labels, in the study table's own order. */
+function studyLabels(): string[] {
+  return STUDY_ARCHETYPES.map((a) => labelOf(a.id)).filter((l): l is string => !!l);
+}
+
+/** What it means, then how to spot it. The second half is what a wrong answer actually needs: the
+ * meaning says what the pattern does, the tell says which of four similar-looking stories it is. */
+function explanationFor(id: ArchetypeId): string {
+  return [ARCHETYPES.find((a) => a.id === id)?.meaning, studyArchetype(id)?.tell].filter(Boolean).join("\n\n");
+}
+
 /**
- * The two halves of recognising a pattern: from the story, and from the structure.
+ * The subtler half of giving the answer away: describing the *structure* rather than the story.
+ * Someone told which loop reinforces has been handed the answer just as surely as someone told the
+ * archetype's name, and both turn a recognition question into a vocabulary one. (The archetype's
+ * name itself is checked separately, since it depends on which archetype was asked for.)
  *
- * The situations need no model at all, which is what makes this the one skill that works on a cold
- * start — and it is the half the "Which archetype?" mode never had, because that mode's subject was
- * the model on the canvas and an empty canvas left it with nothing to say.
+ * Tuned to catch phrases that can only be about structure, because the failure is not symmetric.
+ * Being too strict costs a fallback to a curated situation, which is fine; being too loose ships a
+ * question that answers itself. So "reinforcing" — which has no other meaning in this material — is
+ * caught bare, while "balancing" is caught only when it is actually naming a loop: "balance the
+ * budget" is a sentence about a budget, and treating it as a tell made the agent's situations fail
+ * on ordinary English. Nothing else catches `balancing force`, deliberately.
+ */
+const GIVEAWAY = /\breinforc|\bbalanc\w*\s+(loop|feedback)|\bfeedback loop|\bR\d\b|\bB\d\b|\barchetype\b/i;
+
+/**
+ * A situation question built from text somebody else wrote — the AI, in practice.
+ *
+ * Whoever commissions a situation picks the archetype, so the answer is known by construction and
+ * the marking stays exact; only the prose is out of the app's hands. That is the one thing that can
+ * still be wrong, so it is checked here rather than trusted: a situation that names its archetype,
+ * or says which loop reinforces, is rejected and a curated one used in its place.
+ *
+ * Also null for an archetype outside the study set — the drills only ask about the four.
+ */
+export function situationQuestion(id: string, archetype: ArchetypeId, text: string): DrillQuestion | null {
+  const body = text.trim();
+  const answer = labelOf(archetype);
+  if (!body || !answer || !isStudyArchetype(archetype)) return null;
+  // Naming the archetype is the obvious way to give it away; describing its loops is the other.
+  if (body.toLowerCase().includes(answer.toLowerCase()) || GIVEAWAY.test(body)) return null;
+  return {
+    id,
+    skill: "archetypes",
+    prompt: "Which archetype is this?",
+    situation: body,
+    kind: "choice",
+    options: studyLabels(),
+    answer,
+    archetype,
+    source: "ARCHETYPES",
+    explanation: explanationFor(archetype),
+  };
+}
+
+/**
+ * The two routes to recognising a pattern: from the story, and from the structure.
+ *
+ * The situations need no model at all, which makes this the one skill that works on a cold start —
+ * and it is the half the "Which archetype?" mode never had, because that mode's subject was the
+ * model on the canvas and an empty canvas left it with nothing to say.
  */
 function archetypeQuestions(model: Model): DrillQuestion[] {
-  const labels = ARCHETYPES.map((a) => a.label as string);
   const out: DrillQuestion[] = [];
 
   for (const situation of SITUATIONS) {
-    const definition = ARCHETYPES.find((a) => a.id === situation.archetype);
-    if (!definition) continue;
-    out.push({
-      id: `archetypes:situation:${situation.id}`,
-      skill: "archetypes",
-      prompt: "Which archetype is this?",
-      situation: situation.text,
-      kind: "choice",
-      options: labels,
-      answer: definition.label,
-      archetype: definition.id,
-      source: "ARCHETYPES",
-      explanation: `${definition.label} — ${definition.meaning}`,
-    });
+    const q = situationQuestion(`archetypes:situation:${situation.id}`, situation.archetype, situation.text);
+    if (q) out.push(q);
   }
 
-  // From the model on the canvas — but only when its structure is unambiguous.
+  // From the model on the canvas — but only when its structure is unambiguous, and only for an
+  // archetype the study material covers.
   //
-  // `detectArchetypes` deliberately reports *candidates* rather than a verdict, and four of the
-  // seven verified examples match more than one archetype (the commons example also matches Limits
-  // to Growth; Shifting the Burden matches four). On those, "which archetype is this?" has several
-  // right answers, and marking one of them would teach a reader to distrust a detector that is
-  // behaving exactly as designed. Staying silent there is the honest answer, and the situations
-  // still cover that archetype from the other direction.
+  // `detectArchetypes` deliberately reports *candidates* rather than a verdict, and most models
+  // match more than one (the commons example also matches Limits to Growth; Shifting the Burden
+  // matches four). On those, "which archetype is this?" has several right answers, and marking one
+  // of them would teach a reader to distrust a detector behaving exactly as designed.
   const matches = detectArchetypes(model);
   const matched = [...new Set(matches.map((m) => m.archetype))];
-  if (matched.length === 1) {
-    const only = matches.find((m) => m.archetype === matched[0])!;
+  const only = matched.length === 1 ? matched[0] : undefined;
+  if (only && isStudyArchetype(only)) {
+    const match = matches.find((m) => m.archetype === only)!;
     out.push({
       id: "archetypes:model",
       skill: "archetypes",
-      prompt: "Which archetype does this model's structure match?",
+      prompt: "The model on the canvas matches one of these archetypes. Which one?",
       kind: "choice",
-      options: labels,
-      answer: only.label,
-      archetype: only.archetype,
+      options: studyLabels(),
+      answer: match.label,
+      archetype: only,
       source: "detectArchetypes",
-      explanation: `${only.label} (${only.confidence}) — ${only.summary}`,
+      explanation: `${match.label} (${match.confidence}) — ${match.summary}`,
     });
   }
 
