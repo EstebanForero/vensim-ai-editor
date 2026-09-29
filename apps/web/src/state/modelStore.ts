@@ -25,7 +25,67 @@ function readLocalStorage(key: string, fallback: string): string {
   return localStorage.getItem(key) ?? fallback;
 }
 function writeLocalStorage(key: string, value: string): void {
-  if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Persisting is best-effort by definition. The model in memory is still correct and still
+    // saveable to a file, so a full quota must not take down the edit that triggered the write.
+  }
+}
+
+export const EDITOR_MODEL_KEY = "vensim-ai:editorModel";
+
+/** Bumped whenever `Model` changes shape in a way an older payload could not survive. Dropping a
+ * payload from another version costs the user at most a reload's worth of work; reading one back
+ * wrong would hand the canvas something it cannot draw. */
+const EDITOR_MODEL_VERSION = 1;
+
+/**
+ * The model as it was when the tab was last open.
+ *
+ * Everything else in this store is either derived from the model or deliberately transient. The
+ * model is the one whose loss is not recoverable: there is no undo stack, and the only other copy
+ * is a file the user may or may not have saved. So it is written on every commit — the single
+ * point every change in the app passes through, whether it came from the UI, from an AI tool, or
+ * from loading a file.
+ *
+ * This is not the file format, and nothing here is meant to be portable between programs. It is a
+ * snapshot of this app's own state, and it is read defensively: a payload that is missing,
+ * unparseable, from another version, or not shaped like a model yields null and a new model is
+ * started instead. A stale entry must never be the reason the editor will not open.
+ */
+export function loadEditorModel(): Model | null {
+  const raw = readLocalStorage(EDITOR_MODEL_KEY, "");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { v?: number; model?: unknown };
+    return parsed?.v === EDITOR_MODEL_VERSION && isModelShape(parsed.model) ? parsed.model : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveEditorModel(model: Model): void {
+  writeLocalStorage(EDITOR_MODEL_KEY, JSON.stringify({ v: EDITOR_MODEL_VERSION, model }));
+}
+
+/** Enough of the shape to know the canvas can be handed it: the arrays the graph is built from,
+ * and the spec the simulation reads. Not a validating parse — the object was written by this app,
+ * and all a full check would buy is a migration path this format deliberately does not have. */
+function isModelShape(value: unknown): value is Model {
+  const m = value as Partial<Model> | null;
+  return (
+    typeof m === "object" &&
+    m !== null &&
+    Array.isArray(m.stocks) &&
+    Array.isArray(m.flows) &&
+    Array.isArray(m.auxiliaries) &&
+    Array.isArray(m.connectors) &&
+    Array.isArray(m.comments) &&
+    typeof m.simSpec === "object" &&
+    m.simSpec !== null
+  );
 }
 
 /** "" (the default) means "don't send a reasoning_effort field at all" — most models don't
@@ -197,14 +257,26 @@ interface ModelStoreState {
 }
 
 function commit(model: Model) {
-  return { model: structuredClone(model), issues: validateModel(model) };
+  const next = structuredClone(model);
+  // Saving here rather than in each mutation is what makes "every change is persisted" true by
+  // construction: `setModel`, `loadArchetypeExample` and `mutate` all come through this, and a
+  // future one that forgot to save is not a thing that can happen.
+  saveEditorModel(next);
+  return { model: next, issues: validateModel(model) };
+}
+
+/** The store's opening state: the canvas as it was left, or a new model. The issues are
+ * recomputed rather than restored, so the banner describes the model actually being shown. */
+function initialModelState(): { model: Model; issues: ValidationIssue[] } {
+  const restored = loadEditorModel();
+  if (!restored) return { model: createEmptyModel("Untitled Model"), issues: [] };
+  return { model: restored, issues: validateModel(restored) };
 }
 
 export const useModelStore = create<ModelStoreState>((set, get) => ({
-  model: createEmptyModel("Untitled Model"),
+  ...initialModelState(),
   selectedId: null,
   simResult: null,
-  issues: [],
   unitIssues: null,
   unitsDialogOpen: false,
   archetypeMatches: null,
