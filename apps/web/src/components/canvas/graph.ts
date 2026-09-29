@@ -18,6 +18,23 @@ export function buildGraph(
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
+  // Comments first, so they are drawn *underneath* the model. React Flow stacks nodes in array
+  // order, and a comment is a filled box the size of a paragraph — put on top, an annotation
+  // covers the very variables it is annotating and the report is "I cannot see some variables",
+  // which is exactly what a loop annotation placed at its loop's centroid does. Underneath, the
+  // worst a comment can do is be partly hidden itself, which is the right way round: the model is
+  // the thing you came to look at and the note is the thing you can move.
+  for (const c of model.comments) {
+    nodes.push({
+      id: c.id,
+      type: "comment",
+      position: c.pos,
+      style: { width: c.size.width, height: c.size.height },
+      data: { comment: c, selected: c.id === selectedId, editing: c.id === editingId },
+    });
+  }
+
+
   for (const s of model.stocks) {
     nodes.push({
       id: s.id,
@@ -91,16 +108,6 @@ export function buildGraph(
       },
       markerEnd: { type: "arrow" as const, color: "var(--connector-color)" },
       data: { connector: c },
-    });
-  }
-
-  for (const c of model.comments) {
-    nodes.push({
-      id: c.id,
-      type: "comment",
-      position: c.pos,
-      style: { width: c.size.width, height: c.size.height },
-      data: { comment: c, selected: c.id === selectedId, editing: c.id === editingId },
     });
   }
 
