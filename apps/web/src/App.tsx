@@ -15,7 +15,12 @@ function App() {
 
   return (
     <ReactFlowProvider>
-      <div className="flex h-screen w-screen flex-col">
+      {/* `w-screen`/`h-screen` are 100vw/100vh, which include any scrollbar already present — so
+          one overflow anywhere became a scrollbar, which shrank the viewport, which caused the
+          other scrollbar. `dvh`/`w-full` plus `overflow-hidden` keeps the shell exactly the size
+          of the window, and an editor has nothing to gain from a page-level scroll anyway: the
+          canvas pans and the panels scroll. */}
+      <div className="flex h-dvh w-full flex-col overflow-hidden">
         <Toolbar />
         <div className="flex min-h-0 flex-1">
           <div className="min-w-0 flex-1">

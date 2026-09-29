@@ -95,16 +95,16 @@ export function Toolbar() {
     });
 
   return (
-    <div className="flex items-center gap-2 border-b bg-card px-3 py-2">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-card px-3 py-1.5">
       <Input
-        className="h-8 w-48"
+        className="h-8 w-36 shrink-0"
         value={model.name}
         onChange={(e) => mutate((m) => (m.name = e.target.value))}
         placeholder="Model name"
       />
       <div className="mx-1 h-5 w-px bg-border" />
       <Button size="sm" variant="outline" onClick={onAddStock} title="Add Stock">
-        <Square className="size-4" /> Stock
+        <Square className="size-4" /> <span className="hidden 2xl:inline">Stock</span>
       </Button>
       <Button
         size="sm"
@@ -112,7 +112,7 @@ export function Toolbar() {
         onClick={toggleFlowMode}
         title="Click a source, then a destination, to draw a flow — a stock or empty canvas (a cloud) for either end, so direction and which stock are always explicit"
       >
-        <Droplet className="size-4" /> Flow
+        <Droplet className="size-4" /> <span className="hidden 2xl:inline">Flow</span>
       </Button>
       <Button
         size="sm"
@@ -120,7 +120,7 @@ export function Toolbar() {
         onClick={onAddAux}
         title="Add a variable — a plain number reads as a constant, an equation referencing others makes it computed, just like Vensim"
       >
-        <Waves className="size-4" /> Variable
+        <Waves className="size-4" /> <span className="hidden 2xl:inline">Variable</span>
       </Button>
       <Button
         size="sm"
@@ -128,10 +128,10 @@ export function Toolbar() {
         onClick={onAddLookup}
         title="Add a lookup table (Vensim's graphical function) — a curve entered as an Input/Output table, used by other equations as Name(input). Select it to edit the table."
       >
-        <Table2 className="size-4" /> Lookup
+        <Table2 className="size-4" /> <span className="hidden 2xl:inline">Lookup</span>
       </Button>
       <Button size="sm" variant="outline" onClick={onAddComment} title="Add a freestanding text comment/annotation">
-        <MessageSquarePlus className="size-4" /> Comment
+        <MessageSquarePlus className="size-4" /> <span className="hidden 2xl:inline">Comment</span>
       </Button>
       <Button
         size="sm"
@@ -139,7 +139,7 @@ export function Toolbar() {
         onClick={toggleRelationMode}
         title="Click two variables in sequence to draw a signed causal relation between them (also usable for pure causal-loop diagrams — no stocks/flows needed)"
       >
-        <GitBranch className="size-4" /> Relation
+        <GitBranch className="size-4" /> <span className="hidden 2xl:inline">Relation</span>
       </Button>
       <Button
         size="sm"
@@ -175,7 +175,7 @@ export function Toolbar() {
         onClick={onAutoLayout}
         title="Automatically re-arrange every stock/flow/auxiliary into a tidy layered layout based on their flow and causal connections, then fit the view"
       >
-        <LayoutGrid className="size-4" /> Auto Layout
+        <LayoutGrid className="size-4" />
       </Button>
       <Button
         size="sm"
@@ -183,7 +183,7 @@ export function Toolbar() {
         onClick={onAnnotateLoops}
         title={`Auto-generate one text annotation per feedback loop (e.g. "R1 loop: Population → Births → Population"), using each element's own name — re-running replaces this tool's own earlier annotations to match the model's current loops, and never touches a comment you wrote by hand`}
       >
-        <MessageSquareText className="size-4" /> Annotate Loops
+        <MessageSquareText className="size-4" />
       </Button>
       <Button
         size="sm"
@@ -191,7 +191,7 @@ export function Toolbar() {
         onClick={runUnitsCheck}
         title="Check units (Ctrl+U) — a structural check of every equation's units against its variable's declared units, the same idea as Vensim's own Units Check"
       >
-        <Ruler className="size-4" /> Check Units
+        <Ruler className="size-4" />
       </Button>
       <Button
         size="sm"
@@ -199,7 +199,7 @@ export function Toolbar() {
         onClick={runArchetypeCheck}
         title="Archetypes — which classic systems archetypes (Limits to Growth, Tragedy of the Commons, Escalation, ...) this model's loop structure matches. Reports candidates naming the loops and variables behind each, not a verdict on what the model is."
       >
-        <Shapes className="size-4" /> Archetypes
+        <Shapes className="size-4" />
       </Button>
 
       <div className="mx-1 h-5 w-px bg-border" />
@@ -229,10 +229,10 @@ export function Toolbar() {
           variant="ghost"
           onClick={() => openMdlFilePicker((m) => setModel(m), (err) => setFileError(err))}
         >
-          <FolderOpen className="size-4" /> Open .mdl
+          <FolderOpen className="size-4" />
         </Button>
         <Button size="sm" variant="ghost" onClick={() => downloadMdl(model, relations)}>
-          <Save className="size-4" /> Save .mdl
+          <Save className="size-4" />
         </Button>
         <Button
           size="sm"
@@ -240,7 +240,7 @@ export function Toolbar() {
           onClick={() => downloadXmile(model)}
           title="Export as XMILE (the OASIS open standard) — Vensim can open this directly (File > Open, XMILE filter), and it sidesteps the .mdl format's undocumented flow-valve attachment quirk"
         >
-          <Save className="size-4" /> Save .xmile
+          <Save className="size-4" />
         </Button>
       </div>
 
