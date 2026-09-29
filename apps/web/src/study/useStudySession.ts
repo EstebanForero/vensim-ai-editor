@@ -11,7 +11,7 @@
 // otherwise see one long thread whose instructions changed half way through.
 
 import { useCallback, useRef, useState } from "react";
-import { createAgentSession, isRetriableConnectionError, runAgentTurn, type AgentSession } from "@vensim-ai/agent";
+import { createAgentSession, isMutatingTool, isRetriableConnectionError, runAgentTurn, type AgentSession } from "@vensim-ai/agent";
 import { executeToolCall } from "@/lib/agentTools";
 import { message, type ChatMessage } from "@/components/chat/message";
 import { useModelStore } from "@/state/modelStore";
@@ -147,9 +147,10 @@ export function useStudySession({ onModelChanged, onFinished }: StudySessionOpti
             onToolCallStart: (name) => setPendingToolName(name),
             onToolCall: (name, input, result) => {
               setPendingToolName(null);
-              // The tool mutated the live model in place; committing a snapshot is what makes the
-              // canvas re-render and show it. Empty mutation on purpose — the work is already done.
-              mutate(() => {});
+              // Only when the tool could have changed the model: committing replaces every node
+              // and makes React Flow re-measure them all, which is a full rebuild for nothing after
+              // a tool that only read. Empty mutation on purpose — the work is already done.
+              if (isMutatingTool(name)) mutate(() => {});
               say(message("tool", `${result.ok ? "✓" : "✗"} ${name}(${JSON.stringify(input)})${result.ok ? "" : ` — ${result.error}`}`));
               onModelChanged?.(name);
             },

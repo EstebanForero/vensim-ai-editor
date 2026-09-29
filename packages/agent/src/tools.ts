@@ -91,6 +91,54 @@ export const NEUTRAL_TOOLS: NeutralTool[] = [
   RUN_PYTHON_TOOL,
 ];
 
+/**
+ * The tools that *change* the model, by name. Everything not listed here only reads it.
+ *
+ * Declared next to the tools themselves because two things depend on the answer and were each
+ * answering it separately: the study tab decides which tools a "judge this model" turn may even be
+ * offered, and the panels decide whether a tool call needs to hand the canvas a new model to draw.
+ *
+ * That second one is not bookkeeping. A host re-draws by committing the model, which replaces
+ * every node — and React Flow then has to re-measure them all before anything can be drawn. Doing
+ * that after a *read-only* call means a full rebuild for nothing, and if the call happened to block
+ * the main thread while it ran — `run_python` compiling a multi-megabyte WebAssembly interpreter,
+ * say — the re-measure never arrives and the canvas is left blank. Which is what "everything
+ * disappeared when run_python was used" was: the chat panel rebuilding the diagram because the
+ * model had been read.
+ *
+ * Declared as the mutating set rather than the safe one, because the failure modes are not
+ * symmetric: a read-only tool accidentally missing from a whitelist is a small loss, while a tool
+ * that edits the model being treated as harmless means a turn promised not to change the model
+ * quietly changing it. A test asserts every tool the agent has appears in exactly one of the two.
+ */
+export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "add_stock",
+  "add_flow",
+  "add_auxiliary",
+  "add_constant",
+  "set_lookup",
+  "set_equation",
+  "rename_variable",
+  "move_element",
+  "delete_element",
+  "clear_model",
+  "add_relation",
+  "set_relation_polarity",
+  "refresh_relation_polarities",
+  "add_comment",
+  "set_comment_text",
+  "move_comment",
+  "set_sim_spec",
+  "auto_layout",
+  "annotate_loops",
+]);
+
+/** Whether a tool call by this name can have changed the model — and so whether the canvas needs
+ * to be handed a new one to draw. */
+export function isMutatingTool(name: string): boolean {
+  return MUTATING_TOOL_NAMES.has(name);
+}
+
 /** The globals `run_python` hands the model's code, as plain JSON-able data — the host turns this
  * into whatever its interpreter wants. */
 export function pythonGlobals(model: Model) {

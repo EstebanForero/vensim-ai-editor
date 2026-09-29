@@ -10,40 +10,10 @@
 // the model on its way to judging it, whatever it decides to do. Asking a model not to edit
 // something is a hope; not giving it the tool is a guarantee.
 
-import { NEUTRAL_TOOLS, type NeutralTool } from "@vensim-ai/agent";
+import { MUTATING_TOOL_NAMES, NEUTRAL_TOOLS, type NeutralTool } from "@vensim-ai/agent";
 
-/**
- * Every tool that *changes* the model, by name. Everything else is read-only by construction —
- * `list_model`, `run_simulation`, `check_units`, `list_loops`, `run_python` all look and report.
- *
- * Declared as the mutating set rather than the safe one because the failure modes are not
- * symmetric: a new read-only tool accidentally missing from a whitelist is a small loss, while a
- * new tool that edits the model accidentally landing in a "judge this model" mode's tool list is
- * the one thing this file exists to prevent. The test alongside asserts that every tool the agent
- * has appears in exactly one of these two sets, so a tool added to `@vensim-ai/tools` cannot slip
- * in unclassified.
- */
-export const MUTATING_TOOL_NAMES = new Set([
-  "add_stock",
-  "add_flow",
-  "add_auxiliary",
-  "add_constant",
-  "set_lookup",
-  "set_equation",
-  "rename_variable",
-  "move_element",
-  "delete_element",
-  "clear_model",
-  "add_relation",
-  "set_relation_polarity",
-  "refresh_relation_polarities",
-  "add_comment",
-  "set_comment_text",
-  "move_comment",
-  "set_sim_spec",
-  "auto_layout",
-  "annotate_loops",
-]);
+export { MUTATING_TOOL_NAMES };
+
 
 /** Reading a model: look at it, run it, measure it, and say things about it. Nothing here can
  * change it, which is what makes these safe to point at the model the user is working on. */

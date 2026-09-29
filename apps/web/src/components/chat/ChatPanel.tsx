@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { DEFAULT_HISTORY_CHARS, PROVIDER_PRESETS, createAgentSession, isRetriableConnectionError, runAgentTurn, type AgentSession } from "@vensim-ai/agent";
+import { DEFAULT_HISTORY_CHARS, PROVIDER_PRESETS, createAgentSession, isMutatingTool, isRetriableConnectionError, runAgentTurn, type AgentSession } from "@vensim-ai/agent";
 import { executeToolCall } from "@/lib/agentTools";
 
 import { useModelStore, type ReasoningEffort } from "@/state/modelStore";
@@ -268,7 +268,13 @@ export function ChatPanel() {
           onToolCallStart: (name) => setPendingToolName(name),
           onToolCall: (name, toolInput, result) => {
             setPendingToolName(null);
-            mutate(() => {}); // re-commit a snapshot of the mutated draft
+            // Only when the tool could have changed the model. Committing re-draws the whole
+            // diagram — every node is replaced and React Flow has to re-measure all of them — and
+            // doing that after a tool that only *read* the model is a full rebuild for nothing. If
+            // that call also blocked the main thread, the re-measure never arrives and the canvas
+            // is left blank; `run_python` compiling WebAssembly is exactly that. See
+            // `isMutatingTool`.
+            if (isMutatingTool(name)) mutate(() => {});
             addChatMessage({
               id: crypto.randomUUID(),
               role: "tool",

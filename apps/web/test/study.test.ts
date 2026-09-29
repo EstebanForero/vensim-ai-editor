@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { NEUTRAL_TOOLS } from "@vensim-ai/agent";
+import { NEUTRAL_TOOLS, isMutatingTool } from "@vensim-ai/agent";
 import { buildArchetypeExample, createEmptyModel, generateQuestions, type DrillSkill } from "@vensim-ai/core";
 import { EDITING_TOOLS, MUTATING_TOOL_NAMES, MODES, READ_ONLY_TOOLS, findMode, planTurn, type StudyMode } from "../src/study/modes.js";
 import { DEFAULT_DRILL, DRILLS, findDrill } from "../src/study/drill/modes.js";
@@ -41,6 +41,21 @@ describe("the tool split", () => {
   test("a name in the mutating set that no tool has is a stale entry", () => {
     const names = new Set(NEUTRAL_TOOLS.map((t) => t.name));
     expect([...MUTATING_TOOL_NAMES].filter((n) => !names.has(n))).toEqual([]);
+  });
+
+  // The canvas is re-drawn by committing the model, which replaces every node and makes React
+  // Flow re-measure all of them. Doing that for a tool that only *read* the model is a full
+  // rebuild for nothing — and if the call blocked the main thread while it ran, the re-measure
+  // never arrives and the canvas is left blank. `run_python` compiling WebAssembly is exactly
+  // that, and "everything disappeared when run_python was used" was the chat panel rebuilding
+  // the diagram because the model had been read.
+  test("nothing that only reads the model is classified as changing it", () => {
+    for (const name of ["list_model", "list_loops", "run_simulation", "run_python", "check_units"]) {
+      expect({ name, mutates: isMutatingTool(name) }).toEqual({ name, mutates: false });
+    }
+    for (const name of ["add_stock", "set_equation", "auto_layout", "annotate_loops"]) {
+      expect({ name, mutates: isMutatingTool(name) }).toEqual({ name, mutates: true });
+    }
   });
 
   test("the read-only set is the useful half of what the agent can do", () => {

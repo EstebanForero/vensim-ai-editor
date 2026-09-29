@@ -5,7 +5,6 @@ import { SimChart } from "@/components/charts/SimChart";
 import { StudyPanel } from "@/study";
 import { Inspector } from "@/components/inspector/Inspector";
 import { LookupEditorHost } from "@/components/lookup/LookupEditorHost";
-import { TextView } from "@/components/textview/TextView";
 import { Toolbar } from "@/components/toolbar/Toolbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useModelStore } from "@/state/modelStore";
@@ -33,7 +32,6 @@ function App() {
                 <TabsTrigger value="inspector">Inspector</TabsTrigger>
                 <TabsTrigger value="chat">AI Chat</TabsTrigger>
                 <TabsTrigger value="sim">Simulation</TabsTrigger>
-                <TabsTrigger value="text">Text</TabsTrigger>
                 <TabsTrigger value="study">Study</TabsTrigger>
               </TabsList>
               <TabsContent value="inspector" className="min-h-0 flex-1 overflow-y-auto">
@@ -44,9 +42,6 @@ function App() {
               </TabsContent>
               <TabsContent value="sim" className="min-h-0 flex-1">
                 <SimChart />
-              </TabsContent>
-              <TabsContent value="text" className="min-h-0 flex-1">
-                <TextView />
               </TabsContent>
               <TabsContent value="study" className="min-h-0 flex-1">
                 <StudyPanel />

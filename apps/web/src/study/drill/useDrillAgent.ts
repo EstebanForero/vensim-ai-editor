@@ -14,7 +14,7 @@
 // nothing behind.
 
 import { useCallback, useRef, useState } from "react";
-import { createAgentSession, runAgentTurn, type NeutralTool } from "@vensim-ai/agent";
+import { createAgentSession, isMutatingTool, runAgentTurn, type NeutralTool } from "@vensim-ai/agent";
 import { ARCHETYPES, situationQuestion, studyArchetype, type ArchetypeId, type DrillQuestion } from "@vensim-ai/core";
 import { executeToolCall } from "@/lib/agentTools";
 import { useModelStore } from "@/state/modelStore";
@@ -93,10 +93,10 @@ export function useDrillAgent(): DrillAgent {
             onAssistantText: (t) => {
               text = t;
             },
-            onToolCall: () => {
-              // The tool mutated the live model; committing a snapshot is what makes the canvas
-              // redraw. Empty mutation on purpose — the work is already done.
-              useModelStore.getState().mutate(() => {});
+            onToolCall: (name) => {
+              // Only when the tool could have changed the model — see `isMutatingTool`. The work is
+              // already done; this only tells the canvas to draw it.
+              if (isMutatingTool(name)) useModelStore.getState().mutate(() => {});
             },
             onRoundRetry: (attempt, maxAttempts) =>
               setError(`Connection dropped — retrying (attempt ${attempt + 1} of ${maxAttempts})…`),
