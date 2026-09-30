@@ -25,7 +25,28 @@ export function countsOf(model: Model): ElementCounts {
   };
 }
 
-const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+/** "1 stock", "2 stocks" — and "auxiliaries", since `+s` gives "auxiliarys", which is the word
+ * that turns up in the one line a chat's `/model` prints most. */
+const IRREGULAR: Record<string, string> = { auxiliary: "auxiliaries" };
+const plural = (n: number, noun: string) => `${n} ${n === 1 ? noun : (IRREGULAR[noun] ?? `${noun}s`)}`;
+
+/**
+ * What the model *is*, as its own contents rather than as the tool calls that made it.
+ *
+ * Separate from the summary because a chat's `/model` command asks exactly this question mid-
+ * conversation, with no file and no clock involved — the same lines answer both, so the two can't
+ * disagree about what is on the canvas.
+ */
+export function modelLines(model: Model): string[] {
+  const counts = countsOf(model);
+  const loops = detectLoops(model);
+  const archetypes = [...new Set(detectArchetypes(model).map((m) => m.label))];
+  return [
+    `  ${plural(counts.stocks, "stock")}, ${plural(counts.flows, "flow")}, ${plural(counts.auxiliaries, "auxiliary")}, ${plural(counts.relations, "relation")}`,
+    `  ${plural(loops.length, "feedback loop")}${loops.length ? ` (${loops.map((l) => `${l.polarity}${l.number}`).join(", ")})` : ""}`,
+    ...(archetypes.length ? [`  archetypes: ${archetypes.join(", ")}`] : []),
+  ];
+}
 
 export interface SummaryInput {
   path: string;
@@ -37,16 +58,7 @@ export interface SummaryInput {
 /** The lines printed after a run. Returned as an array so the shape is testable without capturing
  * stdout — the command is what decides to print them. */
 export function summaryLines({ path, model, seconds, stoppedEarly }: SummaryInput): string[] {
-  const counts = countsOf(model);
-  const loops = detectLoops(model);
-  const archetypes = [...new Set(detectArchetypes(model).map((m) => m.label))];
-  return [
-    path,
-    `  ${plural(counts.stocks, "stock")}, ${plural(counts.flows, "flow")}, ${plural(counts.auxiliaries, "auxiliary")}, ${plural(counts.relations, "relation")}`,
-    `  ${plural(loops.length, "feedback loop")}${loops.length ? ` (${loops.map((l) => `${l.polarity}${l.number}`).join(", ")})` : ""}`,
-    ...(archetypes.length ? [`  archetypes: ${archetypes.join(", ")}`] : []),
-    `  ${seconds.toFixed(1)}s${stoppedEarly ? " (stopped early)" : ""}`,
-  ];
+  return [path, ...modelLines(model), `  ${seconds.toFixed(1)}s${stoppedEarly ? " (stopped early)" : ""}`];
 }
 
 /** Whether anything was built at all — an agent that made no changes is a failed run, not an

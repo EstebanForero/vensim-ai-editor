@@ -1,6 +1,7 @@
 # @vensim-ai/cli
 
-Generate a system-dynamics model from a description, without opening the editor.
+Generate a system-dynamics model from a description, without opening the editor — one prompt in and
+one file out, or a session you talk to until the model is what you meant.
 
 It runs the same agent the app's chat panel runs — same loop, same system prompt, same tools
 (`@vensim-ai/agent`) — and writes the result to a `.mdl` (or XMILE) file. What it does *not* have
@@ -50,6 +51,57 @@ rather than builds from nothing:
 bun run generate "add a delay to the hiring loop" --from hiring.mdl -o hiring-2.mdl
 bun run generate "the burnout loop is missing a link to quality" -f hiring.mdl
 ```
+
+**Talk to it.** With no prompt on a terminal there is nothing to generate from and someone sitting
+at the keyboard, so the command opens a session instead of running once. `-i`/`--chat` says so
+explicitly, and a prompt alongside it becomes the opening message rather than the whole job:
+
+```console
+$ bun run generate --chat -o queue.mdl            # or: --chat "a single-server queue"
+Chatting with gpt-4o at https://api.openai.com/v1. /help for commands, /exit to leave.
+Nothing on the canvas yet — say what to build.
+
+> a single-server queue, arrivals rise in winter
+  → add_stock
+  ✓ add_stock name=Queue initial_equation=0 units=People
+  → add_flow
+  ✓ add_flow name=Arrivals equation=Arrival rate to=Queue units=People/Month
+  …
+  …
+
+> /model
+A single-server queue, arrivals rise in winter
+  1 stock, 2 flows, 3 auxiliaries, 4 relations
+  2 feedback loops (B1, R1)
+
+> now make the server go on holiday for two weeks a year
+  → set_equation
+  ✓ set_equation name=Service rate equation=…
+  …
+
+> /exit
+/build/queue.mdl
+  1 stock, 2 flows, 3 auxiliaries, 4 relations
+  2 feedback loops (B1, R1)
+  38.4s
+```
+
+The `…` lines are the agent's own account of what it did — text, streamed as it arrives, `>`
+marking what you typed.
+
+What is kept between turns is the *conversation and the model*: the same session and the same
+model objects, the same agent, the same tools. So "make the server go on holiday" edits the model
+the first turn built, and "why does that loop dominate?" refers to the loop it just named. Nothing
+is re-described and nothing is re-read from disk.
+
+The commands are `/model` (what is on the canvas: elements, loops, archetypes), `/save [path]`
+(write the file now, without ending the session), `/help` and `/exit`. Anything else is a message.
+Ctrl-C stops the turn that is running — the model and the conversation survive it, as they do
+behind the app's Stop button — and at the prompt it leaves.
+
+The file is written when the session ends, exactly as a one-shot run writes it, so `/exit`, Ctrl-D
+and Ctrl-C all leave the model somewhere it can be opened. `-o`, `--format` and `--from` mean what
+they mean elsewhere; `-q` drops the tool lines and keeps the conversation.
 
 **Pipe the prompt.** From a file, or from another command:
 
@@ -109,6 +161,10 @@ Exit codes: **0** wrote a file, **1** the run failed (nothing written), **2** th
 itself was wrong — a bad flag, no key, an unknown provider. Each is reported with what to do about
 it rather than a stack trace.
 
+A chat that ends without a model exits **0**, not 1: a one-shot run that produced nothing failed
+at what it was asked to do, while a conversation that went nowhere in particular is not an error
+to report to the shell. Nothing is written either way, and it says so.
+
 ## How it works
 
 One turn of the agent, start to finish:
@@ -135,11 +191,13 @@ several places that have to agree:
 |---|---|---|
 | `cli.ts` | the wiring: parse, resolve, run, write, exit code | — |
 | `args.ts` | the flag table — parsing, validation and `--help` all read from it | **a flag**: one row |
+| `chat.ts` | a session: reading lines, the `/`-commands, and what is kept between turns | **a command**: one row |
 | `config.ts` | which provider, endpoint and key a command line and environment resolve to | **a provider**: a row in `@vensim-ai/agent`'s presets (the app's settings panel reads the same table) |
 | `run.ts` | one agent turn, from the starting model to the finished one | — |
 | `progress.ts` | what the run looks like from the terminal | **a presentation**: another reporter with the same shape |
 | `summary.ts` | what was made, read back from the file | **a line in the summary** |
 | `formats.ts` | the output formats | **a format**: one entry |
+| `output.ts` | where a model is written, and what it is called there | — |
 | `python.ts` | the `run_python` interpreter | — |
 
 Tests: `test/cli.test.ts` drives the real command as a subprocess against a mock OpenAI-compatible

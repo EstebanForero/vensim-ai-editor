@@ -44,13 +44,15 @@ Studio, …). Defaults to `https://api.openai.com/v1` and `gpt-4o`.
 
 Generate a model from a description without opening the editor. It runs the same agent the chat
 panel runs — same loop, same tools, same providers — and writes the result to a `.mdl` (or XMILE)
-file.
+file. Give it a prompt and it runs once; give it no prompt on a terminal and it opens a session
+you can answer back to, editing the same model turn after turn.
 
 ```bash
 bun run generate make a model of a coffee shop queue     # the prompt is every bare word
 bun run generate "the commons: three farms on one aquifer" -o aquifer.mdl
 bun run generate "add a delay to the hiring loop" --from hiring.mdl -o hiring-2.mdl
 cat idea.txt | bun run generate                          # or pipe the prompt in
+bun run generate --chat --from hiring.mdl                # or talk to it, model and all
 bun run generate --help                                  # every flag, provider and format
 ```
 

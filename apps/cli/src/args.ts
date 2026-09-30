@@ -20,6 +20,7 @@ export interface Options {
   apiKey: string | null;
   rounds: number;
   quiet: boolean;
+  chat: boolean;
 }
 
 /** A bad command line — as opposed to a failed run. Reported with the usage text and exit code 2,
@@ -63,15 +64,20 @@ export const FLAGS: Flag[] = [
   { key: "apiKey", names: ["--api-key"], arg: "<key>", help: "Default: $VENSIM_AI_API_KEY, or the provider's own variable" },
   { key: "rounds", names: ["--rounds"], arg: "<n>", help: "Tool-call rounds to allow before stopping. Default: 40", parse: wholeNumberAtLeast(1) },
   { key: "quiet", names: ["-q", "--quiet"], help: "No progress lines, just the result" },
+  // Listed last because it changes what the command *is* rather than how it behaves, and it is the
+  // one flag here whose default depends on something other than a flag — see the note in HELP and
+  // the `chatting` decision in cli.ts.
+  { key: "chat", names: ["-i", "--chat"], help: "Talk to the agent instead of prompting it once — see below" },
 ];
 
 const HELP_FLAGS = ["-h", "--help"];
 
 const DEFAULT_ROUNDS = 40;
 
-export const HELP = `Generate a system-dynamics model from a description.
+export const HELP = `Generate a system-dynamics model from a description, or talk to the agent about one.
 
-  bun run generate <prompt> [options]        from the repository root
+  bun run generate <prompt> [options]        one prompt in, one model file out
+  bun run generate [options]                 no prompt, on a terminal: a chat, as many turns as you like
   bun start <prompt> [options]               from apps/cli
 
 The package declares a \`vensim-ai-generate\` bin, but nothing links it — this is a private
@@ -80,6 +86,13 @@ package inside a workspace, so it is not on your PATH. Use one of the two above.
   ${"<prompt>".padEnd(20)}What to build. "-" reads it from stdin.
 ${FLAGS.map((f) => `  ${(f.names.join(", ") + (f.arg ? ` ${f.arg}` : "")).padEnd(20)}${f.help}`).join("\n")}
   ${"-h, --help".padEnd(20)}Show this
+
+Chat: with no prompt and a terminal to type on, the command opens a session instead of running
+once — one model, one conversation, as many turns as you like. It is the same agent with the same
+tools; what it keeps between turns is the conversation and the model, so "now add a delay to that"
+refers to what was just built. Flags still apply: -o sets where the file goes, --from starts from
+an existing model, -q silences the tool lines. In the session, /model describes what is on the
+canvas, /save writes the file early, /help lists the rest, and the file is written on the way out.
 
 Formats:
 ${FORMAT_NAMES.map((name) => `  ${name.padEnd(20)}${formatOf(name).note ?? ""}`).join("\n")}
@@ -105,6 +118,7 @@ export function parseArgs(argv: string[]): Options | "help" {
     apiKey: null,
     rounds: DEFAULT_ROUNDS,
     quiet: false,
+    chat: false,
   };
   const positional: string[] = [];
 

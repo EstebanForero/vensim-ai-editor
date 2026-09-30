@@ -33,6 +33,12 @@ describe("parseArgs", () => {
     expect(options.rounds).toBe(40);
     expect(options.quiet).toBe(false);
     expect(parse(["p", "-q"]).quiet).toBe(true);
+    // Chat is a flag, not a default: the same command with a prompt has to keep meaning "generate
+    // this once", which is what every script and every example in the README relies on. It is the
+    // *absence* of a prompt on a terminal that opens a session — see `chatting` in cli.ts.
+    expect(options.chat).toBe(false);
+    expect(parse(["-i"]).chat).toBe(true);
+    expect(parse(["--chat"]).chat).toBe(true);
   });
 
   // Every one of these is a command line someone will type; the point is that each says what was

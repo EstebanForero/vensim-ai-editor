@@ -14,6 +14,10 @@ import { nameFromPrompt } from "./naming.js";
 import { createReporter } from "./progress.js";
 import { runPython } from "./python.js";
 
+/**
+ * What a session produced. Both commands end the same way — a model, how long it took, and whether
+ * it finished — so both report in this shape and the ending is written once for the two of them.
+ */
 export interface RunResult {
   model: Model;
   /** True when the round budget ran out mid-task, so the result is a partial one. */
@@ -23,7 +27,10 @@ export interface RunResult {
 
 /** The model to start from: the one named by `--from`, or a new one titled after the prompt. */
 export function startingModel(opts: Options): Model {
-  if (!opts.from) return createEmptyModel(nameFromPrompt(opts.prompt));
+  // No prompt means a chat, which has nothing to title the model from yet — it is named from the
+  // first turn that builds something, in chat.ts. An empty title in the meantime would put a blank
+  // line where the name goes in `/model` and in the file.
+  if (!opts.from) return createEmptyModel(opts.prompt.trim() ? nameFromPrompt(opts.prompt) : undefined);
   const path = resolve(opts.from);
   let text: string;
   try {
