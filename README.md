@@ -60,10 +60,12 @@ From `apps/cli` itself it is `bun start`, and the two are the only ways in: `app
 declares a `vensim-ai-generate` bin, but a private package inside a workspace does not have its bin
 linked, so that name is not on your PATH.
 
-It needs an API key, in the environment rather than in the app's settings:
+It needs an API key, and takes it from a `.env` at the repository root — copy `.env.example` and
+fill it in — or from the environment, which wins over the file:
 
 ```bash
-export VENSIM_AI_API_KEY=sk-...              # or OPENAI_API_KEY / DEEPSEEK_API_KEY / GEMINI_API_KEY / …
+cp .env.example .env                         # then leave the key in it
+export VENSIM_AI_API_KEY=sk-...              # or in the shell: OPENAI_API_KEY / DEEPSEEK_API_KEY / …
 export VENSIM_AI_PROVIDER=deepseek           # optional; OpenAI is the default
 ```
 

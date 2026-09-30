@@ -128,17 +128,30 @@ bun run generate "a model of technical debt" --model deepseek-reasoner
 
 ## Credentials
 
-Flags first, then the environment, then the provider preset:
+Flags first, then the environment, then a `.env` file, then the provider preset:
 
 | | |
 |---|---|
-| `VENSIM_AI_API_KEY` | tried first, for any provider |
+| `--api-key` and the other flags | whatever is passed on the command line |
+| `VENSIM_AI_API_KEY` | tried first, for any provider, from the environment or the file |
 | `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | each provider's own variable |
 | `VENSIM_AI_PROVIDER`, `VENSIM_AI_MODEL`, `VENSIM_AI_BASE_URL` | same as the flags |
 | `VENSIM_AI_REASONING` | `low`, `medium` or `high` — sent only when set to one of those |
 
-Ollama needs no key at all — passing an empty one is fine. The key is never written to disk by the
-CLI; it only goes to the endpoint you configured.
+**The `.env` file** is the one to use if you'd rather not export anything: copy `.env.example` at the
+repository root, fill in the key, and every run picks it up. It reads the nearest `.env` at or above
+the directory the command is run from — stopping at the top of the repository — so the one at the
+root covers both `bun run generate` and `bun start` (which runs from this directory).
+
+What is already in the environment wins over the file. An exported key, or one passed inline
+(`DEEPSEEK_API_KEY=… bun run generate`), is a decision about that one run; a file left in the
+repository is a default, and a stale one in it silently beating the key you just passed would be
+the worst thing a config file could do. Which file was read is printed at the start of a run
+(`-q` silences it), and if no key is found anywhere the error names the file it looked in.
+
+Ollama needs no key at all — passing an empty one is fine, though the variable does have to be
+*set*, since "unset" is what the error is made of. The key is never written anywhere by the CLI: it
+goes from the file or the environment to the endpoint you configured, and no further.
 
 ## Output
 
@@ -198,6 +211,7 @@ several places that have to agree:
 | `summary.ts` | what was made, read back from the file | **a line in the summary** |
 | `formats.ts` | the output formats | **a format**: one entry |
 | `output.ts` | where a model is written, and what it is called there | — |
+| `envfile.ts` | finding and reading a `.env`, and which of it the environment already has | **a syntax**: `parseEnvFile` |
 | `python.ts` | the `run_python` interpreter | — |
 
 Tests: `test/cli.test.ts` drives the real command as a subprocess against a mock OpenAI-compatible

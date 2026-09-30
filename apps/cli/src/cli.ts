@@ -20,6 +20,7 @@
 import { HELP, parseArgs, UsageError } from "./args.js";
 import { runChat } from "./chat.js";
 import { resolveConnection } from "./config.js";
+import { loadEnvFile, mergeInto } from "./envfile.js";
 import { writeModel } from "./output.js";
 import { runPrompt, startingModel } from "./run.js";
 import { isEmpty, summaryLines } from "./summary.js";
@@ -48,7 +49,12 @@ async function main(argv: string[]): Promise<number> {
   const chatting = opts.chat || (opts.prompt === "" && Boolean(process.stdin.isTTY));
   if (!chatting) await promptFrom(opts);
 
-  const { connection } = resolveConnection(opts);
+  // A key left in a .env, for the same reason the flags exist: the alternative is exporting it in
+  // every shell. What the environment already has wins over the file — see envfile.ts.
+  const file = loadEnvFile();
+  if (file.path && !opts.quiet) process.stderr.write(`Reading ${file.path}\n`);
+
+  const { connection } = resolveConnection(opts, mergeInto(process.env, file), file.path);
   const model = startingModel(opts);
   const result = chatting ? await runChat(connection, opts, model) : await runPrompt(connection, opts, model);
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addFlow, addStock, allVariables, createEmptyModel, parseMdl } from "@vensim-ai/core";
@@ -52,6 +52,9 @@ function openingRound(): unknown {
 
 /** Every request body the endpoint received, so a test can see what the *second* turn was sent. */
 let requests: string[] = [];
+/** And what each one carried as its key, which is the only way to tell *which* source of a key the
+ * command used when more than one of them has one. */
+let keys: string[] = [];
 
 /**
  * What to answer a turn with, keyed on what was asked. A turn starts with a user message; every
@@ -97,6 +100,7 @@ beforeAll(() => {
     async fetch(req) {
       const body = await req.text();
       requests.push(body);
+      keys.push((req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, ""));
       const prompt = turnPrompt(body);
       return prompt === null ? sse(TEXT_ROUND) : roundFor(prompt);
     },
@@ -110,22 +114,37 @@ function tmp(): string {
   return mkdtempSync(join(tmpdir(), "vensim-cli-test-"));
 }
 
-/** Runs the CLI the way a shell does, with a scrubbed environment so a real key on this machine
- * can never leak into (or rescue) a test. `input` is fed to stdin, which is how a chat session is
- * driven to its end without a terminal. */
-async function cli(args: string[], env: Record<string, string> = {}, input?: string) {
-  const proc = Bun.spawn(["bun", "run", CLI, ...args], {
-    env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env },
-    stdout: "pipe",
-    stderr: "pipe",
-    stdin: input === undefined ? "ignore" : "pipe",
-  });
-  if (input !== undefined) {
-    proc.stdin.write(input);
-    await proc.stdin.end();
+/**
+ * Runs the CLI the way a shell does, with a scrubbed environment so a real key on this machine can
+ * never leak into (or rescue) a test.
+ *
+ * Run in an empty directory, for the same reason and for one more: the command reads a `.env` from
+ * where it is run, and the repository has one. Without this, a developer with a key in `.env` would
+ * pass the tests that are about having no key at all, and some of them would go looking for a real
+ * endpoint. A caller that needs to look at what the run produced passes its own directory, and then
+ * gets to keep it.
+ *
+ * `input` is fed to stdin, which is how a chat session is driven to its end without a terminal.
+ */
+async function cli(args: string[], env: Record<string, string> = {}, input?: string, cwd?: string) {
+  const dir = cwd ?? mkdtempSync(join(tmpdir(), "vensim-cli-cwd-"));
+  try {
+    const proc = Bun.spawn(["bun", "run", CLI, ...args], {
+      cwd: dir,
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env },
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: input === undefined ? "ignore" : "pipe",
+    });
+    if (input !== undefined) {
+      proc.stdin.write(input);
+      await proc.stdin.end();
+    }
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    return { code: await proc.exited, stdout, stderr, cwd: dir };
+  } finally {
+    if (cwd === undefined) rmSync(dir, { recursive: true, force: true });
   }
-  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-  return { code: await proc.exited, stdout, stderr };
 }
 
 const KEY = { VENSIM_AI_API_KEY: "test-key" };
@@ -198,13 +217,12 @@ describe("generating a model", () => {
   test("a prompt reaches the model, and the default file name comes from it", async () => {
     const dir = tmp();
     try {
-      const { code, stdout } = await cli(["a coffee shop queue", "--base-url", baseUrl, "--api-key", "test-key"], { ...KEY, VENSIM_AI_HOME: dir });
+      const { code, stdout } = await cli(["a coffee shop queue", "--base-url", baseUrl, "--api-key", "test-key"], KEY, undefined, dir);
       expect(code).toBe(0);
-      // No -o: the name is the prompt's, slugified.
+      // No -o: the name is the prompt's, slugified, and it lands where the command was run.
       expect(stdout).toContain("a-coffee-shop-queue.mdl");
-      expect(existsSync(join(process.cwd(), "a-coffee-shop-queue.mdl"))).toBe(true);
+      expect(existsSync(join(dir, "a-coffee-shop-queue.mdl"))).toBe(true);
     } finally {
-      rmSync(join(process.cwd(), "a-coffee-shop-queue.mdl"), { force: true });
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -238,6 +256,80 @@ describe("generating a model", () => {
       expect(existsSync(out)).toBe(false);
     } finally {
       refusing.stop(true);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a .env file", () => {
+  test("provides the key, from the directory the command is run in", async () => {
+    const dir = tmp();
+    try {
+      writeFileSync(join(dir, ".env"), "# a key I leave here\nVENSIM_AI_API_KEY=from-the-file\n");
+      const out = join(dir, "from-env.mdl");
+      // Nothing in the environment and no --api-key: the file is the only place a key could come
+      // from, so a run that reaches the endpoint proves it was read.
+      const { code, stderr } = await cli(["a population model", "-o", out, "--base-url", baseUrl], {}, undefined, dir);
+      expect(code).toBe(0);
+      expect(existsSync(out)).toBe(true);
+      expect(keys.at(-1)).toBe("from-the-file");
+      // Said out loud, once, because a config file that is silently read (or silently not) is how
+      // an hour disappears into a key that was in the wrong place.
+      expect(stderr).toContain(join(dir, ".env"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The rule the whole thing rests on: a file in the repository is a default, an exported key is a
+  // decision about this run. Getting this backwards would mean a stale key in a file silently
+  // beating the one someone just passed on the command line.
+  test("is a default, not an override", async () => {
+    const dir = tmp();
+    try {
+      writeFileSync(join(dir, ".env"), "VENSIM_AI_API_KEY=from-the-file\n");
+      await cli(["a population model", "-o", join(dir, "a.mdl"), "--base-url", baseUrl], { VENSIM_AI_API_KEY: "from-the-env" }, undefined, dir);
+      expect(keys.at(-1)).toBe("from-the-env");
+
+      // And a flag beats both, which is not new — asserted here so the three orders are in one
+      // place if any of them is ever changed.
+      await cli(["a population model", "-o", join(dir, "b.mdl"), "--base-url", baseUrl, "--api-key", "from-the-flag"], { VENSIM_AI_API_KEY: "from-the-env" }, undefined, dir);
+      expect(keys.at(-1)).toBe("from-the-flag");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("is found from a subdirectory, so either entry point finds the same one", async () => {
+    const dir = tmp();
+    try {
+      mkdirSync(join(dir, "apps", "cli"), { recursive: true });
+      writeFileSync(join(dir, ".env"), "VENSIM_AI_API_KEY=from-the-file\n");
+      const out = join(dir, "deep.mdl");
+      // Run where `bun start` runs from, with the file at the repository root: this is the case a
+      // "the .env next to you" rule would have missed.
+      const { code } = await cli(["a population model", "-o", out, "--base-url", baseUrl], {}, undefined, join(dir, "apps", "cli"));
+      expect(code).toBe(0);
+      expect(keys.at(-1)).toBe("from-the-file");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("is not looked for above the repository", async () => {
+    const dir = tmp();
+    try {
+      // A `.env` above the checkout, and a repository below it with no `.env` of its own. Walking
+      // up past the `.git` would find the outer one, and pick up whatever is next to a directory
+      // someone happened to run from — a shared parent like /tmp, for instance.
+      writeFileSync(join(dir, ".env"), "VENSIM_AI_API_KEY=not-this-one\n");
+      mkdirSync(join(dir, "repo", ".git"), { recursive: true });
+      const out = join(dir, "repo", "out.mdl");
+      const { code, stderr } = await cli(["a population model", "-o", out, "--base-url", baseUrl], {}, undefined, join(dir, "repo"));
+      expect(code).toBe(2); // no key anywhere it is willing to look
+      expect(stderr).toContain("no API key");
+      expect(existsSync(out)).toBe(false);
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -313,15 +405,16 @@ describe("chatting", () => {
     // No -o, so the path is the model's own name — the one observable place the name survives.
     // (A `.mdl` has nowhere to store it: the format has no field for a model's title, so it is
     // gone the moment the file is read back, whatever it said going out.)
-    const path = join(process.cwd(), "a-queue-model.mdl");
+    const dir = tmp();
     try {
-      const { code, stdout } = await cli(["--chat", "a queue model", "--base-url", baseUrl, "--api-key", "test-key"], KEY, "/exit\n");
+      const { code, stdout } = await cli(["--chat", "a queue model", "--base-url", baseUrl, "--api-key", "test-key"], KEY, "/exit\n", dir);
       expect(code).toBe(0);
       // It ran before reading anything from stdin: the only line typed was the one that leaves.
+      const path = join(dir, "a-queue-model.mdl");
       expect(existsSync(path)).toBe(true);
       expect(stdout).toContain(path);
     } finally {
-      rmSync(path, { force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

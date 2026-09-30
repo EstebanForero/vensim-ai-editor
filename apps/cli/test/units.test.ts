@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseArgs, UsageError } from "../src/args.js";
 import { resolveConnection } from "../src/config.js";
+import { findEnvFile, mergeInto, parseEnvFile } from "../src/envfile.js";
 import { FORMAT_NAMES, formatOf } from "../src/formats.js";
 import { nameFromPrompt, slugify } from "../src/naming.js";
 
@@ -84,6 +88,70 @@ describe("formats", () => {
       expect(format.extension.length).toBeGreaterThan(0);
       expect(typeof format.write).toBe("function");
     }
+  });
+});
+
+describe("the .env reader", () => {
+  test("reads keys and values, and skips what isn't one", () => {
+    const values = parseEnvFile(
+      [
+        "# a comment",
+        "",
+        "   ",
+        "DEEPSEEK_API_KEY=sk-abc123",
+        "export VENSIM_AI_PROVIDER=deepseek",
+        "VENSIM_AI_MODEL = deepseek-chat ",
+        "not a declaration",
+      ].join("\n"),
+    );
+    expect(values).toEqual({
+      DEEPSEEK_API_KEY: "sk-abc123",
+      VENSIM_AI_PROVIDER: "deepseek",
+      VENSIM_AI_MODEL: "deepseek-chat",
+    });
+  });
+
+  // A key is not a place to get creative, but a base URL is, and `#` and spaces are both things a
+  // value can legitimately contain. Quotes mean "exactly this"; without them a comment is a comment.
+  test("takes a quoted value literally and strips an unquoted trailing comment", () => {
+    expect(parseEnvFile('A="a # b"\nB=\'x y\'\nC=value # why\nD=a#b')).toEqual({
+      A: "a # b",
+      B: "x y",
+      C: "value",
+      D: "a#b",
+    });
+  });
+
+  test("a value may contain an equals sign", () => {
+    expect(parseEnvFile("VENSIM_AI_BASE_URL=http://host/v1?x=1").VENSIM_AI_BASE_URL).toBe("http://host/v1?x=1");
+  });
+
+  test("finds the nearest file at or above where it was run, and stops at the repository", () => {
+    const dir = mkdtempSync(join(tmpdir(), "vensim-env-test-"));
+    try {
+      const deep = join(dir, "repo", "apps", "cli");
+      mkdirSync(deep, { recursive: true });
+      mkdirSync(join(dir, "repo", ".git"), { recursive: true });
+      // A file beside the checkout, which is the one that must never be picked up.
+      writeFileSync(join(dir, ".env"), "A=1\n");
+
+      expect(findEnvFile(deep)).toBeNull(); // nothing inside the repository yet
+
+      writeFileSync(join(dir, "repo", ".env"), "A=2\n");
+      expect(findEnvFile(deep)).toBe(join(dir, "repo", ".env")); // the repository's own
+
+      writeFileSync(join(dir, "repo", "apps", ".env"), "A=3\n");
+      expect(findEnvFile(deep)).toBe(join(dir, "repo", "apps", ".env")); // and nearest wins
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The file is a default; the environment is a decision about this run.
+  test("fills in gaps rather than overriding", () => {
+    const file = { path: "/repo/.env", values: { VENSIM_AI_API_KEY: "file", VENSIM_AI_MODEL: "from-file" } };
+    expect(mergeInto({ VENSIM_AI_API_KEY: "env" }, file)).toEqual({ VENSIM_AI_API_KEY: "env", VENSIM_AI_MODEL: "from-file" });
+    expect(mergeInto({}, file)).toEqual({ VENSIM_AI_API_KEY: "file", VENSIM_AI_MODEL: "from-file" });
   });
 });
 

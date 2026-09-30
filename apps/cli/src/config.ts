@@ -36,7 +36,12 @@ export interface ResolvedConnection {
   preset: ProviderPreset;
 }
 
-export function resolveConnection(opts: Options, env: NodeJS.ProcessEnv = process.env): ResolvedConnection {
+/**
+ * `envFile` is only ever used to word the error below: a `.env` that was read and had no key in it
+ * is a different problem from no `.env` at all, and only one of them means the file is in the
+ * wrong place. Nothing else about resolution depends on it.
+ */
+export function resolveConnection(opts: Options, env: NodeJS.ProcessEnv = process.env, envFile: string | null = null): ResolvedConnection {
   const preset = findPreset(opts.provider ?? env.VENSIM_AI_PROVIDER ?? PROVIDER_PRESETS[0]!.name);
   const baseUrl = opts.baseUrl ?? env.VENSIM_AI_BASE_URL ?? preset.baseUrl;
   const model = opts.model ?? env.VENSIM_AI_MODEL ?? preset.model;
@@ -46,8 +51,9 @@ export function resolveConnection(opts: Options, env: NodeJS.ProcessEnv = proces
   const keyVar = KEY_VARS[preset.name.toLowerCase()];
   const apiKey = opts.apiKey ?? env.VENSIM_AI_API_KEY ?? (keyVar ? env[keyVar] : undefined);
   if (apiKey === undefined) {
+    const named = `VENSIM_AI_API_KEY${keyVar && keyVar !== "VENSIM_AI_API_KEY" ? ` (or ${keyVar})` : ""}`;
     throw new UsageError(
-      `no API key: set VENSIM_AI_API_KEY${keyVar && keyVar !== "VENSIM_AI_API_KEY" ? ` (or ${keyVar})` : ""}, or pass --api-key`,
+      `no API key: set ${named}, pass --api-key, ${envFile ? `or put one in ${envFile}` : "or put one in a .env"}`,
     );
   }
   if (!baseUrl) throw new UsageError("no endpoint: pass --base-url (the Custom preset has none)");

@@ -101,6 +101,10 @@ Environment: VENSIM_AI_API_KEY (or OPENAI_API_KEY / DEEPSEEK_API_KEY / GEMINI_AP
 OPENROUTER_API_KEY), plus VENSIM_AI_PROVIDER, VENSIM_AI_MODEL and VENSIM_AI_BASE_URL to save
 passing the flags. The key is never written anywhere.
 
+A .env file is read as well: the nearest one at or above the directory you run from, stopping at
+the top of the repository. It fills in what the environment does not already set — an exported key,
+or one passed inline, still wins. .env.example in the repository root lists what it takes.
+
 Note: the agent's run_python tool executes code on this machine, as you.
 `;
 
