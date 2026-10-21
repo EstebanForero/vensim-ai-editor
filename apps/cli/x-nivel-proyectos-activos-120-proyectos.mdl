@@ -1,0 +1,129 @@
+{UTF-8}
+Proyectos activos= INTEG (
+	"Tasa inscripcion regular" -"Tasa de graduacion e independencia" -"Tasa de abandono o quiebra",
+		120)
+	~	Proyectos
+	~	Numero de proyectos actualmente activos en la cartera.
+	|
+
+Tasa inscripcion regular= 25
+	~	Proyectos/Month
+	~	Flujo de entrada: proyectos nuevos que se inscriben a la cartera a tasa regular constante.
+	|
+
+Tasa de graduacion e independencia= MIN(Proyectos activos * Tasa graduacion, Mentoria sobre el costo requerido)
+	~	Proyectos/Month
+	~	Flujo de salida: proyectos que completan su ciclo y se graduan. Limitado por la capacidad de mentoria (presupuesto).
+	|
+
+Tasa de abandono o quiebra= Proyectos activos * Razon riesgo quiebra
+	~	Proyectos/Month
+	~	Flujo de salida: proyectos que abandonan o quiebran. Proporcional al numero de proyectos activos.
+	|
+
+Tasa graduacion= 0.2
+	~	1/Month
+	~	Fraccion mensual de proyectos activos que completan su ciclo y se graduan / se independizan.
+	|
+
+Presupuesto mensual= 150000000
+	~	Presupuesto/Month
+	~	Presupuesto disponible por mes para sostener la mentoria de proyectos.
+	|
+
+Mentoria sobre el costo requerido= Presupuesto mensual / "Costo de mentoria por proyectos"
+	~	Proyectos/Month
+	~	Capacidad de mentoria: cuantos proyectos puede sostener el presupuesto mensual dado el costo requerido por proyecto.
+	|
+
+Costo de mentoria por proyectos= 1000
+	~	Presupuesto/Proyectos
+	~	Costo requerido de mentoria por proyecto activo.
+	|
+
+Costo operativo= 1.5
+	~	Presupuesto/Proyectos
+	~	Costo operativo por proyecto (en millones de unidades de presupuesto).
+	|
+
+Razon riesgo quiebra= IF THEN ELSE(Proyectos activos > 200, 0.2, 0.1)
+	~	1/Month
+	~	Razon mensual de riesgo de quiebra / abandono por proyecto activo.
+	|
+
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+
+FINAL TIME= 100
+	~	Month
+	~	The final time for the simulation.
+	|
+
+INITIAL TIME= 0
+	~	Month
+	~	The initial time for the simulation.
+	|
+
+SAVEPER= TIME STEP
+	~	Month
+	~	The frequency with which output is stored.
+	|
+
+TIME STEP= 0.25
+	~	Month
+	~	The time step for the simulation.
+	|
+
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*View 1
+$192-192-192,0,Times New Roman|12||0-0-0|0-0-0|0-0-255|-1--1--1|-1--1--1|96,96,100,0
+10,1,Proyectos activos,297,317,45,23,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,2,Tasa graduacion,297,212,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,3,Presupuesto mensual,86,168,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,4,Mentoria sobre el costo requerido,297,106,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,5,Costo de mentoria por proyectos,86,63,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,6,Costo operativo,45,545,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,7,Razon riesgo quiebra,508,380,45,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+11,8,0,86,283,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,9,Tasa inscripcion regular,86,317,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,10,48,-13,267,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,11,8,10,100,0,0,22,0,192,0,-1--1--1,,1|(37,275)|
+1,12,8,1,4,0,0,22,0,192,0,-1--1--1,,1|(192,300)|
+11,13,0,508,283,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,14,Tasa de graduacion e independencia,508,317,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,15,13,1,100,0,0,22,0,192,0,-1--1--1,,1|(403,300)|
+12,16,48,607,267,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,17,13,16,4,0,0,22,0,192,0,-1--1--1,,1|(557,275)|
+11,18,0,720,283,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,19,Tasa de abandono o quiebra,720,317,46,26,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,20,18,1,100,0,0,22,0,192,0,-1--1--1,,1|(509,300)|
+12,21,48,820,275,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+1,22,18,21,4,0,0,22,0,192,0,-1--1--1,,1|(770,279)|
+1,23,8,1,1,0,43,0,0,192,0,-1--1--1,,1|(192,317)|
+1,24,13,1,1,0,45,0,0,192,0,-1--1--1,,1|(403,317)|
+1,25,1,13,1,0,43,0,0,192,0,-1--1--1,,1|(403,317)|
+1,26,2,13,1,0,43,0,0,192,0,-1--1--1,,1|(403,265)|
+1,27,4,13,1,0,43,0,0,192,0,-1--1--1,,1|(403,211)|
+1,28,3,4,1,0,43,0,0,192,0,-1--1--1,,1|(192,137)|
+1,29,5,4,1,0,45,0,0,192,0,-1--1--1,,1|(192,84)|
+1,30,18,1,1,0,45,0,0,192,0,-1--1--1,,1|(509,317)|
+1,31,1,18,1,0,43,0,0,192,0,-1--1--1,,1|(509,317)|
+1,32,7,18,1,0,43,0,0,192,0,-1--1--1,,1|(614,349)|
+1,33,1,7,1,0,43,0,0,192,0,-1--1--1,,1|(403,349)|
+12,34,0,403,317,27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B1
+12,35,0,509,317,27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B2
+12,36,0,504,358,27,27,4,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B3
+12,37,0,403,391,80,44,8,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B1 loop: Proyectos activos → Tasa de graduacion e independencia → Proyectos activos
+12,38,0,509,391,80,44,8,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B2 loop: Proyectos activos → Tasa de abandono o quiebra → Proyectos activos
+12,39,0,504,441,80,53,8,7,0,0,-1,0,0,0,0,0,0,0,0,0
+B3 loop: Proyectos activos → Razon riesgo quiebra → Tasa de abandono o quiebra → Proyectos activos
+///---\\\
