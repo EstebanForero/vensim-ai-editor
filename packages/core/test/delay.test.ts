@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ARCHETYPES, buildArchetypeExample, detectArchetypes } from "../src/archetypes/index.js";
+import { exprToString, parseExpr } from "../src/mdl/expr/index.js";
 import { parseMdl } from "../src/mdl/parser.js";
 import { writeMdl } from "../src/mdl/writer.js";
 import { addAuxiliary, addConstant, addFlow, addStock } from "../src/model/builder/index.js";
@@ -115,25 +116,68 @@ describe("DELAY3 / SMOOTH3 / DELAY N (higher-order)", () => {
     expect(third.series["Out"]![at(third, 30)]).toBeCloseTo(first.series["Out"]![at(first, 30)]!, 3);
   });
 
-  test("DELAY N takes its order from the third argument", () => {
-    const third = simulate(ramped("DELAY3(In, 3)"));
-    const viaN = simulate(ramped("DELAY N(In, 3, 3)"));
-    expect(viaN.series["Out"]![at(viaN, 10)]).toBeCloseTo(third.series["Out"]![at(third, 10)]!, 12);
-
-    // With no order argument it defaults to first order.
-    const defaulted = simulate(ramped("DELAY N(In, 2)"));
-    const first = simulate(ramped("DELAY1(In, 2)"));
-    expect(defaulted.series["Out"]![at(defaulted, 10)]).toBeCloseTo(first.series["Out"]![at(first, 10)]!, 12);
+  test("DELAY N is Vensim's (input, delay time, initial, order)", () => {
+    // Under Euler a constant delay time makes DELAY N the same cascade as DELAY3. The initial
+    // is the input's value at t0, which for this ramp is 0.
+    const third = simulate(ramped("DELAY3(In, 3)", { method: "euler" }));
+    const viaN = simulate(ramped("DELAY N(In, 3, 0, 3)", { method: "euler" }));
+    expect(viaN.series["Out"]![at(viaN, 10)]).toBeCloseTo(third.series["Out"]![at(third, 10)]!, 6);
 
     // Any order settles the same total delay behind its input.
-    const fourth = simulate(ramped("DELAY N(In, 6, 4)"));
+    const fourth = simulate(ramped("DELAY N(In, 6, 0, 4)"));
     expect(fourth.series["Out"]![at(fourth, 30)]).toBeCloseTo(24, 3);
   });
 
+  test("anything but those four arguments is refused", () => {
+    expect(() => simulate(ramped("DELAY N(In, 2)"))).toThrow(/four arguments/);
+    expect(() => simulate(ramped("DELAY N(In, 2, 0)"))).toThrow(/four arguments/);
+    expect(() => simulate(ramped("DELAY1(In, 2, 0)"))).toThrow(/DELAY1I/);
+  });
+
   test("a non-literal order is refused rather than guessed at", () => {
-    const model = ramped("DELAY N(In, 3, Order)");
+    const model = ramped("DELAY N(In, 3, 0, Order)");
     addConstant(model, { name: "Order", value: 3 });
     expect(() => simulate(model)).toThrow(/literal whole-number order/);
+  });
+
+  test("under RK4, DELAY N stays on the Euler step while DELAY3 does not", () => {
+    const opts = { dt: 0.5, stopTime: 15 };
+    const continuous = simulate(ramped("DELAY3(In, 3)", opts));
+    const discrete = simulate(ramped("DELAY N(In, 3, 0, 3)", opts));
+    const euler = simulate(ramped("DELAY N(In, 3, 0, 3)", { ...opts, method: "euler" }));
+    expect(discrete.series["Out"]).toEqual(euler.series["Out"]);
+    const gap = Math.abs(continuous.series["Out"]![at(continuous, 6)]! - discrete.series["Out"]![at(discrete, 6)]!);
+    expect(gap).toBeGreaterThan(1e-4);
+  });
+
+  test("DELAY N uses the previous time step's delay time", () => {
+    const model = createEmptyModel();
+    addConstant(model, { name: "In", value: 10 });
+    addAuxiliary(model, { name: "D", equation: "10 - STEP(5, 5)" });
+    addAuxiliary(model, { name: "Out", equation: "DELAY N(In, D, 10, 1)" });
+    // Euler, so the step in D is not visible to the integration stage that ends at t = 5.
+    model.simSpec = { startTime: 0, stopTime: 8, dt: 1, integrationMethod: "euler", timeUnits: "Month" };
+    const discrete = simulate(model);
+    model.auxiliaries.find((a) => a.name === "Out")!.equation = "DELAY1(In, D)";
+    const continuous = simulate(model);
+    // Both are in steady state at 10 until the delay time halves. DELAY1 reacts in the same
+    // step. DELAY N is still dividing by the previous step's delay time, so it reacts one step later.
+    expect(continuous.series["Out"]![at(continuous, 5)]).toBeCloseTo(20, 6);
+    expect(discrete.series["Out"]![at(discrete, 5)]).toBeCloseTo(10, 6);
+    expect(discrete.series["Out"]![at(discrete, 6)]).toBeCloseTo(20, 6);
+  });
+
+  test("a literal order that is too high for the time step is lowered, as Vensim does", () => {
+    const opts = { dt: 0.5, stopTime: 8, method: "euler" as const };
+    const reduced = simulate(ramped("DELAY N(In, 1, 0, 8)", opts));
+    const first = simulate(ramped("DELAY N(In, 1, 0, 1)", opts));
+    expect(reduced.series["Out"]).toEqual(first.series["Out"]);
+  });
+
+  test("DELAY N and DELAY FIXED have to be the whole equation", () => {
+    expect(() => simulate(ramped("DELAY N(In, 2, 0, 1) + 1"))).toThrow(/entire equation/);
+    expect(() => simulate(ramped("1 + DELAY FIXED(In, 2, 0)"))).toThrow(/entire equation/);
+    expect(() => simulate(ramped("SMOOTH N(In, 2, 0, 1) + 1"))).toThrow(/entire equation/);
   });
 
   // The guard that keeps `DELAY N` from rewriting variables whose names start with those words.
@@ -288,5 +332,158 @@ describe("delays in the rest of the analysis", () => {
     expect(issues.length).toBeGreaterThan(0);
     // The check reports units in its own casing, so compare case-insensitively.
     expect(issues.map((i) => i.message).join(" ").toLowerCase()).toContain("m3/month");
+  });
+
+  test("an explicit initial has to carry the input's units", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "Out", equation: "DELAY1I(In, 4, Start)", units: "m3/Month" });
+    addAuxiliary(model, { name: "In", equation: "1", units: "m3/Month" });
+    addAuxiliary(model, { name: "Start", equation: "0", units: "People" });
+    const outId = model.auxiliaries[0]!.id;
+    const messages = checkUnits(model)
+      .filter((i) => i.variableId === outId)
+      .map((i) => i.message)
+      .join(" ");
+    expect(messages).toContain("initial value");
+  });
+
+  test("DELAY FIXED and the I forms pass the input's sign through", () => {
+    const NAMES = ["Pressure", "R", "Start"];
+    expect(inferPolarity("DELAY1I(Pressure, 4, Start)", "Pressure", NAMES)).toBe("+");
+    expect(inferPolarity("DELAY FIXED(Pressure, 4, Start)", "Pressure", NAMES)).toBe("+");
+    expect(inferPolarity("SMOOTHI(Pressure, 4, Start)", "Pressure", NAMES)).toBe("+");
+    // The initial value is where the lag starts, not a causal input.
+    expect(inferPolarity("DELAY1I(R, 4, Pressure)", "Pressure", NAMES)).toBeNull();
+    expect(inferPolarity("DELAY FIXED(R, 4, Pressure)", "Pressure", NAMES)).toBeNull();
+  });
+});
+
+describe("explicit initial values", () => {
+  // Out' = (t − Out)/D, Out(0) = 10 solves to Out(t) = t − D + (10 + D)·e^(−t/D).
+  test("DELAY1I starts at the given value, not the input", () => {
+    const D = 2;
+    const result = simulate(ramped("DELAY1I(In, 2, 10)"));
+    const exact = (t: number) => t - D + (10 + D) * Math.exp(-t / D);
+    const out = result.series["Out"]!;
+    expect(out[at(result, 0)]).toBeCloseTo(10, 9);
+    expect(out[at(result, 4)]).toBeCloseTo(exact(4), 8);
+    expect(out[at(result, 20)]).toBeCloseTo(exact(20), 6);
+  });
+
+  test("SMOOTHI matches DELAY1I while the delay time is constant", () => {
+    const viaDelay = simulate(ramped("DELAY1I(In, 2, 10)"));
+    const viaSmooth = simulate(ramped("SMOOTHI(In, 2, 10)"));
+    expect(viaSmooth.series["Out"]![at(viaSmooth, 8)]).toBeCloseTo(viaDelay.series["Out"]![at(viaDelay, 8)]!, 9);
+  });
+
+  test("DELAY3I and SMOOTH3I start at the initial and still settle one delay behind a ramp", () => {
+    const third = simulate(ramped("DELAY3I(In, 3, 4)"));
+    const smooth = simulate(ramped("SMOOTH3I(In, 3, 4)"));
+    expect(third.series["Out"]![at(third, 0)]).toBeCloseTo(4, 9);
+    expect(smooth.series["Out"]![at(smooth, 0)]).toBeCloseTo(4, 9);
+    expect(third.series["Out"]![at(third, 30)]).toBeCloseTo(27, 5);
+    expect(smooth.series["Out"]![at(smooth, 30)]).toBeCloseTo(third.series["Out"]![at(third, 30)]!, 5);
+  });
+
+  test("with a constant delay time, Euler makes DELAY N match DELAY1I and SMOOTH N match SMOOTH3I", () => {
+    const opts = { method: "euler" as const };
+    const viaI = simulate(ramped("DELAY1I(In, 2, 10)", opts));
+    const viaN = simulate(ramped("DELAY N(In, 2, 10, 1)", opts));
+    expect(viaN.series["Out"]![at(viaN, 0)]).toBeCloseTo(10, 9);
+    expect(viaN.series["Out"]![at(viaN, 8)]).toBeCloseTo(viaI.series["Out"]![at(viaI, 8)]!, 6);
+
+    const third = simulate(ramped("SMOOTH3I(In, 3, 4)", opts));
+    const viaSmoothN = simulate(ramped("SMOOTH N(In, 3, 4, 3)", opts));
+    expect(viaSmoothN.series["Out"]![at(viaSmoothN, 0)]).toBeCloseTo(4, 9);
+    expect(viaSmoothN.series["Out"]![at(viaSmoothN, 8)]).toBeCloseTo(third.series["Out"]![at(third, 8)]!, 6);
+  });
+
+  test("SMOOTH N without an order is refused", () => {
+    expect(() => simulate(ramped("SMOOTH N(In, 2, 0)"))).toThrow(/four arguments/);
+  });
+
+  test("a delay downstream of another starts at the upstream value", () => {
+    const model = createEmptyModel();
+    addConstant(model, { name: "In", value: 10 });
+    addAuxiliary(model, { name: "Mid", equation: "DELAY1(In, 2)" });
+    addAuxiliary(model, { name: "Out", equation: "DELAY1(Mid, 3)" });
+    model.simSpec = { startTime: 0, stopTime: 1, dt: 0.25, integrationMethod: "euler", timeUnits: "Month" };
+    const result = simulate(model);
+    expect(result.series["Mid"]![0]).toBeCloseTo(10, 9);
+    expect(result.series["Out"]![0]).toBeCloseTo(10, 9);
+  });
+});
+
+describe("material delay versus information delay", () => {
+  // Both sit at steady state (output = input = 10, pipeline = 100) until the delay time halves.
+  // A material delay then dumps that pipeline, so its output doubles. An information delay does not.
+  function halving(equation: string): Model {
+    const model = createEmptyModel();
+    addConstant(model, { name: "In", value: 10 });
+    addAuxiliary(model, { name: "D", equation: "10 - STEP(5, 10)" });
+    addAuxiliary(model, { name: "Out", equation });
+    model.simSpec = { startTime: 0, stopTime: 12, dt: 0.01, integrationMethod: "euler", timeUnits: "Month" };
+    return model;
+  }
+
+  test("DELAY1 doubles its output when the delay time halves, and SMOOTH does not", () => {
+    const material = simulate(halving("DELAY1(In, D)"));
+    const information = simulate(halving("SMOOTH(In, D)"));
+    expect(material.series["Out"]![at(material, 9)]).toBeCloseTo(10, 6);
+    expect(material.series["Out"]![at(material, 10)]).toBeCloseTo(20, 6);
+    expect(information.series["Out"]![at(information, 9)]).toBeCloseTo(10, 6);
+    expect(information.series["Out"]![at(information, 10)]).toBeCloseTo(10, 6);
+  });
+});
+
+describe("DELAY FIXED", () => {
+  test("holds the initial value, then replays the input one delay time later", () => {
+    const result = simulate(ramped("DELAY FIXED(In, 4, -1)", { dt: 0.5, stopTime: 10 }));
+    const out = result.series["Out"]!;
+    expect(out[at(result, 0)]).toBeCloseTo(-1, 9);
+    expect(out[at(result, 3.5)]).toBeCloseTo(-1, 9);
+    expect(out[at(result, 4)]).toBeCloseTo(0, 9); // input at t = 0
+    expect(out[at(result, 7.5)]).toBeCloseTo(3.5, 9); // input at t = 3.5
+  });
+
+  test("uses only the delay time's initial value", () => {
+    const model = createEmptyModel();
+    addAuxiliary(model, { name: "In", equation: "Time" });
+    addAuxiliary(model, { name: "D", equation: "2 + STEP(10, 1)" });
+    addAuxiliary(model, { name: "Out", equation: "DELAY FIXED(In, D, 99)" });
+    model.simSpec = { startTime: 0, stopTime: 6, dt: 0.25, integrationMethod: "rk4", timeUnits: "Month" };
+    const result = simulate(model);
+    expect(result.series["Out"]![at(result, 1.5)]).toBeCloseTo(99, 9);
+    expect(result.series["Out"]![at(result, 2)]).toBeCloseTo(0, 9);
+    expect(result.series["Out"]![at(result, 6)]).toBeCloseTo(4, 9);
+  });
+
+  test("a delay shorter than one time step still waits one step", () => {
+    const result = simulate(ramped("DELAY FIXED(In, 0.1, 7)", { dt: 1, stopTime: 3, method: "euler" }));
+    const out = result.series["Out"]!;
+    expect(out[at(result, 0)]).toBeCloseTo(7, 9);
+    expect(out[at(result, 1)]).toBeCloseTo(0, 9);
+    expect(out[at(result, 2)]).toBeCloseTo(1, 9);
+  });
+
+  test("Euler and RK4 agree, because the shift only moves on a time step", () => {
+    const euler = simulate(ramped("DELAY FIXED(In, 3, 0)", { dt: 0.25, method: "euler", stopTime: 8 }));
+    const rk4 = simulate(ramped("DELAY FIXED(In, 3, 0)", { dt: 0.25, method: "rk4", stopTime: 8 }));
+    expect(rk4.series["Out"]).toEqual(euler.series["Out"]);
+  });
+
+  test("the shift register stays out of the output series", () => {
+    const result = simulate(ramped("DELAY FIXED(In, 2, 0)"));
+    expect(Object.keys(result.series).sort()).toEqual(["In", "Out"]);
+  });
+
+  test("a non-positive delay time is refused", () => {
+    expect(() => simulate(ramped("DELAY FIXED(In, 0, 1)"))).toThrow(/positive delay time/);
+  });
+
+  test("spaced names round-trip through the equation printer", () => {
+    for (const src of ["DELAY FIXED(In, 4, 0)", "DELAY N(In, 2, 10, 1)", "SMOOTH N(In, 3, 4, 3)", "DELAY1I(In, 2, 10)"]) {
+      expect(exprToString(parseExpr(src))).toBe(src);
+    }
   });
 });

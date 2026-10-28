@@ -24,6 +24,7 @@ import { uniqueName } from "@/lib/naming";
 import { SAMPLE_MODELS } from "@/lib/sampleModels";
 import { useModelStore } from "@/state/modelStore";
 import { ArchetypeDialog } from "./ArchetypeDialog";
+import { McpLink } from "./McpLink";
 import { UnitsCheckDialog } from "./UnitsCheckDialog";
 
 export function Toolbar() {
@@ -105,7 +106,8 @@ export function Toolbar() {
     });
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-card px-3 py-1.5">
+    <div className="flex flex-col border-b bg-card">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5">
       <Input
         className="h-8 w-36 shrink-0"
         value={model.name}
@@ -266,6 +268,8 @@ export function Toolbar() {
 
       <UnitsCheckDialog />
       <ArchetypeDialog />
+    </div>
+    <McpLink />
     </div>
   );
 }

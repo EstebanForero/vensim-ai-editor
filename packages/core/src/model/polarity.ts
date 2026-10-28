@@ -232,10 +232,16 @@ function analyzeCall(rawName: string, args: Expr[], target: string, lookups?: Lo
     // the loop an archetype like Shifting the Burden is built out of. (Lowered to stocks before
     // simulating — see sim/lowerDelays.ts — but this analysis reads the model as written.)
     case "DELAY1":
+    case "DELAY1I":
     case "DELAY3":
+    case "DELAY3I":
     case "DELAY_N":
+    case "DELAY_FIXED":
     case "SMOOTH":
+    case "SMOOTHI":
     case "SMOOTH3":
+    case "SMOOTH3I":
+    case "SMOOTH_N":
       return { value: "pos", deriv: parts[0]?.deriv ?? "zero" };
 
     case "ZIDZ":

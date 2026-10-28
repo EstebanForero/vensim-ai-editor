@@ -6,11 +6,12 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "bun run --cwd apps/web dev",
+    "dev": "bun scripts/dev.ts",
     "build": "bun run --cwd apps/web build",
     "generate": "bun run --cwd apps/cli start",
+    "mcp": "bun run --cwd apps/mcp start:http",
     "test": "bun test",
-    "typecheck": "bun run --cwd packages/core typecheck && bun run --cwd packages/ai-tools typecheck && bun run --cwd packages/agent typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/cli typecheck"
+    "typecheck": "bun run --cwd packages/core typecheck && bun run --cwd packages/ai-tools typecheck && bun run --cwd packages/agent typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/cli typecheck && bun run --cwd apps/mcp typecheck"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

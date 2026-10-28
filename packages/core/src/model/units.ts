@@ -218,6 +218,15 @@ function literalExponent(e: Expr): number | null {
   return null;
 }
 
+/** Which argument is an explicit initial value, or null when this call starts from its input.
+ * DELAY N and SMOOTH N are (input, delay time, initial, order), so the initial is the third
+ * argument only when all four are present. */
+function delayInitialIndex(name: string, argc: number): number | null {
+  if (name === "DELAY_N" || name === "SMOOTH_N") return argc >= 4 ? 2 : null;
+  if (name === "DELAY_FIXED" || name === "DELAY1I" || name === "DELAY3I" || name === "SMOOTHI" || name === "SMOOTH3I") return 2;
+  return null;
+}
+
 /** `rawName` is the call's name exactly as written (variable names are matched case-sensitively),
  * upper-cased only for the built-in dispatch below. */
 function analyzeCallDim(rawName: string, args: Expr[], unitsByName: Map<string, UnitDim>): DimResult {
@@ -294,11 +303,40 @@ function analyzeCallDim(rawName: string, args: Expr[], unitsByName: Map<string, 
     // units. The delay time is in model time units, not the input's — reading it here would
     // combine "m3/Month" with "Month" and invent a mismatch that isn't there.
     case "DELAY1":
+    case "DELAY1I":
     case "DELAY3":
+    case "DELAY3I":
     case "DELAY_N":
+    case "DELAY_FIXED":
     case "SMOOTH":
+    case "SMOOTHI":
     case "SMOOTH3":
-      return { dim: parts[0]?.dim ?? "unknown", mismatches: allMismatches(), literal: parts[0]?.literal ?? false };
+    case "SMOOTH3I":
+    case "SMOOTH_N": {
+      // The result carries the input's units. An explicit initial has to be in those same units.
+      // The delay time is in model time units and is not part of the result. The order argument
+      // of DELAY N / SMOOTH N is dimensionless and is not an initial.
+      const mismatches = allMismatches();
+      const initialAt = delayInitialIndex(name, args.length);
+      const input = parts[0];
+      const initial = initialAt === null ? undefined : parts[initialAt];
+      if (
+        input &&
+        initial &&
+        !input.literal &&
+        !initial.literal &&
+        input.dim !== "unknown" &&
+        initial.dim !== "unknown" &&
+        !sameDim(input.dim, initial.dim)
+      ) {
+        mismatches.push({
+          context: `${name}(...) initial value must share the input's units`,
+          left: input.dim,
+          right: initial.dim,
+        });
+      }
+      return { dim: input?.dim ?? "unknown", mismatches, literal: input?.literal ?? false };
+    }
 
     default: {
       // Not a built-in. If the name is a model variable that declares units, this is a call to a

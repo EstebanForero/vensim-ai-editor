@@ -108,8 +108,26 @@ function expandedBeforeSimulation(name: string): VensimFunctionImpl {
   };
 }
 
-registerFunction("DELAY1", expandedBeforeSimulation("DELAY1"), "DELAY1(input, delay time): input delayed by one first-order lag.");
-registerFunction("DELAY3", expandedBeforeSimulation("DELAY3"), "DELAY3(input, delay time): input delayed by three lags in series.");
-registerFunction("DELAY_N", expandedBeforeSimulation("DELAY N"), "DELAY N(input, delay time, order): input delayed by `order` lags in series.");
-registerFunction("SMOOTH", expandedBeforeSimulation("SMOOTH"), "SMOOTH(input, smooth time): input smoothed by one first-order lag.");
-registerFunction("SMOOTH3", expandedBeforeSimulation("SMOOTH3"), "SMOOTH3(input, smooth time): input smoothed by three lags in series.");
+registerFunction("DELAY1", expandedBeforeSimulation("DELAY1"), "DELAY1(input, delay time): first-order material delay. Conserves what passes through. Starts at the input.");
+registerFunction("DELAY1I", expandedBeforeSimulation("DELAY1I"), "DELAY1I(input, delay time, initial): DELAY1 that starts at initial instead of the input.");
+registerFunction("DELAY3", expandedBeforeSimulation("DELAY3"), "DELAY3(input, delay time): third-order material delay.");
+registerFunction("DELAY3I", expandedBeforeSimulation("DELAY3I"), "DELAY3I(input, delay time, initial): DELAY3 that starts at initial.");
+registerFunction(
+  "DELAY_N",
+  expandedBeforeSimulation("DELAY N"),
+  "DELAY N(input, delay time, initial value, order): nth-order material delay. Must be the whole equation. Output is constant over a time step.",
+);
+registerFunction(
+  "DELAY_FIXED",
+  expandedBeforeSimulation("DELAY FIXED"),
+  "DELAY FIXED(input, delay time, initial): releases input unchanged after delay time. Uses the delay time's value at the start. Output is initial until then.",
+);
+registerFunction("SMOOTH", expandedBeforeSimulation("SMOOTH"), "SMOOTH(input, averaging time): first-order information delay. Does not conserve quantity when the averaging time changes.");
+registerFunction("SMOOTHI", expandedBeforeSimulation("SMOOTHI"), "SMOOTHI(input, averaging time, initial): SMOOTH that starts at initial.");
+registerFunction("SMOOTH3", expandedBeforeSimulation("SMOOTH3"), "SMOOTH3(input, averaging time): third-order information delay.");
+registerFunction("SMOOTH3I", expandedBeforeSimulation("SMOOTH3I"), "SMOOTH3I(input, averaging time, initial): SMOOTH3 that starts at initial.");
+registerFunction(
+  "SMOOTH_N",
+  expandedBeforeSimulation("SMOOTH N"),
+  "SMOOTH N(input, averaging time, initial value, order): nth-order information delay. Must be the whole equation. Output is constant over a time step.",
+);

@@ -2,7 +2,7 @@ import { ModelError } from "../model/errors.js";
 import { lookupScopeOf } from "../model/lookup.js";
 import { allVariables, type Model } from "../model/types.js";
 import { collectVarNames, evaluate, tryParseExpr, type EvalEnv, type Expr, type LookupTable } from "../mdl/expr/index.js";
-import { lowerDelays } from "./lowerDelays.js";
+import { lowerDelays, type FixedDelaySpec } from "./lowerDelays.js";
 import { topoSort } from "./topo.js";
 
 export interface SimResult {
@@ -115,7 +115,7 @@ export function simulate(original: Model): SimResult {
   // needs no notion of them at all — see lowerDelays.ts for why that beats evaluating them. The
   // series are collected from the ORIGINAL model, which is what keeps the generated delay state
   // out of the charts.
-  const { model, delayStockIds } = lowerDelays(original);
+  const { model, delayStockIds, discreteStockIds, fixedDelays, heldDelayTimes, orderChecks } = lowerDelays(original);
   const compiled = compile(model);
   const { startTime, stopTime, dt, integrationMethod } = model.simSpec;
   if (dt <= 0) throw new ModelError("Time step (dt) must be positive.");
@@ -157,12 +157,43 @@ export function simulate(original: Model): SimResult {
   // normally an expression over auxiliaries and flows — which only exist once the initial state
   // above is known. So these are evaluated against the model's fully-computed t0 environment
   // rather than alongside it.
-  if (delayStockIds.size > 0) {
-    const t0 = computeEnv(model, compiled, stockValues, startTime);
-    for (const s of compiled.stockInit) {
-      if (delayStockIds.has(s.id)) stockValues.set(s.id, evaluate(s.expr, t0, compiled.lookups));
+  //
+  // A chain of delays needs more than one pass. The outer delay's initial value is the inner
+  // delay's output, and that output isn't known until the inner stock has been set. Each pass
+  // reads the environment from the previous one (so a delay of itself stays at a fixed point
+  // instead of chasing its own output), and a chain of length N settles within N passes.
+  const delayInit = compiled.stockInit.filter((s) => delayStockIds.has(s.id));
+  if (delayInit.length > 0) {
+    for (let pass = 0; pass < delayInit.length; pass++) {
+      const t0 = computeEnv(model, compiled, stockValues, startTime);
+      let changed = false;
+      for (const s of delayInit) {
+        const value = evaluate(s.expr, t0, compiled.lookups);
+        if (stockValues.get(s.id) !== value) {
+          stockValues.set(s.id, value);
+          changed = true;
+        }
+      }
+      if (!changed) break;
     }
   }
+
+  if (orderChecks.length > 0) {
+    const t0 = computeEnv(model, compiled, stockValues, startTime);
+    for (const check of orderChecks) {
+      const delayTime = evaluate(check.delayTime, t0, compiled.lookups);
+      if (!(delayTime > check.order * dt)) {
+        throw new ModelError(
+          `${check.fn} needs a delay time longer than order × TIME STEP ` +
+            `(${delayTime} is not longer than ${check.order} × ${dt}). Vensim would reduce the order.`,
+        );
+      }
+    }
+  }
+
+  // DELAY FIXED samples its input once per TIME STEP and holds the released value in a stock
+  // that has no flow, so RK4's half-steps can't move it. The delay time is the value at t0.
+  const fixedRuntime = fixedDelays.map((spec) => prepareFixedDelay(model, compiled, stockValues, startTime, dt, spec));
 
   for (let step = 0; step <= steps; step++) {
     const t = startTime + step * dt;
@@ -172,34 +203,94 @@ export function simulate(original: Model): SimResult {
       series[v.name]!.push(env[v.name] ?? 0);
     }
 
+    for (const fd of fixedRuntime) sampleFixedDelay(fd, evaluate(fd.spec.input, env, compiled.lookups));
+
     if (step === steps) break;
 
     if (integrationMethod === "rk4") {
       const k1 = stockDerivatives(model, compiled, stockValues, t);
-      const s2 = addScaled(stockValues, k1, dt / 2);
+      // DELAY N / SMOOTH N stay at their step-start value while RK4 probes the other stocks.
+      const s2 = addScaled(stockValues, k1, dt / 2, discreteStockIds);
       const k2 = stockDerivatives(model, compiled, s2, t + dt / 2);
-      const s3 = addScaled(stockValues, k2, dt / 2);
+      const s3 = addScaled(stockValues, k2, dt / 2, discreteStockIds);
       const k3 = stockDerivatives(model, compiled, s3, t + dt / 2);
-      const s4 = addScaled(stockValues, k3, dt);
+      const s4 = addScaled(stockValues, k3, dt, discreteStockIds);
       const k4 = stockDerivatives(model, compiled, s4, t + dt);
       const next = new Map<string, number>();
       for (const s of model.stocks) {
         const v0 = stockValues.get(s.id) ?? 0;
-        const sum = (k1.get(s.id) ?? 0) + 2 * (k2.get(s.id) ?? 0) + 2 * (k3.get(s.id) ?? 0) + (k4.get(s.id) ?? 0);
-        next.set(s.id, v0 + (dt / 6) * sum);
+        if (discreteStockIds.has(s.id)) {
+          next.set(s.id, v0 + dt * (k1.get(s.id) ?? 0));
+        } else {
+          const sum = (k1.get(s.id) ?? 0) + 2 * (k2.get(s.id) ?? 0) + 2 * (k3.get(s.id) ?? 0) + (k4.get(s.id) ?? 0);
+          next.set(s.id, v0 + (dt / 6) * sum);
+        }
       }
       stockValues = next;
     } else {
       const d = stockDerivatives(model, compiled, stockValues, t);
       stockValues = addScaled(stockValues, d, dt);
     }
+    // The value just observed becomes "the previous time step" for the next one.
+    for (const held of heldDelayTimes) stockValues.set(held.stockId, evaluate(held.delayTime, env, compiled.lookups));
+    for (const fd of fixedRuntime) stockValues.set(fd.spec.stockId, nextFixedOutput(fd));
   }
 
   return { time, series };
 }
 
-function addScaled(base: Map<string, number>, delta: Map<string, number>, scale: number): Map<string, number> {
+interface FixedRuntime {
+  spec: FixedDelaySpec;
+  /** Whole TIME STEPs the input is held. Never less than one. */
+  slots: number;
+  /** The value shown until `slots` samples have been taken. */
+  initial: number;
+  /** The most recent `slots` input samples, oldest first. */
+  buf: number[];
+  samples: number;
+}
+
+function prepareFixedDelay(
+  model: Model,
+  compiled: Compiled,
+  stockValues: Map<string, number>,
+  startTime: number,
+  dt: number,
+  spec: FixedDelaySpec,
+): FixedRuntime {
+  const env = computeEnv(model, compiled, stockValues, startTime);
+  const delayTime = evaluate(spec.delayTime, env, compiled.lookups);
+  if (!Number.isFinite(delayTime) || delayTime <= 0) {
+    throw new ModelError(`DELAY FIXED needs a positive delay time. Got ${delayTime}.`);
+  }
+  return {
+    spec,
+    slots: Math.max(1, Math.round(delayTime / dt)),
+    initial: stockValues.get(spec.stockId) ?? 0,
+    buf: [],
+    samples: 0,
+  };
+}
+
+function sampleFixedDelay(fd: FixedRuntime, input: number): void {
+  fd.buf.push(input);
+  if (fd.buf.length > fd.slots) fd.buf.shift();
+  fd.samples++;
+}
+
+/** The output at the next TIME STEP, once this step's input has been sampled. */
+function nextFixedOutput(fd: FixedRuntime): number {
+  if (fd.samples < fd.slots) return fd.initial;
+  return fd.buf[0] ?? fd.initial;
+}
+
+function addScaled(
+  base: Map<string, number>,
+  delta: Map<string, number>,
+  scale: number,
+  frozen?: ReadonlySet<string>,
+): Map<string, number> {
   const out = new Map<string, number>();
-  for (const [k, v] of base) out.set(k, v + (delta.get(k) ?? 0) * scale);
+  for (const [k, v] of base) out.set(k, frozen?.has(k) ? v : v + (delta.get(k) ?? 0) * scale);
   return out;
 }

@@ -12,7 +12,7 @@ export interface Token {
 // named "Delay Needed" or an equation containing "Delivery Delay Now" would be rewritten into a
 // mangled identifier. `IF THEN ELSE` and `WITH LOOKUP` always appear as calls, so for them the
 // guard changes nothing.
-const MULTI_WORD_FUNCTIONS = ["IF THEN ELSE", "WITH LOOKUP", "DELAY N"];
+const MULTI_WORD_FUNCTIONS = ["IF THEN ELSE", "WITH LOOKUP", "DELAY N", "DELAY FIXED", "SMOOTH N"];
 
 function normalizeMultiWordFunctions(src: string): string {
   let out = src;

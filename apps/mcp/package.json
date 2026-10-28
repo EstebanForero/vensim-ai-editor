@@ -1,0 +1,28 @@
+{
+  "name": "@vensim-ai/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "vensim-ai-mcp": "src/main.ts"
+  },
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "start:http": "bun run src/http-main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "@vensim-ai/agent": "workspace:*",
+    "@vensim-ai/ai-tools": "workspace:*",
+    "@vensim-ai/core": "workspace:*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^26.6.5",
+    "typescript": "^5.7.2"
+  }
+}

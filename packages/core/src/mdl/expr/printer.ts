@@ -104,14 +104,14 @@ function print(e: Expr): string {
       const upper = e.name.toUpperCase();
       // Undo the lexer's squashing of Vensim's own spaced function names (see
       // lexer.ts's MULTI_WORD_FUNCTIONS).
-      const name =
-        upper === "IF_THEN_ELSE"
-          ? "IF THEN ELSE"
-          : upper === "WITH_LOOKUP"
-            ? "WITH LOOKUP"
-            : upper === "DELAY_N"
-              ? "DELAY N"
-              : e.name;
+      const spaced: Record<string, string> = {
+        IF_THEN_ELSE: "IF THEN ELSE",
+        WITH_LOOKUP: "WITH LOOKUP",
+        DELAY_N: "DELAY N",
+        DELAY_FIXED: "DELAY FIXED",
+        SMOOTH_N: "SMOOTH N",
+      };
+      const name = spaced[upper] ?? e.name;
       return `${name}(${e.args.map(print).join(", ")})`;
     }
     case "lookup":

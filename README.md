@@ -22,15 +22,18 @@ or an AI can both edit through the same structured model API — in the spirit o
   OpenAI-compatible chat-completions API.
 - `apps/cli` — the same agent without the editor: one prompt in, one model file out. See
   [its README](apps/cli/README.md).
+- `apps/mcp` — an MCP server other agents connect to. It exposes the same model tools, and an
+  `ask_agent` tool that runs this agent. See [its README](apps/mcp/README.md).
 
 ## Getting started
 
 ```bash
 bun install
-bun run dev        # starts apps/web on http://localhost:5173
+bun run dev        # the editor on http://localhost:5173, and the MCP server
 bun test           # every package's test suite
 bun run typecheck  # tsc --noEmit across all packages
 bun run generate   # the CLI — see below
+bun run mcp        # the MCP server on its own
 ```
 
 To use the AI chat panel, paste an API key into the field at the top of the "AI Chat" tab —
@@ -81,6 +84,24 @@ Stdout is the result and stderr the progress, so `> file` and `| jq` do the obvi
 
 [`apps/cli/README.md`](apps/cli/README.md) is the full guide — the flows with their output, exit
 codes, how the pipeline works, and where to add a flag, a format or a provider.
+
+## MCP
+
+`bun run dev` starts the MCP server with the editor. The terminal prints the link, and the editor
+shows the same link under the toolbar with a Copy button:
+
+```
+http://127.0.0.1:8787/mcp
+```
+
+`bun run mcp` starts that server on its own and prints the same link. The server holds one model
+for as long as the process runs. Other agents call `add_stock`, `set_equation`, `run_simulation`,
+and the rest, or `ask_agent` to have this agent do the editing. That model is the server's, not the
+diagram on the canvas; `load_mdl` and `save_mdl` move a `.mdl` between them. `ask_agent` uses the
+same API key and provider variables as the CLI.
+
+A host that has to spawn a process instead of connecting to a URL still can: `bun apps/mcp/src/main.ts`
+speaks MCP on stdin and stdout. The tool list is in [`apps/mcp/README.md`](apps/mcp/README.md).
 
 ## Study tab
 
@@ -168,10 +189,14 @@ The `.mdl` codec covers the core arithmetic/equation subset Vensim uses for stoc
 flows, and auxiliaries, plus the control block (`FINAL TIME`, `INITIAL TIME`, `TIME STEP`,
 `SAVEPER`) and a best-effort read/write of the sketch section for diagram layout. Subscripted
 (array) variables and macros are not modeled yet — opening a file that uses them won't crash, but
-those constructs won't simulate or render. Lookup tables are modelled, and so are `DELAY1`,
-`DELAY3`, `DELAY N`, `SMOOTH` and `SMOOTH3` (expanded into stocks and flows before simulating, so
-they integrate alongside the model's own levels); `DELAY FIXED` and the explicit-initial `DELAY1I`
-family are not.
+those constructs won't simulate or render. Lookup tables are modelled. So are the delay
+functions: `DELAY1`, `DELAY1I`, `DELAY3`, `DELAY3I`, `DELAY N` (material — they conserve what
+passes through them), `SMOOTH`, `SMOOTHI`, `SMOOTH3`, `SMOOTH3I`, `SMOOTH N` (information — they
+do not), and `DELAY FIXED` (a pure shift). The exponential ones are expanded into stocks and
+flows before simulating, so they integrate alongside the model's own levels. `DELAY FIXED` is
+advanced once per time step. `DELAY N` and `SMOOTH N` take Vensim's four arguments,
+`(input, delay time, initial value, order)`, and like `DELAY FIXED` each has to be the whole
+equation. Their output stays constant for one time step and uses the previous step's delay time.
 
 ## Causal relations and feedback loops
 
