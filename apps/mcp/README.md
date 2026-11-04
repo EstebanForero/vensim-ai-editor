@@ -13,9 +13,11 @@ http://127.0.0.1:8787/mcp
 Paste that URL into a client that connects to a remote MCP server. The process keeps one model in
 memory until it exits. Calls to `add_stock`, `add_flow`, `set_equation`, `run_simulation`,
 `run_python`, and the other tools from `@vensim-ai/agent` change that model directly — the same
-executor the editor and the CLI use. Nothing is written to disk until `save_mdl`. The diagram on
-the canvas is a separate model; pass a `.mdl` through `load_mdl` / `save_mdl` to move work between
-them.
+executor the editor and the CLI use. Nothing is written to disk until `save_model` or `save_mdl`.
+The diagram on the canvas is a separate model. `load_model` / `save_model` move a `.vaim` file,
+which keeps positions, curves, and simulation settings. `load_mdl` / `save_mdl` move a Vensim
+`.mdl`. `set_custom_graph` adds a composite graph (several variables on one chart, each on its own y-scale unless `scale` is set, with Vensim line styles) to
+whichever model the server is holding.
 
 `ask_agent` is the other way in. It runs one turn of the built-in agent against the same model, with
 the same system prompt and the same tools, and returns the assistant's reply plus the tool calls it
@@ -81,11 +83,17 @@ it from this repository.
 
 | Tool | What it does |
 | --- | --- |
+| `load_model` | Replace the session model from a `.vaim` `path` or from raw `text`. Positions and curves come back. |
+| `save_model` | Write the session model to a `.vaim` path. |
+| `read_model` | Return the `.vaim` text without writing a file. |
 | `load_mdl` | Replace the session model from a `path` or from raw `.mdl` `text`. |
-| `save_mdl` | Write the session model to a `.mdl` path. |
+| `save_mdl` | Write the session model to a `.mdl` path Vensim can open. |
 | `read_mdl` | Return the `.mdl` text without writing a file. |
+| `set_custom_graph` | Create or replace a composite graph: several variables on one chart, each on its own y-scale unless `scale` groups them. Line styles `SOLID`, `DOT`, `DASH`, `DASHDOT`, `DASHDOTDOT`. |
+| `delete_custom_graph` | Remove a custom graph by name. |
 | `new_model` | Replace the session with an empty model. |
 | `ask_agent` | Run the built-in agent on the session model. |
 
 `clear_model` is one of the ordinary tools. It deletes every element and keeps the model's name and
-simulation settings. `new_model` resets those too.
+simulation settings. `new_model` resets those too. `auto_layout` rearranges the diagram: `algorithm`
+`structured` (the default) keeps stocks and flows on one line, and `layered` is the previous ranking.

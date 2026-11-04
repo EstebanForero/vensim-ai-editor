@@ -1,4 +1,6 @@
 export * from "./model/types.js";
+export * from "./model/graphs.js";
+export * from "./model/native.js";
 export * from "./model/builder/index.js";
 export * from "./model/derived.js";
 export * from "./model/lookup.js";

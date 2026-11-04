@@ -1,6 +1,8 @@
 // Core Vensim-shaped system-dynamics model schema.
 // This is the single source of truth mutated by both the UI and the AI tools.
 
+import type { CustomOutputItem } from "./graphs.js";
+
 export type ElementKind = "stock" | "flow" | "auxiliary" | "connector";
 
 /**
@@ -136,6 +138,11 @@ export interface Model {
    * default) generated so exported files carry the same kind of at-a-glance trend view a human
    * Vensim user would normally add by hand. */
   pinnedGraphs: string[];
+  /** Vensim custom graphs and any custom reports/tables that share their block in the .mdl,
+   * in file order. Graphs are the `:GRAPH` sections; other sections are kept verbatim. */
+  customOutput: CustomOutputItem[];
+  /** Control-panel text Vensim writes after the custom graphs. Preserved, never interpreted. */
+  vensimFileTail: string;
   simSpec: SimSpec;
   /** Raw equation text for constructs the .mdl codec doesn't model yet (macros, subscripted vars, etc.), preserved verbatim on write. */
   unsupportedRaw: string[];
@@ -150,6 +157,8 @@ export function createEmptyModel(name = "New Model"): Model {
     connectors: [],
     comments: [],
     pinnedGraphs: [],
+    customOutput: [],
+    vensimFileTail: "",
     simSpec: {
       startTime: 0,
       stopTime: 100,

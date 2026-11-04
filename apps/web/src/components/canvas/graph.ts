@@ -1,12 +1,42 @@
-import { allVariables, findVariable, lookupTableOf, type Loop, type Model, type Position as ModelPosition, type Size } from "@vensim-ai/core";
+import {
+  allVariables,
+  findVariable,
+  lookupTableOf,
+  pipeRelationSide,
+  type Connector,
+  type Loop,
+  type Model,
+  type Position as ModelPosition,
+  type Size,
+} from "@vensim-ai/core";
 import type { Edge, Node } from "@xyflow/react";
-import { closestSides, sourceHandleId, targetHandleId } from "./edgeRouting";
+import { closestSides, sourceHandleId, targetHandleId, type Side } from "./edgeRouting";
 
 type Box = { pos: ModelPosition; size: Size };
 
 function routedHandles(a: Box, b: Box): { sourceHandle: string; targetHandle: string } {
   const { from, to } = closestSides(a, b);
   return { sourceHandle: sourceHandleId(from), targetHandle: targetHandleId(to) };
+}
+
+/**
+ * A link that restates a pipe is drawn from the open side of both nodes when the layout
+ * parked its bend there. Both ends use that same side, so the arrow runs beside the chain
+ * instead of through the pipe's gap. Any other bend keeps the closest-side handles.
+ */
+function relationHandles(model: Model, connector: Connector, from: Box, to: Box): { sourceHandle: string; targetHandle: string } {
+  const side = pipeRelationSide(model, connector.from, connector.to);
+  if (side && connector.bend && bendIsOutside(connector.bend, from, to, side)) {
+    return { sourceHandle: sourceHandleId(side), targetHandle: targetHandleId(side) };
+  }
+  return routedHandles(from, to);
+}
+
+function bendIsOutside(bend: ModelPosition, from: Box, to: Box, side: Side): boolean {
+  if (side === "bottom") return bend.y >= Math.max(from.pos.y + from.size.height, to.pos.y + to.size.height) - 1;
+  if (side === "top") return bend.y <= Math.min(from.pos.y, to.pos.y) + 1;
+  if (side === "right") return bend.x >= Math.max(from.pos.x + from.size.width, to.pos.x + to.size.width) - 1;
+  return bend.x <= Math.min(from.pos.x, to.pos.x) + 1;
 }
 
 export function buildGraph(
@@ -94,7 +124,7 @@ export function buildGraph(
     const isSelected = c.id === selectedId;
     const from = findVariable(model, c.from);
     const to = findVariable(model, c.to);
-    const handles = from && to ? routedHandles(from, to) : { sourceHandle: sourceHandleId("right"), targetHandle: targetHandleId("left") };
+    const handles = from && to ? relationHandles(model, c, from, to) : { sourceHandle: sourceHandleId("right"), targetHandle: targetHandleId("left") };
     edges.push({
       id: c.id,
       source: c.from,
@@ -116,7 +146,9 @@ export function buildGraph(
     nodes.push({
       id: loop.id,
       type: "loop",
-      position: loop.centroid,
+      // The centroid is the badge's center. React Flow places a node by its top-left, so shift
+      // by about half a badge or the pill draws down onto the stock and flow it is labeling.
+      position: { x: loop.centroid.x - 22, y: loop.centroid.y - 14 },
       draggable: false,
       selectable: false,
       zIndex: 1000,

@@ -261,17 +261,77 @@ export const VENSIM_AI_TOOLS: AiToolDefinition[] = [
   {
     name: "auto_layout",
     description:
-      "Automatically re-position every stock/flow/auxiliary into a tidy layered layout based on their flow and causal-relation connections, so newly-created or tangled elements don't pile up or drift out of view. Comments are left where they are. Call this after building or substantially restructuring a model, or whenever asked to tidy up / re-arrange the diagram.",
+      "Re-position every stock, flow, and auxiliary. algorithm structured (the default) keeps each stock-and-flow chain on one line and places the variables that feed a rate beside that rate, and it bends relations off that line so the curved style stays readable. algorithm layered is the original rank layout. Call this after building or substantially restructuring a model, or whenever asked to tidy up the diagram. Hand-written comments move to a column beside the diagram; loop annotations stay on their loops.",
     parameters: {
       type: "object",
       properties: {
         direction: { type: "string", enum: ["LR", "TB"], description: "LR (left-to-right, default) or TB (top-to-bottom)." },
+        algorithm: {
+          type: "string",
+          enum: ["structured", "layered"],
+          description: "structured (default) keeps stocks and flows on one line. layered is the original dagre ranking.",
+        },
       },
     },
   },
   {
+    name: "set_custom_graph",
+    description:
+      "Create or replace one composite graph: several variables drawn together on a single time series (Vensim's custom graph, stored as :GRAPH / :SCALE / :VAR). Each variable is on its own y-scale unless you set `scale`, so a stock and a rate both stay visible instead of the small one flattening onto the axis. Give the same `scale` number only to variables that should be compared in the same units. `line_style` is Vensim's own: SOLID, DOT (dotted), DASH (short dashes), DASHDOT, or DASHDOTDOT. A style cannot be combined with `line_width`. Leave `x_axis` empty for Time. Set `x_axis` to a variable name for an X-Y plot. Replacing a graph keeps its place in the model's custom-output list.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Graph name, unique in the model. Shown in the graph list." },
+        title: { type: "string", description: "Title drawn above the graph. Defaults to the name when omitted." },
+        x_axis: { type: "string", description: "Variable for the x-axis. Omit or leave blank for Time." },
+        x_label: { type: "string" },
+        y_label: { type: "string" },
+        x_min: { type: "number" },
+        x_max: { type: "number" },
+        y_min: { type: "number" },
+        y_max: { type: "number" },
+        dots: { type: "boolean", description: "Vensim :DOTS — plot points only, with no line connecting them." },
+        cumulative: { type: "boolean", description: "Plot the running integral of each variable instead of its value." },
+        variables: {
+          type: "array",
+          description: "The series, in legend order. At least one.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Variable name, as it is in the model." },
+              label: { type: "string", description: "Legend text. Defaults to the variable name." },
+              line_style: {
+                type: "string",
+                enum: ["SOLID", "DOT", "DASH", "DASHDOT", "DASHDOTDOT"],
+                description: "SOLID is a solid line. DOT is dotted. DASH is short dashes. DASHDOT and DASHDOTDOT mix dashes and dots.",
+              },
+              line_width: { type: "number", description: "Stroke width. Not allowed together with a line_style other than SOLID." },
+              color: { type: "string", description: "Vensim :LINE-COLOR as r-g-b, each 0–255. Example: \"220-40-40\"." },
+              y_min: { type: "number", description: "Y-axis minimum for this variable's scale, overriding the graph's." },
+              y_max: { type: "number" },
+              scale: { type: "number", description: "Omit this and the variable gets its own y-scale, so it stays visible beside variables of a different magnitude. The same number puts those variables on one shared axis (:SCALE)." },
+            },
+            required: ["name"],
+          },
+        },
+      },
+      required: ["name", "variables"],
+    },
+  },
+  {
+    name: "delete_custom_graph",
+    description: "Remove a custom graph by name. Does not delete the variables it plotted.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+      },
+      required: ["name"],
+    },
+  },
+  {
     name: "list_model",
-    description: "Read back the full current model: all stocks, flows, auxiliaries, relations, comments, and sim settings.",
+    description: "Read back the full current model: all stocks, flows, auxiliaries, relations, comments, custom graphs, and sim settings.",
     parameters: { type: "object", properties: {} },
   },
   {

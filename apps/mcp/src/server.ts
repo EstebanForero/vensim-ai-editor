@@ -16,7 +16,7 @@ import {
   type ToolCallResult,
 } from "@vensim-ai/agent";
 import { executeTool } from "@vensim-ai/ai-tools";
-import { createEmptyModel, parseMdl, writeMdl } from "@vensim-ai/core";
+import { createEmptyModel, parseMdl, parseNativeModel, writeMdl, writeNativeModel } from "@vensim-ai/core";
 import * as z from "zod/v4";
 import { ConnectionError, resolveConnection } from "./connection.js";
 import { runPython as defaultRunPython } from "./python.js";
@@ -119,7 +119,7 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
     version: SERVER_VERSION,
     title: "Vensim AI Editor",
     description:
-      "Edits one Vensim system-dynamics model in memory. Call the model tools directly, or ask_agent to have this project's own agent build and revise the model. Nothing is written to disk until save_mdl.",
+      "Edits one system-dynamics model in memory. Call the model tools directly, including set_custom_graph for a Vensim custom graph, or ask_agent to have this project's own agent build and revise the model. save_model writes this editor's .vaim file, which keeps positions. save_mdl writes a Vensim .mdl.",
   });
 
   for (const tool of NEUTRAL_TOOLS) {
@@ -200,6 +200,63 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
     async () => exclusive(async () => textResult(writeMdl(session.model))),
+  );
+
+  server.registerTool(
+    "load_model",
+    {
+      description:
+        "Replace the session model with a .vaim file, this editor's own format. Positions, sizes, dragged curves, element ids, simulation settings (including RK4), and custom graphs are restored. Pass `path` to read a file, or `text` to pass the file contents. A .mdl belongs in load_mdl; this tool rejects it.",
+      inputSchema: z.object({
+        path: z.string().optional().describe("Absolute or process-relative path of a .vaim file."),
+        text: z.string().optional().describe(".vaim source. Used when path is omitted."),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    async (args) =>
+      exclusive(async () => {
+        if (args.path && args.text) return errorResult("Pass path or text, not both.");
+        if (!args.path && !args.text) return errorResult("Pass path or text.");
+        try {
+          const text = args.text ?? (await readFile(args.path!, "utf8"));
+          session.model = parseNativeModel(text);
+          return textResult({ name: session.model.name, stocks: session.model.stocks.length, flows: session.model.flows.length, auxiliaries: session.model.auxiliaries.length });
+        } catch (err) {
+          return errorResult(err instanceof Error ? err.message : String(err));
+        }
+      }),
+  );
+
+  server.registerTool(
+    "save_model",
+    {
+      description:
+        "Write the session model as a .vaim file, this editor's own format. Opening that file restores positions, curves, ids, simulation settings, and custom graphs. Use save_mdl when the file has to open in Vensim.",
+      inputSchema: z.object({
+        path: z.string().describe("Where to write the .vaim file."),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async (args) =>
+      exclusive(async () => {
+        try {
+          const text = writeNativeModel(session.model);
+          await writeFile(args.path, text, "utf8");
+          return textResult({ path: args.path, bytes: Buffer.byteLength(text) });
+        } catch (err) {
+          return errorResult(err instanceof Error ? err.message : String(err));
+        }
+      }),
+  );
+
+  server.registerTool(
+    "read_model",
+    {
+      description: "Return the session model as .vaim text, without writing a file. This is the lossless form. read_mdl returns Vensim .mdl text instead.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    async () => exclusive(async () => textResult(writeNativeModel(session.model))),
   );
 
   server.registerTool(

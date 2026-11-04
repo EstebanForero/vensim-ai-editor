@@ -21,6 +21,8 @@ export function clearModel(model: Model): void {
   model.connectors.length = 0;
   model.comments.length = 0;
   model.pinnedGraphs.length = 0;
+  model.customOutput.length = 0;
+  model.vensimFileTail = "";
   model.unsupportedRaw.length = 0;
 }
 

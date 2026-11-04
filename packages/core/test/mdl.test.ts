@@ -562,21 +562,26 @@ describe("how relations are written", () => {
     expect(writeMdl(model, { relations: "curved" })).toBe(writeMdl(model, { relations: "curved" }));
   });
 
-  // Centres are (45,22.5) and (245,122.5), so the midpoint is (145,72.5), rounded to (145,73).
-  test("straight writes the midpoint of the line, and is the default", () => {
+  // Centres are (45,22.5) and (245,122.5), so the chord midpoint rounds to (145,73). The
+  // written point sits a few pixels off that, on purpose: Vensim only draws the +/− inside a
+  // curve, and the exact midpoint is a straight line with no inside.
+  test("straight is the default and leaves the chord just far enough for a polarity mark", () => {
     const model = twoConnected();
     expect(writeMdl(model)).toBe(writeMdl(model, { relations: "straight" }));
     const arrow = writeMdl(model).split("\n").find((line) => line.startsWith("1,"))!;
-    expect(waypointOf(writeMdl(model), arrow.split(",")[1]!)).toEqual([145, 73]);
+    const [x, y] = waypointOf(writeMdl(model), arrow.split(",")[1]!);
+    const dist = Math.hypot(x - 145, y - 73);
+    expect(dist).toBeGreaterThan(1);
+    expect(dist).toBeLessThan(20);
   });
 
   test("curved writes a point beside the line rather than on it", () => {
     const model = twoConnected();
-    const straight = writeMdl(model).split("\n").find((line) => line.startsWith("1,"))!.split(",")[1]!;
-    const [x, y] = waypointOf(writeMdl(model, { relations: "curved" }), straight);
-    // Perpendicular to (200,100), so displaced off the chord — never the midpoint.
-    expect([x, y]).not.toEqual([145, 73]);
-    expect(Math.hypot(x - 145, y - 73)).toBeGreaterThan(1);
+    const id = writeMdl(model).split("\n").find((line) => line.startsWith("1,"))!.split(",")[1]!;
+    const [sx, sy] = waypointOf(writeMdl(model), id);
+    const [x, y] = waypointOf(writeMdl(model, { relations: "curved" }), id);
+    // The curved bow is the larger one. Straight is only far enough off the chord for the mark.
+    expect(Math.hypot(x - 145, y - 73)).toBeGreaterThan(Math.hypot(sx - 145, sy - 73));
   });
 
   // A bend the user dragged is a deliberate placement, and a style is only about what happens
@@ -588,5 +593,70 @@ describe("how relations are written", () => {
     const id = writeMdl(model).split("\n").find((line) => line.startsWith("1,"))!.split(",")[1]!;
     expect(waypointOf(writeMdl(model), id)).toEqual([300, 400]);
     expect(waypointOf(writeMdl(model, { relations: "curved" }), id)).toEqual([300, 400]);
+  });
+
+  // A bend parked on the chord is the same shape as no bend: Vensim would draw a straight
+  // line and drop the polarity character. It has to leave the chord too.
+  test("a bend that lies on the chord is moved off it", () => {
+    const model = twoConnected();
+    model.connectors[0]!.bend = { x: 145, y: 73 };
+    const id = writeMdl(model).split("\n").find((line) => line.startsWith("1,"))!.split(",")[1]!;
+    const [x, y] = waypointOf(writeMdl(model), id);
+    expect(Math.hypot(x - 145, y - 73)).toBeGreaterThan(1);
+  });
+});
+
+describe("relation polarity in the sketch", () => {
+  test("an inferred plus is ASCII 43 and an inferred minus is ASCII 45, and a pipe has neither", () => {
+    const model = createEmptyModel("Signs");
+    const tank = addStock(model, { name: "Tank", initialEquation: "10" });
+    addAuxiliary(model, { name: "Pressure", equation: "2" });
+    addAuxiliary(model, { name: "Resistance", equation: "4" });
+    const rate = addFlow(model, { name: "Rate", equation: "Pressure / Resistance", from: tank.id });
+    addConnector(model, { from: "Pressure", to: rate.id });
+    addConnector(model, { from: "Resistance", to: rate.id });
+
+    const lines = writeMdl(model).split("\n").filter((line) => line.startsWith("1,"));
+    const causal = lines.filter((line) => line.split(",")[4] === "1");
+    expect(causal.some((line) => line.includes(",1,0,43,"))).toBe(true);
+    expect(causal.some((line) => line.includes(",1,0,45,"))).toBe(true);
+    const pipes = lines.filter((line) => {
+      const style = line.split(",")[4];
+      return style === "100" || style === "4";
+    });
+    expect(pipes.length).toBeGreaterThan(0);
+    for (const line of pipes) expect(line.split(",")[6]).toBe("0");
+  });
+
+  test("a minus marked on the sketch survives when the target equation cannot supply one", () => {
+    const mdlText = [
+      "{UTF-8}",
+      "Level= INTEG (",
+      "\t0,",
+      "\t\t1)",
+      "\t~",
+      "\t~",
+      "\t|",
+      "",
+      "Cause=1",
+      "\t~",
+      "\t~",
+      "\t|",
+      "",
+      "\\\\\\---/// Sketch information - do not modify anything except names",
+      "V300  Do not put anything below this section - it will be ignored",
+      "*View 1",
+      "$192-192-192,0,Times New Roman|12||0-0-0|0-0-0|0-0-255|-1--1--1|-1--1--1|96,96,100,0",
+      "10,1,Level,100,100,40,20,3,3,0,0,-1,0,0,0,0,0,0,0,0,0",
+      "10,2,Cause,100,200,40,20,8,3,0,0,-1,0,0,0,0,0,0,0,0,0",
+      "1,3,2,1,1,0,45,0,0,192,0,-1--1--1,,1|(100,150)|",
+      "///---\\\\\\",
+    ].join("\n");
+
+    const model = parseMdl(mdlText);
+    expect(model.connectors).toHaveLength(1);
+    expect(model.connectors[0]!.polarity).toBe("-");
+    // Level is a stock, so inference has nothing to say. The exported mark has to stay a minus.
+    expect(writeMdl(model)).toContain(",1,0,45,");
   });
 });

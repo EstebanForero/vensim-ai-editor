@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { addAuxiliary, addComment, addConnector, addFlow, addStock } from "../src/model/builder/index.js";
+import { buildArchetypeExample } from "../src/archetypes/examples.js";
+import { addAuxiliary, addComment, addConnector, addConstant, addFlow, addStock } from "../src/model/builder/index.js";
 import { autoLayout } from "../src/layout/autoLayout.js";
+import { scoreLayout } from "../src/layout/score.js";
 import { annotateLoops, loopAnnotationPos } from "../src/loops/annotate.js";
 import { detectLoops } from "../src/loops/detect.js";
-import { createEmptyModel } from "../src/model/types.js";
+import { createEmptyModel, type Model } from "../src/model/types.js";
 
 describe("autoLayout", () => {
   // Regression: dagre optimizes the whole graph's layout together, blending flow-pipe edges and
@@ -178,7 +180,7 @@ describe("autoLayout: aligning a flow between two misaligned stocks", () => {
     const transfer = addFlow(model, { name: "Transfer", equation: "1", from: high.id, to: low.id });
     addFlow(model, { name: "Sideways", equation: "1", from: high.id });
 
-    autoLayout(model);
+    autoLayout(model, { algorithm: "layered" });
 
     const centerY = (v: { pos: { y: number }; size: { height: number } }) => v.pos.y + v.size.height / 2;
     // The precondition this test exists to exercise — asserted rather than guarded, so it can
@@ -188,3 +190,161 @@ describe("autoLayout: aligning a flow between two misaligned stocks", () => {
     expect(centerY(flow)).toBe(centerY(high));
   });
 });
+
+describe("structured layout", () => {
+  test("an open flow does not pull the two stocks off their shared line", () => {
+    const model = createEmptyModel();
+    const high = addStock(model, { name: "High", initialEquation: "100" });
+    const low = addStock(model, { name: "Low", initialEquation: "0" });
+    const transfer = addFlow(model, { name: "Transfer", equation: "1", from: high.id, to: low.id });
+    const sideways = addFlow(model, { name: "Sideways", equation: "1", from: high.id });
+
+    autoLayout(model, { algorithm: "structured" });
+
+    const centerY = (v: { pos: { y: number }; size: { height: number } }) => v.pos.y + v.size.height / 2;
+    expect(centerY(high)).toBeCloseTo(centerY(low), 1);
+    expect(centerY(transfer)).toBeCloseTo(centerY(high), 1);
+    expect(centerY(sideways)).toBeCloseTo(centerY(high), 1);
+    const overlap =
+      sideways.pos.x < transfer.pos.x + transfer.size.width &&
+      transfer.pos.x < sideways.pos.x + sideways.size.width &&
+      sideways.pos.y < transfer.pos.y + transfer.size.height &&
+      transfer.pos.y < sideways.pos.y + sideways.size.height;
+    expect(overlap).toBe(false);
+  });
+
+  test("a causal link that restates a pipe bends outside the pipe, not through its gap", () => {
+    const model = createEmptyModel();
+    const pop = addStock(model, { name: "Population", initialEquation: "100" });
+    const births = addFlow(model, { name: "Births", equation: "Population * Birth rate", to: pop.id });
+    addConstant(model, { name: "Birth rate", value: 0.03 });
+    addConnector(model, { from: "Population", to: "Births" });
+    addConnector(model, { from: "Birth rate", to: "Births" });
+
+    autoLayout(model, { algorithm: "structured" });
+
+    const link = model.connectors.find((connector) => connector.from === pop.id && connector.to === births.id);
+    const bend = link?.bend;
+    expect(bend).toBeTruthy();
+    const floor = Math.max(pop.pos.y + pop.size.height, births.pos.y + births.size.height);
+    expect(bend!.y).toBeGreaterThan(floor);
+  });
+
+  test("gives a curved relation a bend, and the layered layout clears bends", () => {
+    const model = createEmptyModel();
+    const pop = addStock(model, { name: "Population", initialEquation: "100" });
+    addFlow(model, { name: "Births", equation: "Population * Birth rate", to: pop.id });
+    addConstant(model, { name: "Birth rate", value: 0.03 });
+    addConnector(model, { from: "Birth rate", to: "Births" });
+
+    autoLayout(model, { algorithm: "structured" });
+    expect(model.connectors[0]!.bend).not.toBeNull();
+
+    autoLayout(model, { algorithm: "layered" });
+    expect(model.connectors[0]!.bend).toBeNull();
+  });
+});
+
+function community(): Model {
+  const model = createEmptyModel("Community");
+  const people = addStock(model, { name: "Population", initialEquation: "1000" });
+  const houses = addStock(model, { name: "Housing", initialEquation: "400" });
+  const jobs = addStock(model, { name: "Jobs", initialEquation: "300" });
+  const land = addStock(model, { name: "Open land", initialEquation: "2000" });
+
+  addFlow(model, { name: "Births", equation: "Population * Birth rate", to: people.id });
+  addFlow(model, { name: "Deaths", equation: "Population * Death rate", from: people.id });
+  addFlow(model, { name: "Building", equation: "Housing starts", to: houses.id });
+  addFlow(model, { name: "Demolition", equation: "Housing / Housing life", from: houses.id });
+  addFlow(model, { name: "Hiring", equation: "Jobs * Job growth", to: jobs.id });
+  addFlow(model, { name: "Layoffs", equation: "Jobs * Layoff rate", from: jobs.id });
+  addFlow(model, { name: "Conversion", equation: "Land converted", from: land.id, to: houses.id });
+
+  addConstant(model, { name: "Birth rate", value: 0.03 });
+  addConstant(model, { name: "Normal death rate", value: 0.01 });
+  addAuxiliary(model, { name: "Crowding", equation: "Population / Housing" });
+  addAuxiliary(model, { name: "Death rate", equation: "Normal death rate * Crowding" });
+  addConstant(model, { name: "Housing life", value: 50 });
+  addAuxiliary(model, { name: "Housing starts", equation: "Jobs * Construction fraction" });
+  addConstant(model, { name: "Construction fraction", value: 0.02 });
+  addConstant(model, { name: "Job growth", value: 0.04 });
+  addAuxiliary(model, { name: "Layoff rate", equation: "0.02 * Crowding" });
+  addAuxiliary(model, { name: "Land converted", equation: "Housing starts * Lot size" });
+  addConstant(model, { name: "Lot size", value: 0.2 });
+
+  for (const [from, to] of [
+    ["Population", "Births"],
+    ["Birth rate", "Births"],
+    ["Population", "Deaths"],
+    ["Death rate", "Deaths"],
+    ["Normal death rate", "Death rate"],
+    ["Crowding", "Death rate"],
+    ["Population", "Crowding"],
+    ["Housing", "Crowding"],
+    ["Housing starts", "Building"],
+    ["Jobs", "Housing starts"],
+    ["Construction fraction", "Housing starts"],
+    ["Housing", "Demolition"],
+    ["Housing life", "Demolition"],
+    ["Jobs", "Hiring"],
+    ["Job growth", "Hiring"],
+    ["Jobs", "Layoffs"],
+    ["Layoff rate", "Layoffs"],
+    ["Crowding", "Layoff rate"],
+    ["Housing starts", "Land converted"],
+    ["Lot size", "Land converted"],
+    ["Land converted", "Conversion"],
+    ["Open land", "Conversion"],
+  ] as const) {
+    addConnector(model, { from, to });
+  }
+  return model;
+}
+
+describe("layout clarity on a complex system", () => {
+  test("structured reads more clearly than layered, straight and curved", () => {
+    const models = [community(), buildArchetypeExample("limits-to-growth"), buildArchetypeExample("tragedy-of-the-commons")];
+    for (const style of ["straight", "curved"] as const) {
+      let structured = 0;
+      let layered = 0;
+      const detail: unknown[] = [];
+      for (const source of models) {
+        const structuredModel = clone(source);
+        const layeredModel = clone(source);
+        autoLayout(structuredModel, { algorithm: "structured" });
+        autoLayout(layeredModel, { algorithm: "layered" });
+        const structuredScore = scoreLayout(structuredModel, style);
+        const layeredScore = scoreLayout(layeredModel, style);
+        expect(overlapPairs(structuredModel)).toEqual([]);
+        structured += structuredScore.total;
+        layered += layeredScore.total;
+        detail.push({ name: source.name, style, structured: structuredScore, layered: layeredScore });
+      }
+      if (!(structured < layered)) {
+        throw new Error(`structured ${structured} is not clearer than layered ${layered} for ${style}: ${JSON.stringify(detail)}`);
+      }
+    }
+  });
+});
+
+function clone(model: Model): Model {
+  return JSON.parse(JSON.stringify(model)) as Model;
+}
+
+function overlapPairs(model: Model): string[] {
+  const vs = [...model.stocks, ...model.flows, ...model.auxiliaries];
+  const hits: string[] = [];
+  for (let i = 0; i < vs.length; i++) {
+    for (let j = i + 1; j < vs.length; j++) {
+      const a = vs[i]!;
+      const b = vs[j]!;
+      const hit =
+        a.pos.x < b.pos.x + b.size.width &&
+        b.pos.x < a.pos.x + a.size.width &&
+        a.pos.y < b.pos.y + b.size.height &&
+        b.pos.y < a.pos.y + a.size.height;
+      if (hit) hits.push(`${a.name} <> ${b.name}`);
+    }
+  }
+  return hits;
+}

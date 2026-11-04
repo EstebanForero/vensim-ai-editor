@@ -23,6 +23,7 @@
 // still gets orphaned on a real Vensim open+resave after this, the fix is local to the
 // `valveCenter` calculation and the Flow builder's default size, both flagged below.
 
+import { writeCustomOutput } from "./customOutput.js";
 import { tryParseExpr } from "./expr/index.js";
 import { quoteRefIfNeeded } from "./expr/printer.js";
 import { referencePattern } from "../model/builder/helpers.js";
@@ -337,6 +338,9 @@ function writeSketch(model: Model, relations: RelationStyle): string {
   });
 
   out += "///---\\\\\\\n";
+  const custom = writeCustomOutput(model.customOutput);
+  if (custom) out += custom;
+  if (model.vensimFileTail) out += model.vensimFileTail;
   return out;
 }
 
@@ -371,10 +375,12 @@ function graphPadNames(model: Model): string[] {
 /**
  * How a relation with no bend of its own is drawn on the canvas and written to the file.
  *
- * `"straight"` writes the chord's midpoint, which Vensim draws as a straight line; `"curved"`
- * writes a point offset perpendicular to the chord, which is what a Vensim user gets by dragging
- * an arrow. A bend the user dragged is honoured either way — a style is about what happens when
- * there is nothing to honour.
+ * `"straight"` stays close to the chord. It is not the exact midpoint: Vensim paints a
+ * relation's +/− inside the curve (Sketch Options, polarity distance 14), and a waypoint that
+ * lies on the chord is a straight line with no inside, so the character is missing in Vensim
+ * even though field 7 is 43 or 45. The canvas draws that badge itself, which is why the editor
+ * shows a sign the exported sketch does not. `"curved"` bows further, the way a dragged handle
+ * does. A bend that already leaves the chord is written as given.
  */
 export type RelationStyle = "straight" | "curved";
 
@@ -387,6 +393,31 @@ export type RelationStyle = "straight" | "curved";
  * apart. Seeding from the endpoints' *names* makes it the same every time a model is written, and
  * `"straight"` — the default — has nothing to vary at all.
  */
+/** Perpendicular distance from a point to the chord. Under 1px counts as "on the line". */
+function chordClearance(point: Position, from: Position, to: Position): number {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return Math.abs((point.x - from.x) * dy - (point.y - from.y) * dx) / len;
+}
+
+/**
+ * A small, stable bow so a straight relation still has an inside for its +/−.
+ *
+ * Capped at Vensim's default polarity distance (14). The floor is 8 rather than 1 because the
+ * waypoint is rounded to a whole pixel, and a 1px nudge on a diagonal rounds back onto the chord.
+ * The curved style bows by up to 60, so this stays the flatter of the two.
+ */
+function straightPolarityWaypoint(from: Position, to: Position, seed: string): Position {
+  const mx = (from.x + to.x) / 2;
+  const my = (from.y + to.y) / 2;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const amount = Math.min(14, Math.max(8, len * 0.12)) * hashSign(seed);
+  return { x: mx + (-dy / len) * amount, y: my + (dx / len) * amount };
+}
+
 function relationWaypoint(
   c: Connector,
   fromVar: Variable | undefined,
@@ -395,10 +426,14 @@ function relationWaypoint(
   toCenter: Position | undefined,
   relations: RelationStyle,
 ): Position {
-  if (c.bend) return c.bend;
-  if (!fromCenter || !toCenter) return { x: 0, y: 0 };
-  if (relations === "straight") return { x: (fromCenter.x + toCenter.x) / 2, y: (fromCenter.y + toCenter.y) / 2 };
-  return curveWaypoint(fromCenter, toCenter, `${fromVar?.name ?? ""}->${toVar?.name ?? ""}`);
+  if (!fromCenter || !toCenter) return c.bend ?? { x: 0, y: 0 };
+  // A handle the user (or the layout) already pulled off the chord is the curve Vensim will
+  // hang the polarity mark on. A handle that sits on the chord does not, so it is replaced
+  // below — otherwise the mark is in the file and invisible on the sketch.
+  if (c.bend && chordClearance(c.bend, fromCenter, toCenter) > 1) return c.bend;
+  const seed = `${fromVar?.name ?? ""}->${toVar?.name ?? ""}`;
+  if (relations === "curved") return curveWaypoint(fromCenter, toCenter, seed);
+  return straightPolarityWaypoint(fromCenter, toCenter, seed);
 }
 
 function connectorArrowRecord(

@@ -97,7 +97,9 @@ http://127.0.0.1:8787/mcp
 `bun run mcp` starts that server on its own and prints the same link. The server holds one model
 for as long as the process runs. Other agents call `add_stock`, `set_equation`, `run_simulation`,
 and the rest, or `ask_agent` to have this agent do the editing. That model is the server's, not the
-diagram on the canvas; `load_mdl` and `save_mdl` move a `.mdl` between them. `ask_agent` uses the
+diagram on the canvas. `load_model` and `save_model` move a `.vaim` file, which keeps the canvas
+(positions, curves, simulation settings, custom graphs). `load_mdl` and `save_mdl` move a `.mdl`
+for Vensim. `set_custom_graph` builds a custom graph on the server's model. `ask_agent` uses the
 same API key and provider variables as the CLI.
 
 A host that has to spawn a process instead of connecting to a URL still can: `bun apps/mcp/src/main.ts`
@@ -198,6 +200,19 @@ advanced once per time step. `DELAY N` and `SMOOTH N` take Vensim's four argumen
 `(input, delay time, initial value, order)`, and like `DELAY FIXED` each has to be the whole
 equation. Their output stays constant for one time step and uses the previous step's delay time.
 
+Save `.vaim` (the toolbar's editor-file button, or `save_model` on the MCP server) when the file
+only needs to reopen here. That file is the model as the editor holds it, so positions, dragged
+curves, element ids, and the integration method come back unchanged. A `.mdl` is the file to give
+Vensim. Vensim's sketch stores rounded coordinates and does not return a dragged curve, and Euler
+versus RK4 is not one of its equation fields.
+
+Custom graphs use Vensim's own `.vgd` keywords and are stored where Vensim stores them: after the
+sketch closer and before the settings block. A graph is one `:GRAPH` and one or more `:VAR` lines.
+`:SCALE` puts the following variables on one y-axis. With no `:SCALE`, each variable has its own y-scale, so a stock and a rate both use the height of the chart. The Simulation panel saves a graph that way, and "One shared axis" writes a single `:SCALE`. Line style is `:LINE-STYLE` — `DOT`, `DASH`,
+`DASHDOT`, or `DASHDOTDOT` — or `:LINE-WIDTH` for a solid line. A styled line has no width, which
+is Vensim's rule. The same description is what `set_custom_graph` writes, and the Simulation panel
+draws it. Reports, tables, and the settings tail in a file opened from Vensim are kept as-is.
+
 ## Causal relations and feedback loops
 
 Any two variables can be linked with a signed **relation** (Vensim's information-link arrow) —
@@ -205,6 +220,8 @@ via the toolbar's "Relation" mode (click a source, then a target) or by dragging
 handles on the canvas. Each relation carries a polarity, `+` (increases) or `-` (decreases),
 editable in the Inspector when the relation is selected. A pure causal-loop diagram — no
 stocks or flows, just auxiliaries and signed relations — works the same way.
+
+Arrange (the toolbar grid button) repositions the diagram. Structured, the default, keeps each stock-and-flow chain on one line and puts the variables that feed a rate beside that rate. Layered is the previous rank layout, still available from the same control and from `auto_layout`'s `algorithm` argument. Both run for straight and curved relations; structured also sets each relation's bend so the curved style bows off the chain.
 
 Whenever the model changes, `detectLoops` (in `packages/core/src/loops`) walks the graph
 formed by relations plus each flow's connection to its stock (an inflow is a "+" edge into the

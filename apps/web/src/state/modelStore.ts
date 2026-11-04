@@ -61,7 +61,14 @@ export function loadEditorModel(): Model | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as { v?: number; model?: unknown };
-    return parsed?.v === EDITOR_MODEL_VERSION && isModelShape(parsed.model) ? parsed.model : null;
+    if (parsed?.v !== EDITOR_MODEL_VERSION || !isModelShape(parsed.model)) return null;
+    // Fields added after the first saved models. Missing ones are empty, not a reason to
+    // throw the canvas away.
+    if (!Array.isArray(parsed.model.customOutput)) parsed.model.customOutput = [];
+    if (typeof parsed.model.vensimFileTail !== "string") parsed.model.vensimFileTail = "";
+    if (!Array.isArray(parsed.model.pinnedGraphs)) parsed.model.pinnedGraphs = [];
+    if (!Array.isArray(parsed.model.unsupportedRaw)) parsed.model.unsupportedRaw = [];
+    return parsed.model;
   } catch {
     return null;
   }

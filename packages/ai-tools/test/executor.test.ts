@@ -1,4 +1,4 @@
-import { createEmptyModel } from "@vensim-ai/core";
+import { createEmptyModel, parseMdl, writeMdl } from "@vensim-ai/core";
 import { describe, expect, test } from "bun:test";
 import { executeTool } from "../src/executor.js";
 import { VENSIM_AI_TOOLS } from "../src/tools.js";
@@ -160,6 +160,53 @@ describe("set_lookup tool", () => {
     expect(executeTool(model, "set_lookup", { name: "A", points: [[0]] }).ok).toBe(false);
     expect(executeTool(model, "set_lookup", { name: "A", points: [] }).ok).toBe(false);
     expect(executeTool(model, "set_lookup", { name: "A", points: [[0, "x"]] }).ok).toBe(false);
+  });
+});
+
+describe("custom graphs", () => {
+  test("writes a multi-variable time series with Vensim line styles", () => {
+    const model = createEmptyModel();
+    executeTool(model, "add_stock", { name: "Population", initial_equation: "100" });
+    executeTool(model, "add_auxiliary", { name: "Births", equation: "1" });
+    const res = executeTool(model, "set_custom_graph", {
+      name: "People",
+      title: "People over time",
+      variables: [
+        { name: "Population", line_style: "SOLID", scale: 0 },
+        { name: "Births", line_style: "DASH", label: "births", scale: 0 },
+        { name: "Population", line_style: "DOT", scale: 1 },
+      ],
+    });
+    expect(res.ok).toBe(true);
+    const text = writeMdl(model);
+    expect(text).toContain(":GRAPH People");
+    expect(text).toContain(":TITLE People over time");
+    expect(text).toContain(":VAR Population");
+    expect(text).toContain(":VAR Births|births");
+    expect(text).toContain(":LINE-STYLE DASH");
+    expect(text).toContain(":LINE-STYLE DOT");
+    expect(text).not.toContain(":LINE-STYLE SOLID");
+    const again = parseMdl(text);
+    const graph = again.customOutput[0]!.kind === "graph" ? again.customOutput[0]!.graph : undefined;
+    expect(graph?.scales).toHaveLength(2);
+    expect(graph?.scales[0]!.variables.map((v) => v.lineStyle ?? "SOLID")).toEqual(["SOLID", "DASH"]);
+
+    const composite = executeTool(model, "set_custom_graph", {
+      name: "Overlay",
+      variables: [{ name: "Population" }, { name: "Births", line_style: "DOT" }],
+    });
+    expect(composite.ok).toBe(true);
+    const overlay = model.customOutput.find((item) => item.kind === "graph" && item.graph.name === "Overlay");
+    const overlayGraph = overlay?.kind === "graph" ? overlay.graph : undefined;
+    expect(overlayGraph?.scales.map((scale) => scale.variables.map((v) => v.name))).toEqual([["Population"], ["Births"]]);
+    expect(overlayGraph?.scales.every((scale) => !scale.shared)).toBe(true);
+
+    const rejected = executeTool(model, "set_custom_graph", {
+      name: "Bad",
+      variables: [{ name: "Population", line_style: "DOT", line_width: 4 }],
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.error).toMatch(/line width/);
   });
 });
 

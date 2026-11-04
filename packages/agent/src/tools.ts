@@ -41,6 +41,10 @@ a real quantity — most commonly Time, for an effect or demand that changes ove
 equal to 1 that carries those units and pass THAT: e.g. "Time / Unidad de tiempo" with Unidad de tiempo = 1 declared in
 the time unit, then Name(Time / Unidad de tiempo). The same applies to any other dimensioned input (a price, a stock
 level): pass it divided by a unit-sized constant rather than raw, instead of leaving Vensim to warn about it. Use
+set_custom_graph to draw several variables together on one composite time series. Leave scale unset so
+each variable keeps its own y-scale and a stock stays visible next to a rate; pass the same scale
+number only when those variables should share an axis. line_style is SOLID, DOT (dotted), DASH
+(short dashes), DASHDOT, or DASHDOTDOT. Use
 add_comment for freestanding notes
 on the diagram (not equations), and set_sim_spec to change start/stop time, dt, or integration method when asked.
 The model's time unit (set via set_sim_spec's time_units, always an English Vensim keyword like "Month" or "Year")
@@ -52,7 +56,7 @@ rather than defaulting to translating "per month" into the model's own language 
 most common mistake here, and check_units (below) exists partly to catch it if it still happens, not to be relied
 on instead of getting it right the first time. Call auto_layout after building a new model from scratch, or after
 adding several elements in one go, so nothing piles up or drifts out of view — it's cheap and always safe to call
-again. Call check_units after building or
+again. Leave algorithm unset (structured) unless the user asks for the older layered ranking. Call check_units after building or
 changing equations/units, the same way you'd call run_simulation — treat a reported mismatch as something to
 actually resolve, not noise to ignore. Most mismatches are real bugs (a units field that's just wrong, a variable
 that shouldn't be summed/multiplied with another the way the equation does) or a units-STRING inconsistency rather
@@ -138,6 +142,8 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
   "set_sim_spec",
   "auto_layout",
   "annotate_loops",
+  "set_custom_graph",
+  "delete_custom_graph",
 ]);
 
 /** Whether a tool call by this name can have changed the model — and so whether the canvas needs

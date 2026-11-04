@@ -1,7 +1,8 @@
-import { addAuxiliary, addComment, addLookup, addStock, allVariables, annotateLoops, autoLayout, clearModel } from "@vensim-ai/core";
+import { addAuxiliary, addComment, addLookup, addStock, allVariables, annotateLoops, autoLayout, clearModel, LAYOUT_ALGORITHMS, type LayoutAlgorithmId } from "@vensim-ai/core";
 import { useReactFlow } from "@xyflow/react";
 import {
   Droplet,
+  FileJson,
   FolderOpen,
   GitBranch,
   LayoutGrid,
@@ -19,7 +20,7 @@ import {
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { downloadMdl, downloadXmile, openMdlFilePicker } from "@/lib/fileIO";
+import { downloadMdl, downloadNative, downloadXmile, openMdlFilePicker } from "@/lib/fileIO";
 import { uniqueName } from "@/lib/naming";
 import { SAMPLE_MODELS } from "@/lib/sampleModels";
 import { useModelStore } from "@/state/modelStore";
@@ -43,6 +44,7 @@ export function Toolbar() {
   const runUnitsCheck = useModelStore((s) => s.runUnitsCheck);
   const runArchetypeCheck = useModelStore((s) => s.runArchetypeCheck);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [layoutAlgorithm, setLayoutAlgorithm] = useState<LayoutAlgorithmId>("structured");
   const { fitView } = useReactFlow();
 
   // Ctrl+U (or Cmd+U on Mac) — matches Vensim's own Units Check shortcut. The browser's default
@@ -60,9 +62,12 @@ export function Toolbar() {
 
   const addNamed = (fn: (m: typeof model) => void) => mutate(fn);
 
-  const onAutoLayout = () => {
-    mutate((m) => autoLayout(m));
-    requestAnimationFrame(() => fitView({ duration: 300, padding: 0.2 }));
+  const arrange = (algorithm: LayoutAlgorithmId) => {
+    if (allVariables(model).length === 0) return;
+    mutate((m) => autoLayout(m, { algorithm }));
+    // One frame is often before React Flow has the new positions, so the fit would frame the
+    // diagram that just got replaced and clip the one that replaced it.
+    window.setTimeout(() => fitView({ duration: 300, padding: 0.25 }), 50);
   };
 
   const onAnnotateLoops = () => mutate((m) => annotateLoops(m));
@@ -181,14 +186,34 @@ export function Toolbar() {
           </button>
         ))}
       </div>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={onAutoLayout}
-        title="Automatically re-arrange every stock/flow/auxiliary into a tidy layered layout based on their flow and causal connections, then fit the view"
-      >
-        <LayoutGrid className="size-4" />
-      </Button>
+      <div className="flex h-8 items-center rounded-md border border-input">
+        <Button
+          size="sm"
+          variant="outline"
+          className="rounded-r-none border-0"
+          onClick={() => arrange(layoutAlgorithm)}
+          aria-label="Arrange diagram"
+          title={LAYOUT_ALGORITHMS.find((algorithm) => algorithm.id === layoutAlgorithm)?.summary}
+        >
+          <LayoutGrid className="size-4" />
+        </Button>
+        <select
+          aria-label="Layout algorithm"
+          className="h-full rounded-r-[5px] border-l border-input bg-transparent px-1 text-xs"
+          value={layoutAlgorithm}
+          onChange={(e) => {
+            const algorithm = e.target.value as LayoutAlgorithmId;
+            setLayoutAlgorithm(algorithm);
+            arrange(algorithm);
+          }}
+        >
+          {LAYOUT_ALGORITHMS.map((algorithm) => (
+            <option key={algorithm.id} value={algorithm.id}>
+              {algorithm.label}
+            </option>
+          ))}
+        </select>
+      </div>
       <Button
         size="sm"
         variant="outline"
@@ -249,11 +274,21 @@ export function Toolbar() {
           size="sm"
           variant="ghost"
           onClick={() => openMdlFilePicker((m) => setModel(m), (err) => setFileError(err))}
-          title="Open a .mdl — replaces what is on the canvas"
+          aria-label="Open model"
+          title="Open a .vaim editor file or a Vensim .mdl — replaces what is on the canvas"
         >
           <FolderOpen className="size-4" />
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => downloadMdl(model, relations)}>
+        <Button size="sm" variant="ghost" onClick={() => downloadNative(model)} aria-label="Save editor file" title="Save a .vaim file for this editor. Positions, curves, and simulation settings come back as they are.">
+          <FileJson className="size-4" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => downloadMdl(model, relations)}
+          aria-label="Save Vensim mdl"
+          title="Save a Vensim .mdl. Vensim can open it. Coordinates are rounded, and a curve you dragged is not restored on the next open here."
+        >
           <Save className="size-4" />
         </Button>
         <Button

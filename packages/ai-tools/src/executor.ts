@@ -27,8 +27,14 @@ import {
   setEquation,
   setLookupPoints,
   setSimSpec,
+  customGraphs,
+  deleteCustomGraph,
+  setCustomGraph,
   simulate,
+  type CustomGraph,
+  type GraphVariable,
   type IntegrationMethod,
+  type LineStyle,
   type Model,
   type Polarity,
 } from "@vensim-ai/core";
@@ -62,6 +68,23 @@ function summarizeModel(model: Model) {
     })),
     relations: model.connectors.map((c) => ({ id: c.id, from: c.from, to: c.to, polarity: c.polarity })),
     comments: model.comments.map((c) => ({ id: c.id, text: c.text })),
+    customGraphs: customGraphs(model).map((g) => ({
+      name: g.name,
+      title: g.title,
+      xAxis: g.xAxis ?? "",
+      yMin: g.yMin,
+      yMax: g.yMax,
+      dots: g.dots === true,
+      scales: g.scales.map((scale) =>
+        scale.variables.map((v) => ({
+          name: v.name,
+          label: v.label,
+          lineStyle: v.lineStyle ?? "SOLID",
+          lineWidth: v.lineWidth,
+          color: v.lineColor ? `${v.lineColor.r}-${v.lineColor.g}-${v.lineColor.b}` : undefined,
+        })),
+      ),
+    })),
   };
 }
 
@@ -221,8 +244,24 @@ export function executeTool(model: Model, toolName: string, input: Record<string
       }
       case "auto_layout": {
         const direction = input.direction === "TB" ? "TB" : "LR";
-        autoLayout(model, { direction });
-        return { ok: true, result: { laidOut: true, direction } };
+        const algorithm = input.algorithm === undefined ? "structured" : input.algorithm === "layered" || input.algorithm === "structured" ? input.algorithm : undefined;
+        if (!algorithm) throw new ModelError(`Unknown layout "${String(input.algorithm)}". Use structured or layered.`);
+        autoLayout(model, { direction, algorithm });
+        return { ok: true, result: { laidOut: true, direction, algorithm } };
+      }
+      case "set_custom_graph": {
+        const graph = setCustomGraph(model, graphFromTool(input));
+        return {
+          ok: true,
+          result: {
+            name: graph.name,
+            variables: graph.scales.flatMap((s) => s.variables.map((v) => v.name)),
+          },
+        };
+      }
+      case "delete_custom_graph": {
+        deleteCustomGraph(model, str(input.name));
+        return { ok: true, result: { deleted: str(input.name) } };
       }
       case "list_model": {
         return { ok: true, result: summarizeModel(model) };
@@ -274,6 +313,81 @@ function num(v: unknown): number {
   if (typeof v !== "number") throw new ModelError(`Expected a numeric argument, got ${JSON.stringify(v)}.`);
   return v;
 }
+const LINE_STYLES = new Set(["DOT", "DASH", "DASHDOT", "DASHDOTDOT"]);
+
+function graphFromTool(input: Record<string, unknown>): CustomGraph {
+  if (!Array.isArray(input.variables) || input.variables.length === 0) {
+    throw new ModelError("A custom graph needs at least one variable.");
+  }
+  // Omitted `scale` is its own y-scale (a composite: every line stays visible). An explicit
+  // number groups those variables onto one :SCALE, in the order they were given.
+  const scales: { shared: boolean; variables: GraphVariable[] }[] = [];
+  const explicit = new Map<number, { shared: boolean; variables: GraphVariable[] }>();
+  input.variables.forEach((raw, index) => {
+    if (!raw || typeof raw !== "object") throw new ModelError(`Variable ${index + 1} is not an object.`);
+    const v = raw as Record<string, unknown>;
+    const name = str(v.name);
+    const styleRaw = typeof v.line_style === "string" ? v.line_style.toUpperCase() : undefined;
+    const lineStyle: LineStyle | undefined =
+      styleRaw && styleRaw !== "SOLID" ? (styleRaw as LineStyle) : undefined;
+    if (lineStyle && !LINE_STYLES.has(lineStyle)) {
+      throw new ModelError(`"${name}" has unknown line_style "${styleRaw}". Use SOLID, DOT, DASH, DASHDOT, or DASHDOTDOT.`);
+    }
+    const lineWidth = v.line_width === undefined ? undefined : num(v.line_width);
+    if (lineStyle && lineWidth !== undefined) {
+      throw new ModelError(`Vensim cannot combine a line style (${lineStyle}) with a line width on "${name}".`);
+    }
+    const scale = v.scale === undefined ? undefined : num(v.scale);
+    if (scale !== undefined && (!Number.isInteger(scale) || scale < 0)) {
+      throw new ModelError(`"${name}" has scale ${scale}. Scale is a whole number starting at 0.`);
+    }
+    const variable: GraphVariable = {
+      name,
+      label: optStr(v.label),
+      lineStyle,
+      lineWidth,
+      lineColor: v.color === undefined ? undefined : parseRgb(str(v.color), name),
+      yMin: optNum(v.y_min),
+      yMax: optNum(v.y_max),
+      extra: [],
+    };
+    if (scale === undefined) {
+      scales.push({ shared: false, variables: [variable] });
+      return;
+    }
+    const group = explicit.get(scale);
+    if (group) group.variables.push(variable);
+    else {
+      const created = { shared: true, variables: [variable] };
+      explicit.set(scale, created);
+      scales.push(created);
+    }
+  });
+  return {
+    name: str(input.name),
+    title: optStr(input.title),
+    xAxis: optStr(input.x_axis),
+    xLabel: optStr(input.x_label),
+    yLabel: optStr(input.y_label),
+    xMin: optNum(input.x_min),
+    xMax: optNum(input.x_max),
+    yMin: optNum(input.y_min),
+    yMax: optNum(input.y_max),
+    dots: input.dots === true,
+    cumulative: input.cumulative === true,
+    scales,
+    extra: [],
+  };
+}
+
+function parseRgb(text: string, name: string): { r: number; g: number; b: number } {
+  const match = /^(\d{1,3})-(\d{1,3})-(\d{1,3})$/.exec(text.trim());
+  if (!match) throw new ModelError(`"${name}" color must be Vensim's r-g-b form, like "220-40-40".`);
+  const [r, g, b] = [match[1], match[2], match[3]].map((n) => Number(n));
+  if (r! > 255 || g! > 255 || b! > 255) throw new ModelError(`"${name}" color channels must be from 0 to 255.`);
+  return { r: r!, g: g!, b: b! };
+}
+
 function posFrom(input: Record<string, unknown>): { x: number; y: number } | undefined {
   if (typeof input.x === "number" && typeof input.y === "number") return { x: input.x, y: input.y };
   return undefined;

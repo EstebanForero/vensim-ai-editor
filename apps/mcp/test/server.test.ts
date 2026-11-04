@@ -34,7 +34,9 @@ describe("MCP server", () => {
     const listed = await client.listTools();
     const names = listed.tools.map((tool) => tool.name);
     for (const tool of NEUTRAL_TOOLS) expect(names).toContain(tool.name);
-    for (const name of ["load_mdl", "save_mdl", "read_mdl", "new_model", "ask_agent"]) expect(names).toContain(name);
+    for (const name of ["load_mdl", "save_mdl", "read_mdl", "load_model", "save_model", "read_model", "new_model", "ask_agent", "set_custom_graph", "delete_custom_graph"]) {
+      expect(names).toContain(name);
+    }
     const addStock = listed.tools.find((tool) => tool.name === "add_stock");
     expect(addStock?.inputSchema).toMatchObject({ type: "object", required: ["name"] });
     await client.close();
@@ -67,6 +69,30 @@ describe("MCP server", () => {
     const loaded = JSON.parse(text(await client.callTool({ name: "load_mdl", arguments: { text: mdl } })));
     expect(loaded.stocks).toBe(1);
     expect(session.model.stocks[0]?.name).toBe("Queue");
+    await client.close();
+  });
+
+  test("a .vaim file keeps a position and a custom graph", async () => {
+    const session = createSession("Placed");
+    const client = await connect(session);
+    await client.callTool({ name: "add_stock", arguments: { name: "Population", initial_equation: "10", x: 12.5, y: 40.25 } });
+    await client.callTool({
+      name: "set_custom_graph",
+      arguments: { name: "People", variables: [{ name: "Population", line_style: "DASH" }] },
+    });
+    session.model.simSpec.integrationMethod = "rk4";
+
+    const savedText = text(await client.callTool({ name: "read_model", arguments: {} }));
+    await client.callTool({ name: "new_model", arguments: { name: "Empty" } });
+    const loaded = JSON.parse(text(await client.callTool({ name: "load_model", arguments: { text: savedText } })));
+    expect(loaded.name).toBe("Placed");
+    expect(session.model.stocks[0]?.pos).toEqual({ x: 12.5, y: 40.25 });
+    expect(session.model.simSpec.integrationMethod).toBe("rk4");
+    expect(session.model.customOutput[0]).toMatchObject({ kind: "graph", graph: { name: "People" } });
+
+    const rejected = await client.callTool({ name: "load_model", arguments: { text: "{UTF-8}\n" } });
+    expect(rejected.isError).toBe(true);
+    expect(session.model.stocks[0]?.name).toBe("Population");
     await client.close();
   });
 

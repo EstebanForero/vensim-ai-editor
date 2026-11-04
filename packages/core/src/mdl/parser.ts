@@ -8,11 +8,12 @@
 // DELAY/SMOOTH family parses as ordinary calls — it's the *simulator* that expands them, into
 // stocks and flows, before it integrates (see sim/lowerDelays.ts).
 
-import { addAuxiliary, addComment, addConnector, addFlow, addStock } from "../model/builder/index.js";
+import { addAuxiliary, addComment, addConnector, addFlow, addStock, inferConnectorPolarity } from "../model/builder/index.js";
 import { stripDiacritics } from "../model/builder/helpers.js";
 import { stripRangeSuffix } from "../model/units.js";
-import { createEmptyModel, findVariableByName, type Model } from "../model/types.js";
+import { createEmptyModel, findVariableByName, type Model, type Polarity } from "../model/types.js";
 import { exprToString, tryParseExpr, type Expr } from "./expr/index.js";
+import { splitCustomBlock } from "./customOutput.js";
 import { splitTopLevelCommas } from "./util.js";
 
 const SKETCH_MARKER = /\\\\\\---\/\/\/\s*Sketch information/i;
@@ -231,7 +232,12 @@ export function parseMdl(text: string): Model {
     });
   }
 
-  applySketch(model, sketch);
+  // Custom graphs live after the sketch closer, in the same keyword language as a .vgd file.
+  // Strip them before the sketch walk so a `:GRAPH` block is never scanned as sketch records.
+  const custom = splitCustomBlock(sketch);
+  model.customOutput = custom.items;
+  model.vensimFileTail = custom.fileTail;
+  applySketch(model, custom.sketch);
   return model;
 }
 
@@ -291,6 +297,16 @@ function isFlowPipeArrow(model: Model, fromName: string, toName: string): boolea
  * to worry about colliding with). */
 function isAutoLoopBadge(text: string): boolean {
   return /^[RB]( [↻↺])?$/.test(text.trim());
+}
+
+/** Field 7 of a `1,` arrow. `S` (83) is Vensim's "same" and `O` (79) is "opposite"; both are
+ * the same causal sign as + and −, which is all this model stores. 0 and anything else mean
+ * the file did not mark the arrow. */
+function polarityFromSketch(field: string | undefined): Polarity | undefined {
+  const code = Number(field);
+  if (code === 45 || code === 79) return "-";
+  if (code === 43 || code === 83) return "+";
+  return undefined;
 }
 
 function applySketch(model: Model, sketch: string): void {
@@ -388,7 +404,18 @@ function applySketch(model: Model, sketch: string): void {
     if (!fromName || !toName) continue;
     if (isFlowPipeArrow(model, fromName, toName)) continue;
     try {
-      addConnector(model, { from: fromName, to: toName });
+      // addConnector infers the sign from the target's equation. That is the mark the canvas
+      // draws, and it wins over a sketch code: a file can say 43 on every arrow (an older
+      // export did) while the equation says minus. Field 7 is used only when the equation
+      // does not determine a sign — a stock, or an ambiguous formula — so a minus Vensim
+      // actually drew is not replaced by the "+" fallback.
+      const connector = addConnector(model, { from: fromName, to: toName });
+      const marked = polarityFromSketch(fields[6]);
+      if (!marked) continue;
+      const fromVar = findVariableByName(model, fromName);
+      const toVar = findVariableByName(model, toName);
+      if (fromVar && toVar && inferConnectorPolarity(model, fromVar, toVar)) continue;
+      connector.polarity = marked;
     } catch {
       // Best-effort: sketch arrows that don't correspond to two known variables (e.g. dangling
       // geometry) are silently skipped.
