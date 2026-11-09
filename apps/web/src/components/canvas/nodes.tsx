@@ -144,7 +144,7 @@ export function LoopNode({ data }: NodeProps & { data: LoopNodeData }) {
     <div
       title={`${loop.polarity}${loop.number} — ${isReinforcing ? "Reinforcing" : "Balancing"} loop (${loop.direction}): ${names.join(" → ")}`}
       className={cn(
-        "flex items-center gap-1 rounded-full border-2 px-1.5 py-1 text-xs font-bold shadow-md",
+        "flex h-full w-full items-center justify-center gap-1 rounded-full border-2 px-1.5 text-xs font-bold shadow-md",
         isReinforcing
           ? "border-[var(--loop-r-color)] bg-[var(--loop-r-color)]/15 text-[var(--loop-r-color)]"
           : "border-[var(--loop-b-color)] bg-[var(--loop-b-color)]/15 text-[var(--loop-b-color)]",

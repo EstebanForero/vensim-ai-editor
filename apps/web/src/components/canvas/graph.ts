@@ -1,6 +1,7 @@
 import {
   allVariables,
   findVariable,
+  LOOP_BADGE_SIZE,
   lookupTableOf,
   pipeRelationSide,
   type Connector,
@@ -146,9 +147,9 @@ export function buildGraph(
     nodes.push({
       id: loop.id,
       type: "loop",
-      // The centroid is the badge's center. React Flow places a node by its top-left, so shift
-      // by about half a badge or the pill draws down onto the stock and flow it is labeling.
-      position: { x: loop.centroid.x - 22, y: loop.centroid.y - 14 },
+      // The centroid is the badge's center. React Flow places a node by its top-left.
+      position: { x: loop.centroid.x - LOOP_BADGE_SIZE.width / 2, y: loop.centroid.y - LOOP_BADGE_SIZE.height / 2 },
+      style: { width: LOOP_BADGE_SIZE.width, height: LOOP_BADGE_SIZE.height },
       draggable: false,
       selectable: false,
       zIndex: 1000,

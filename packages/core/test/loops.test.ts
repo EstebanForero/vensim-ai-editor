@@ -3,6 +3,7 @@ import { addAuxiliary, addConnector, addConstant, addFlow, addStock } from "../s
 import { addComment } from "../src/model/builder/comment.js";
 import { annotateLoops } from "../src/loops/annotate.js";
 import { detectLoops } from "../src/loops/detect.js";
+import { autoLayout } from "../src/layout/autoLayout.js";
 import { createEmptyModel } from "../src/model/types.js";
 
 describe("detectLoops", () => {
@@ -111,6 +112,52 @@ describe("detectLoops", () => {
     const bNumbers = loops.filter((l) => l.polarity === "B").map((l) => l.number);
     expect(rNumbers.sort()).toEqual([1, 2]);
     expect(bNumbers).toEqual([1]);
+  });
+
+  test("a flat loop with no bend keeps the center of the two nodes", () => {
+    const model = createEmptyModel();
+    const pop = addStock(model, { name: "Population", initialEquation: "100", pos: { x: 0, y: 0 }, size: { width: 90, height: 45 } });
+    addFlow(model, { name: "Births", equation: "Population * 0.02", to: pop.id, pos: { x: 200, y: 0 }, size: { width: 90, height: 45 } });
+    addConnector(model, { from: "Population", to: "Births" });
+    const loop = detectLoops(model)[0]!;
+    expect(loop.centroid.x).toBeCloseTo(145, 5);
+    expect(loop.centroid.y).toBeCloseTo(22.5, 5);
+  });
+
+  test("a stock-flow badge sits on the side the relation bows, short of the arrow", () => {
+    const model = createEmptyModel();
+    const pop = addStock(model, { name: "Population", initialEquation: "100" });
+    addFlow(model, { name: "Births", equation: "Population * Birth Rate", to: pop.id });
+    addConstant(model, { name: "Birth Rate", value: 0.02 });
+    addConnector(model, { from: "Population", to: "Births" });
+    autoLayout(model);
+
+    const loop = detectLoops(model)[0]!;
+    const popVar = model.stocks[0]!;
+    const births = model.flows[0]!;
+    const mid = {
+      x: (popVar.pos.x + popVar.size.width / 2 + births.pos.x + births.size.width / 2) / 2,
+      y: (popVar.pos.y + popVar.size.height / 2 + births.pos.y + births.size.height / 2) / 2,
+    };
+    const bend = model.connectors.find((connector) => connector.from === popVar.id && connector.to === births.id)!.bend!;
+    const towardBend = Math.sign(bend.y - mid.y);
+    expect(towardBend).not.toBe(0);
+    // On the bow's side of the pipe, and not sitting on the pipe or on the bend handle.
+    expect(Math.sign(loop.centroid.y - mid.y)).toBe(towardBend);
+    expect(Math.abs(loop.centroid.y - mid.y)).toBeGreaterThan(18);
+    // Far enough past the pipe that the pill is not the polarity mark. The mark sits on the
+    // bow, about halfway from the pipe to the bend handle.
+    const bowY = mid.y + (bend.y - mid.y) * 0.5;
+    expect(Math.abs(loop.centroid.y - bowY)).toBeGreaterThan(20);
+    expect(Math.abs(loop.centroid.x - mid.x)).toBeLessThan(80);
+    for (const variable of [popVar, births]) {
+      const inside =
+        loop.centroid.x > variable.pos.x &&
+        loop.centroid.x < variable.pos.x + variable.size.width &&
+        loop.centroid.y > variable.pos.y &&
+        loop.centroid.y < variable.pos.y + variable.size.height;
+      expect(inside).toBe(false);
+    }
   });
 });
 

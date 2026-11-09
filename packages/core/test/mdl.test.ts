@@ -626,6 +626,26 @@ describe("relation polarity in the sketch", () => {
     });
     expect(pipes.length).toBeGreaterThan(0);
     for (const line of pipes) expect(line.split(",")[6]).toBe("0");
+
+    // The polarity nudge is for causal arrows. A flow pipe that leaves its chord is a curve,
+    // and Vensim draws flow pipes straight (or with a right angle at the valve, not a bow).
+    const centers = new Map<string, [number, number]>();
+    for (const line of writeMdl(model).split("\n")) {
+      const fields = line.split(",");
+      if (fields[0] === "10" || fields[0] === "11" || (fields[0] === "12" && fields[2] === "48")) {
+        centers.set(fields[1]!, [Number(fields[3]), Number(fields[4])]);
+      }
+    }
+    for (const line of pipes) {
+      const fields = line.split(",");
+      const from = centers.get(fields[2]!);
+      const to = centers.get(fields[3]!);
+      const wp = line.match(/\|\((-?\d+),(-?\d+)\)\|/);
+      expect(from && to && wp).toBeTruthy();
+      const midX = (from![0] + to![0]) / 2;
+      const midY = (from![1] + to![1]) / 2;
+      expect(Math.hypot(Number(wp![1]) - midX, Number(wp![2]) - midY)).toBeLessThan(1.5);
+    }
   });
 
   test("a minus marked on the sketch survives when the target equation cannot supply one", () => {

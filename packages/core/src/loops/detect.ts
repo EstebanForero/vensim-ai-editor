@@ -1,7 +1,8 @@
+import { centerOf } from "../layout/geometry.js";
 import { outerAttachment, pipeRelationSide } from "../layout/pipeRelation.js";
 import { allVariables, type Model, type Variable } from "../model/types.js";
 import { buildSignedGraph, type SignedEdge } from "./graph.js";
-import type { DetectLoopsOptions, Loop, LoopDirection } from "./types.js";
+import { LOOP_BADGE_SIZE, type DetectLoopsOptions, type Loop, type LoopDirection } from "./types.js";
 
 interface RawCycle {
   nodeIds: string[];
@@ -56,36 +57,135 @@ function loopDirection(points: { x: number; y: number }[]): LoopDirection {
   return sum > 0 ? "clockwise" : "counterclockwise";
 }
 
-/** Moves a badge that landed on a variable (common for a short loop, whose center is the
- * midpoint of two adjacent nodes) to a nearby open spot, fanned so several badges on the
- * same chain do not stack. A center that is already clear stays put. */
+const BADGE_HALF_X = LOOP_BADGE_SIZE.width / 2;
+const BADGE_HALF_Y = LOOP_BADGE_SIZE.height / 2;
+/** How far the pill's center stays from a pipe or a relation stroke. */
+const STROKE_PAD = 18;
+
+/** Moves a badge that landed on a variable or on the pipe into the loop's interior.
+ * A short loop's center is the midpoint of two nodes, which is the pipe itself, and the old
+ * search always started upward, so the marker left the loop whenever the relation bowed the
+ * other way. A center that is already clear stays put. With no bend there is no interior to
+ * prefer, and the midpoint stays — that is the flat loop's center. */
 function parkBadge(
   centroid: { x: number; y: number },
+  nodeIds: string[],
   boxes: { pos: { x: number; y: number }; size: { width: number; height: number } }[],
   placed: { x: number; y: number }[],
   index: number,
   model: Model,
   byId: Map<string, Variable>,
 ): { x: number; y: number } {
+  const bow = visibleBow(centroid, nodeIds, model, byId);
   const blocked = (point: { x: number; y: number }) =>
-    boxes.some(
-      (box) =>
-        point.x > box.pos.x - 28 &&
-        point.x < box.pos.x + box.size.width + 28 &&
-        point.y > box.pos.y - 22 &&
-        point.y < box.pos.y + box.size.height + 22,
-    ) ||
-    placed.some((other) => Math.hypot(other.x - point.x, other.y - point.y) < 46) ||
-    nearPipeRelation(point, model, byId);
+    coversBox(point, boxes) ||
+    placed.some((other) => Math.hypot(other.x - point.x, other.y - point.y) < LOOP_BADGE_SIZE.width + 8) ||
+    (bow ? coversStroke(point, model, byId) : nearPipeRelation(point, model, byId));
   if (!blocked(centroid)) return centroid;
-  for (const radius of [56, 84, 112, 146]) {
-    for (let step = 0; step < 10; step++) {
-      const angle = -Math.PI / 2 + (step - 4.5) * 0.42 + index * 0.35;
-      const candidate = { x: centroid.x + Math.cos(angle) * radius, y: centroid.y + Math.sin(angle) * radius };
-      if (!blocked(candidate)) return candidate;
+  // A center that only clips a node moves just off that node. Walking toward the bow
+  // instead drops it on the next shape over (a 3-node loop's badge ended up on the flow).
+  const slid = slideOffBoxes(centroid, boxes);
+  if (slid && !blocked(slid) && Math.hypot(slid.x - centroid.x, slid.y - centroid.y) <= 20) return slid;
+  // The control point is not on the arrow. The arrow's middle is halfway from the
+  // chord to that control, and a badge walked all the way to the control sits on the
+  // line and covers the polarity mark. Look inside the bow first. A lens thinner than
+  // the pill has no free spot there, and the badge then goes just outside the line.
+  const dir = bow ?? { x: 0, y: -1, len: 72 };
+  const base = Math.atan2(dir.y, dir.x);
+  const inside = bow ? Math.max(0, dir.len - STROKE_PAD) : 72;
+  const ranges: [number, number][] = bow
+    ? [
+        [16, inside],
+        [dir.len + BADGE_HALF_Y + 14, dir.len + BADGE_HALF_Y + 56],
+      ]
+    : [[16, 72]];
+  for (const [start, end] of ranges) {
+    for (let dist = start; dist <= end; dist += 4) {
+      for (const spread of [0, 0.35, -0.35, 0.75, -0.75]) {
+        const angle = base + spread;
+        const candidate = { x: centroid.x + Math.cos(angle) * dist, y: centroid.y + Math.sin(angle) * dist };
+        if (!blocked(candidate)) return candidate;
+      }
     }
   }
-  return { x: centroid.x, y: centroid.y - 72 - index * 16 };
+  const fallback = bow ? dir.len + BADGE_HALF_Y + 14 : 72;
+  const fallen = {
+    x: centroid.x + dir.x * fallback,
+    y: centroid.y + dir.y * fallback - (bow ? 0 : index * 16),
+  };
+  return slideOffBoxes(fallen, boxes) ?? slid ?? fallen;
+}
+
+/** Pushes a point to the nearest edge of every badge-sized box it still covers. */
+function slideOffBoxes(
+  point: { x: number; y: number },
+  boxes: { pos: { x: number; y: number }; size: { width: number; height: number } }[],
+): { x: number; y: number } | null {
+  let current = { x: point.x, y: point.y };
+  for (let pass = 0; pass < 6; pass++) {
+    const box = boxes.find((candidate) => coversBox(current, [candidate]));
+    if (!box) return current;
+    const left = box.pos.x - BADGE_HALF_X - 4;
+    const right = box.pos.x + box.size.width + BADGE_HALF_X + 4;
+    const top = box.pos.y - BADGE_HALF_Y - 4;
+    const bottom = box.pos.y + box.size.height + BADGE_HALF_Y + 4;
+    const options = [
+      { x: current.x, y: top, d: Math.abs(current.y - top) },
+      { x: current.x, y: bottom, d: Math.abs(current.y - bottom) },
+      { x: left, y: current.y, d: Math.abs(current.x - left) },
+      { x: right, y: current.y, d: Math.abs(current.x - right) },
+    ];
+    options.sort((a, b) => a.d - b.d);
+    current = { x: options[0]!.x, y: options[0]!.y };
+  }
+  return null;
+}
+
+/** Where this loop's own relations actually bow, the midpoint of each curve rather than
+ * its control point. Causes from outside the cycle are not part of the interior. Null when
+ * there is no bend, or the bows surround the center (that center is already the interior). */
+function visibleBow(
+  centroid: { x: number; y: number },
+  nodeIds: string[],
+  model: Model,
+  byId: Map<string, Variable>,
+): { x: number; y: number; len: number } | null {
+  const ids = new Set(nodeIds);
+  const bows: { x: number; y: number }[] = [];
+  for (const connector of model.connectors) {
+    if (!ids.has(connector.from) || !ids.has(connector.to) || !connector.bend) continue;
+    const from = byId.get(connector.from);
+    const to = byId.get(connector.to);
+    if (!from || !to) continue;
+    const side = pipeRelationSide(model, connector.from, connector.to);
+    const a = side ? outerAttachment(from, side) : centerOf(from);
+    const b = side ? outerAttachment(to, side) : centerOf(to);
+    const bend = connector.bend;
+    bows.push({ x: 0.25 * a.x + 0.5 * bend.x + 0.25 * b.x, y: 0.25 * a.y + 0.5 * bend.y + 0.25 * b.y });
+  }
+  if (bows.length === 0) return null;
+  const avg = {
+    x: bows.reduce((sum, bow) => sum + bow.x, 0) / bows.length,
+    y: bows.reduce((sum, bow) => sum + bow.y, 0) / bows.length,
+  };
+  const dx = avg.x - centroid.x;
+  const dy = avg.y - centroid.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 12) return null;
+  return { x: dx / len, y: dy / len, len };
+}
+
+function coversBox(
+  point: { x: number; y: number },
+  boxes: { pos: { x: number; y: number }; size: { width: number; height: number } }[],
+): boolean {
+  return boxes.some(
+    (box) =>
+      point.x > box.pos.x - BADGE_HALF_X - 4 &&
+      point.x < box.pos.x + box.size.width + BADGE_HALF_X + 4 &&
+      point.y > box.pos.y - BADGE_HALF_Y - 4 &&
+      point.y < box.pos.y + box.size.height + BADGE_HALF_Y + 4,
+  );
 }
 
 /** A badge parked on the open-side link under a pipe hides that link. The geometric center
@@ -101,13 +201,57 @@ function nearPipeRelation(point: { x: number; y: number }, model: Model, byId: M
     if (!side) continue;
     const a = outerAttachment(from, side);
     const b = outerAttachment(to, side);
-    if (nearSegment(point, a, b, 20)) return true;
-    for (let step = 1; step <= 7; step++) {
-      const t = step / 8;
-      const x = (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * bend.x + t * t * b.x;
-      const y = (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * bend.y + t * t * b.y;
-      if (Math.hypot(x - point.x, y - point.y) < 20) return true;
+    if (nearSegment(point, a, b, 20) || nearCurve(point, a, bend, b, 20)) return true;
+  }
+  return false;
+}
+
+/** The pill covers a flow pipe or a relation. Pipe-parallel relations are judged on the
+ * outer side they are actually drawn on, not on the pipe they were moved off. */
+function coversStroke(point: { x: number; y: number }, model: Model, byId: Map<string, Variable>): boolean {
+  for (const flow of model.flows) {
+    const flowVar = byId.get(flow.id);
+    if (!flowVar) continue;
+    const fromValve = centerOf(flowVar);
+    for (const stockId of [flow.from, flow.to]) {
+      if (!stockId) continue;
+      const stock = byId.get(stockId);
+      if (stock && nearSegment(point, fromValve, centerOf(stock), STROKE_PAD)) return true;
     }
+  }
+  for (const connector of model.connectors) {
+    const from = byId.get(connector.from);
+    const to = byId.get(connector.to);
+    if (!from || !to) continue;
+    const bend = connector.bend;
+    const side = bend ? pipeRelationSide(model, connector.from, connector.to) : null;
+    // A pipe-parallel relation is drawn from the outer side through its bend. The straight
+    // chord between those sides is the node edge, not the arrow, and the box check already
+    // keeps the pill off the node. Rejecting that chord would leave no room in the lens.
+    if (side && bend) {
+      if (nearCurve(point, outerAttachment(from, side), bend, outerAttachment(to, side), STROKE_PAD)) return true;
+      continue;
+    }
+    const a = centerOf(from);
+    const b = centerOf(to);
+    if (nearSegment(point, a, b, STROKE_PAD)) return true;
+    if (bend && nearCurve(point, a, bend, b, STROKE_PAD)) return true;
+  }
+  return false;
+}
+
+function nearCurve(
+  point: { x: number; y: number },
+  a: { x: number; y: number },
+  bend: { x: number; y: number },
+  b: { x: number; y: number },
+  pad: number,
+): boolean {
+  for (let step = 1; step <= 7; step++) {
+    const t = step / 8;
+    const x = (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * bend.x + t * t * b.x;
+    const y = (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * bend.y + t * t * b.y;
+    if (Math.hypot(x - point.x, y - point.y) < pad) return true;
   }
   return false;
 }
@@ -162,7 +306,7 @@ export function detectLoops(model: Model, options: DetectLoopsOptions = {}): Loo
   for (const loop of limited) {
     counts[loop.polarity] += 1;
     loop.number = counts[loop.polarity];
-    loop.centroid = parkBadge(loop.centroid, boxes, parked, loop.number, model, byId);
+    loop.centroid = parkBadge(loop.centroid, loop.nodeIds, boxes, parked, loop.number, model, byId);
     parked.push(loop.centroid);
   }
 

@@ -1,6 +1,13 @@
 export type LoopPolarity = "R" | "B";
 export type LoopDirection = "clockwise" | "counterclockwise";
 
+/**
+ * The on-canvas loop pill. `detectLoops` keeps its center at `Loop.centroid`, and the canvas
+ * places the node by its top-left, so both sides share this size. The Vensim sketch badge is a
+ * separate 27×27 box at the same center.
+ */
+export const LOOP_BADGE_SIZE = { width: 56, height: 28 };
+
 export interface Loop {
   id: string;
   /** Variable ids around the cycle, in traversal order (not repeating the start at the end). */
@@ -9,7 +16,8 @@ export interface Loop {
   polarity: LoopPolarity;
   /** Visual rotation of the loop, computed from node diagram positions (screen/canvas coordinates, y-down). */
   direction: LoopDirection;
-  /** Centroid of the loop's node positions — where to place the R/B badge. */
+  /** Where the R/B badge is centered. The average of the node centers, moved into the open
+   * interior when that average lands on a node or on the pipe. */
   centroid: { x: number; y: number };
   /** 1-based ordinal *within this polarity* (R1, R2, B1, B2, ...), assigned in the same stable
    * order `detectLoops` already returns loops in — so `${polarity}${number}` is a per-model
